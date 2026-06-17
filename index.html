@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PMO Hub</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <div class="sidebar">
+    <div class="sidebar-logo"><i class="ti ti-layout-dashboard"></i> PMO Hub</div>
+    <div id="nav-menu"></div>
+    <div class="role-switcher">
+      <div class="role-label">Viewing as</div>
+      <select class="role-select" onchange="setRole(this.value)">
+        <option value="admin">PMO Admin</option>
+        <option value="pm">Project Manager</option>
+        <option value="stakeholder">Business Stakeholder</option>
+        <option value="exec">Executive</option>
+      </select>
+    </div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title" id="topbar-title">Dashboard</div>
+      <div class="topbar-actions" id="topbar-actions"></div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+<div id="modal-root"></div>
+<div class="toast" id="toast"></div>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
