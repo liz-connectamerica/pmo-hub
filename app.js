@@ -20,6 +20,26 @@ function canEdit(p) {
   return false;
 }
 
+function roleLabel(r) {
+  var m = { admin:'PMO Admin', pm:'Project Manager', stakeholder:'Stakeholder', exec:'Executive', resource:'Resource' };
+  return m[r] || r;
+}
+
+function actorName() { return currentUser() || roleLabel(D.role); }
+
+function pushLog(item, action, detail) {
+  item.log = item.log || [];
+  item.log.push({ date: new Date().toISOString().split('T')[0], actor: actorName(), action: action, detail: detail || '' });
+}
+
+var taskViewState = {};
+function getTaskState(pid) {
+  if (!taskViewState[pid]) taskViewState[pid] = { sort:'due', dir:'asc', search:'', fAssignee:'', fStatus:'' };
+  return taskViewState[pid];
+}
+
+var raidLogOpen = {};
+
 function fmtCost(n) {
   if (!n && n !== 0) return '—';
   return '$' + Number(n).toLocaleString();
@@ -499,10 +519,20 @@ function openProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   var editable = canEdit(p);
   var isComplete = p.stage === 'complete';
-  var tbs = ['overview','milestones','tasks','raid'];
+  var tbs = ['overview','milestones','tasks','raid','documentation'];
 
   function sortedMilestones() {
     return p.milestones.slice().sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  }
+
+  function timelineHtml() {
+    var sorted = sortedMilestones();
+    if (!sorted.length) return '<div class="text-muted" style="font-size:12px">No milestones tracked yet</div>';
+    return '<div class="mini-timeline">' + sorted.map(function(m) {
+      return '<div class="mt-item"><div class="mt-dot' + (m.done ? ' mt-done' : '') + '"></div>' +
+        '<div class="mt-body"><div class="mt-name">' + m.name + '</div>' +
+        '<div class="mt-date">' + (m.done ? 'Completed ' + m.date : 'Planned ' + m.date) + '</div></div></div>';
+    }).join('') + '</div>';
   }
 
   function tabC(t) {
@@ -519,11 +549,18 @@ function openProject(pid) {
         '<div><div class="form-label">Progress</div><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></div>' +
         '<div><div class="form-label">Start</div>' + (p.start||'—') + '</div>' +
         '<div><div class="form-label">Target end</div>' + (p.end||'—') + '</div>' +
+        '<div><div class="form-label">Category</div>' + (p.category ? '<span class="badge badge-blue">' + p.category + '</span>' : '<span class="text-muted">—</span>') + '</div>' +
+        '<div><div class="form-label">Business unit</div>' + (p.businessUnit || '—') + '</div>' +
         '</div>' +
         '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + p.description + '</div></div>' +
+        '<div class="grid-2 mb-16">' +
+        '<div class="form-group"><div class="form-label">Sponsor</div>' + (p.sponsor||'—') + '</div>' +
         '<div class="form-group"><div class="form-label">PM</div>' + (p.pm||'—') + '</div>' +
+        '</div>' +
         '<div class="form-group"><div class="form-label">Team</div><div style="display:flex;gap:8px;flex-wrap:wrap">' + teamHtml + '</div></div>' +
         (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '') +
+        '<div class="form-group" style="margin-top:16px"><div class="form-label">Timeline</div>' + timelineHtml() +
+        '<button class="btn btn-sm mt-12" onclick="window.switchPTab(\'milestones\')"><i class="ti ti-list"></i> View milestones</button></div>' +
         (editable && !isComplete ? '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #e8e8e5;display:flex;justify-content:flex-end;gap:8px">' +
           '<button class="btn btn-primary" onclick="closeModal();editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit project</button>' +
           '<button class="btn btn-success" onclick="markComplete(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>' +
@@ -545,7 +582,36 @@ function openProject(pid) {
     }
     if (t === 'tasks') {
       var isResource = D.role === 'resource';
-      var trows = p.tasks.map(function(task, idx) {
+      var st = getTaskState(p.id);
+
+      function arrow(col) {
+        if (st.sort !== col) return '';
+        return '<span class="sort-arrow">' + (st.dir === 'asc' ? '▲' : '▼') + '</span>';
+      }
+
+      var assigneeChoices = [];
+      p.tasks.forEach(function(tk){ if (assigneeChoices.indexOf(tk.assignee) < 0) assigneeChoices.push(tk.assignee); });
+      var filterBar = '<div class="task-filter-bar">' +
+        '<input type="text" id="task-search" placeholder="Search task titles…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onTaskSearch(\'' + p.id + '\',this.value)">' +
+        '<select onchange="onTaskFilter(\'' + p.id + '\',\'fAssignee\',this.value)"><option value="">All assignees</option>' + assigneeChoices.map(function(a){ return '<option' + (st.fAssignee===a?' selected':'') + '>' + a + '</option>'; }).join('') + '</select>' +
+        '<select onchange="onTaskFilter(\'' + p.id + '\',\'fStatus\',this.value)"><option value="">All statuses</option>' + ['To Do','In Progress','Done'].map(function(s){ return '<option' + (st.fStatus===s?' selected':'') + '>' + s + '</option>'; }).join('') + '</select>' +
+        '</div>';
+
+      var list = p.tasks.slice();
+      if (st.search) { var q = st.search.toLowerCase(); list = list.filter(function(tk){ return tk.title.toLowerCase().indexOf(q) >= 0; }); }
+      if (st.fAssignee) list = list.filter(function(tk){ return tk.assignee === st.fAssignee; });
+      if (st.fStatus) list = list.filter(function(tk){ return tk.status === st.fStatus; });
+      if (st.sort) {
+        list.sort(function(a,b){
+          var av = (a[st.sort]||'').toString(), bv = (b[st.sort]||'').toString();
+          if (av < bv) return st.dir === 'asc' ? -1 : 1;
+          if (av > bv) return st.dir === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }
+
+      var trows = list.map(function(task) {
+        var idx = p.tasks.indexOf(task);
         var myTask = isResource && task.assignee === currentUser();
         return '<tr><td style="white-space:normal;word-break:break-word">' + task.title + '</td><td>' + task.assignee + '</td><td>' + bdg(task.status) + '</td><td class="text-muted">' + task.due + '</td>' +
           '<td><div style="display:flex;gap:4px">' +
@@ -553,52 +619,96 @@ function openProject(pid) {
           (myTask && task.status !== 'Done' ? '<button class="btn btn-sm btn-success" onclick="completeMyTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-check"></i> Done</button>' : '') +
           '</div></td></tr>';
       }).join('');
+
+      var header = '<tr><th>Task</th>' +
+        '<th class="sortable-th" onclick="setTaskSort(\'' + p.id + '\',\'assignee\')">Assignee ' + arrow('assignee') + '</th>' +
+        '<th class="sortable-th" onclick="setTaskSort(\'' + p.id + '\',\'status\')">Status ' + arrow('status') + '</th>' +
+        '<th class="sortable-th" onclick="setTaskSort(\'' + p.id + '\',\'due\')">Due ' + arrow('due') + '</th><th></th></tr>';
+
       return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddTask(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add task</button>' : '') +
+        filterBar +
         (p.tasks.length
-          ? '<table><thead><tr><th>Task</th><th>Assignee</th><th>Status</th><th>Due</th><th></th></tr></thead><tbody>' + trows + '</tbody></table>'
+          ? (list.length ? '<table><thead>' + header + '</thead><tbody>' + trows + '</tbody></table>' : '<div class="empty-state" style="padding:30px"><i class="ti ti-search"></i><p>No tasks match your filters</p></div>')
           : '<div class="empty-state" style="padding:30px"><i class="ti ti-check"></i><p>No tasks yet</p></div>');
     }
     if (t === 'raid') {
+      function actionBtns(type, idx, item) {
+        var key = p.id + '|' + type + '|' + idx;
+        var isOpen = !!raidLogOpen[key];
+        return '<div class="raid-actions">' +
+          '<button class="btn btn-sm" title="Change log" onclick="toggleRaidLog(\'' + p.id + '\',\'' + type + '\',' + idx + ')"><i class="ti ' + (isOpen ? 'ti-chevron-up' : 'ti-history') + '"></i></button>' +
+          (editable ? '<button class="btn btn-sm" onclick="openEditRaid(\'' + p.id + '\',\'' + type + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteRaid(\'' + p.id + '\',\'' + type + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
+          '</div>';
+      }
+      function logBlock(type, idx, item) {
+        var key = p.id + '|' + type + '|' + idx;
+        if (!raidLogOpen[key]) return '';
+        var entries = (item.log && item.log.length) ? item.log.slice().reverse().map(function(e){
+          return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+        }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+        return '<div class="raid-log">' + entries + '</div>';
+      }
       function rSection(label, items, type) {
-        var isGrid = type === 'risks' || type === 'issues';
         var addBtn = editable ? '<button class="btn btn-sm btn-primary" onclick="openAddRaid(\'' + p.id + '\',\'' + type + '\')"><i class="ti ti-plus"></i> Add</button>' : '';
         var header = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><div class="bold">' + label + '</div>' + addBtn + '</div>';
         if (!items.length) return header + '<div class="text-muted" style="font-size:12px;margin-bottom:12px">None logged</div><div class="divider"></div>';
         var body;
         if (type === 'risks') {
-          body = '<div style="display:grid;grid-template-columns:90px 1fr 110px 36px;gap:10px;padding:6px 0;border-bottom:1px solid #e8e8e5;font-size:11px;font-weight:600;color:#777"><div>Severity</div><div>Description &amp; Mitigation</div><div>Owner</div><div></div></div>' +
+          body = '<div style="display:grid;grid-template-columns:80px 70px 1fr 110px 90px 76px;gap:10px;padding:6px 0;border-bottom:1px solid #e8e8e5;font-size:11px;font-weight:600;color:#777"><div>Probability</div><div>Impact</div><div>Description &amp; Mitigation</div><div>Owner</div><div>Status</div><div></div></div>' +
             items.map(function(item, idx) {
-              return '<div style="display:grid;grid-template-columns:90px 1fr 110px 36px;gap:10px;padding:10px 0;border-bottom:1px solid #f0ede8;align-items:start">' +
-                '<div>' + bdg(item.severity) + '</div>' +
+              return '<div style="display:grid;grid-template-columns:80px 70px 1fr 110px 90px 76px;gap:10px;padding:10px 0;border-bottom:1px solid #f0ede8;align-items:start">' +
+                '<div style="font-size:13px">' + (item.probability != null ? item.probability + '%' : '—') + '</div>' +
+                '<div>' + (item.impact ? bdg(item.impact) : '—') + '</div>' +
                 '<div><div style="font-size:13px;word-break:break-word;white-space:normal;margin-bottom:4px">' + item.desc + '</div>' +
                 '<div style="font-size:12px;color:#555;word-break:break-word;white-space:normal;background:#f5f5f3;padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.mitigation||'—') + '</div></div>' +
                 '<div style="font-size:12px;color:#777;word-break:break-word">' + item.owner + '</div>' +
-                (editable ? '<div><button class="btn btn-sm btn-danger" onclick="deleteRaid(\'' + p.id + '\',\'' + type + '\',' + idx + ')"><i class="ti ti-trash"></i></button></div>' : '<div></div>') + '</div>';
+                '<div>' + (item.status ? bdg(item.status) : '—') + '</div>' +
+                '<div>' + actionBtns(type, idx, item) + '</div></div>' +
+                logBlock(type, idx, item);
             }).join('');
         } else if (type === 'issues') {
-          body = '<div style="display:grid;grid-template-columns:90px 1fr 110px 90px 36px;gap:10px;padding:6px 0;border-bottom:1px solid #e8e8e5;font-size:11px;font-weight:600;color:#777"><div>Severity</div><div>Description</div><div>Owner</div><div>Status</div><div></div></div>' +
+          body = '<div style="display:grid;grid-template-columns:90px 1fr 110px 90px 76px;gap:10px;padding:6px 0;border-bottom:1px solid #e8e8e5;font-size:11px;font-weight:600;color:#777"><div>Severity</div><div>Description</div><div>Owner</div><div>Status</div><div></div></div>' +
             items.map(function(item, idx) {
-              return '<div style="display:grid;grid-template-columns:90px 1fr 110px 90px 36px;gap:10px;padding:10px 0;border-bottom:1px solid #f0ede8;align-items:start">' +
+              return '<div style="display:grid;grid-template-columns:90px 1fr 110px 90px 76px;gap:10px;padding:10px 0;border-bottom:1px solid #f0ede8;align-items:start">' +
                 '<div>' + bdg(item.severity) + '</div><div style="font-size:13px;word-break:break-word;white-space:normal">' + item.desc + '</div>' +
                 '<div style="font-size:12px;color:#777">' + item.owner + '</div><div>' + bdg(item.status) + '</div>' +
-                (editable ? '<div><button class="btn btn-sm btn-danger" onclick="deleteRaid(\'' + p.id + '\',\'' + type + '\',' + idx + ')"><i class="ti ti-trash"></i></button></div>' : '<div></div>') + '</div>';
+                '<div>' + actionBtns(type, idx, item) + '</div></div>' +
+                logBlock(type, idx, item);
             }).join('');
         } else {
           body = items.map(function(item, idx) {
             return '<div style="font-size:13px;padding:10px 0;border-bottom:1px solid #f0ede8;display:flex;justify-content:space-between;align-items:center;gap:8px;word-break:break-word">' +
               '<div style="flex:1">' + item.desc + (item.owner ? ' <span class="text-muted">— ' + item.owner + '</span>' : '') + (item.status ? ' ' + bdg(item.status) : '') + '</div>' +
-              (editable ? '<button class="btn btn-sm btn-danger" onclick="deleteRaid(\'' + p.id + '\',\'' + type + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') + '</div>';
+              actionBtns(type, idx, item) + '</div>' +
+              logBlock(type, idx, item);
           }).join('');
         }
         return header + body + '<div class="divider"></div>';
       }
       return rSection('Risks', p.raid.risks, 'risks') + rSection('Assumptions', p.raid.assumptions, 'assumptions') + rSection('Issues', p.raid.issues, 'issues') + rSection('Dependencies', p.raid.dependencies, 'dependencies');
     }
+    if (t === 'documentation') {
+      var docs = p.documents || [];
+      var missing = DOC_TYPES.filter(function(dt){ return !docs.some(function(d){ return d.category === dt; }); });
+      var guidance = missing.length
+        ? '<div class="info-banner info-blue"><i class="ti ti-info-circle"></i><div><strong>Still needed:</strong> ' + missing.join(', ') + '. These will disappear from this list once uploaded or linked.</div></div>'
+        : '';
+      var rows = docs.map(function(d, idx) {
+        return '<div class="doc-row"><i class="ti ' + (d.sourceType === 'link' ? 'ti-link' : 'ti-file-text') + ' doc-icon"></i>' +
+          '<div class="doc-info"><div class="doc-name">' + d.name + '</div><div class="text-muted">' + d.category + ' • added ' + d.dateAdded + '</div></div>' +
+          '<button class="btn btn-sm" onclick="openDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-external-link"></i> Open</button>' +
+          (editable ? '<button class="btn btn-sm" onclick="openEditDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
+          '</div>';
+      }).join('');
+      return guidance +
+        (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddDoc(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add document</button>' : '') +
+        (docs.length ? rows : '<div class="empty-state" style="padding:30px"><i class="ti ti-files"></i><p>No documents added yet</p></div>');
+    }
     return '';
   }
 
   var tabsHtml = tbs.map(function(t) {
-    return '<div class="tab' + (t === 'overview' ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'raid' ? 'RAID log' : t) + '</div>';
+    return '<div class="tab' + (t === 'overview' ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t) + '</div>';
   }).join('');
 
   showModal(
@@ -616,7 +726,41 @@ function openProject(pid) {
   window.openAddMilestone = function(pid2){ openMilestoneModal(pid2); };
   window.openAddTask      = function(pid2){ openTaskModal(pid2, null); };
   window.openEditTask     = function(pid2,idx){ openTaskModal(pid2, idx); };
-  window.openAddRaid      = function(pid2,type){ openRaidModal(pid2, type); };
+  window.openAddRaid      = function(pid2,type){ openRaidModal(pid2, type, null); };
+  window.openEditRaid     = function(pid2,type,idx){ openRaidModal(pid2, type, idx); };
+  window.setTaskSort = function(pid2, col) {
+    var s = getTaskState(pid2);
+    if (s.sort === col) s.dir = s.dir === 'asc' ? 'desc' : 'asc'; else { s.sort = col; s.dir = 'asc'; }
+    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+  };
+  window.onTaskSearch = function(pid2, val) {
+    getTaskState(pid2).search = val;
+    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+    var el = document.getElementById('task-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.onTaskFilter = function(pid2, field, val) {
+    getTaskState(pid2)[field] = val;
+    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+  };
+  window.toggleRaidLog = function(pid2, type, idx) {
+    var key = pid2 + '|' + type + '|' + idx;
+    raidLogOpen[key] = !raidLogOpen[key];
+    document.getElementById('ptab-content').innerHTML = tabC('raid');
+  };
+  window.openAddDoc  = function(pid2){ openDocModal(pid2, null); };
+  window.openEditDoc = function(pid2, idx){ openDocModal(pid2, idx); };
+  window.deleteDoc   = function(pid2, idx) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    pr.documents.splice(idx, 1);
+    document.getElementById('ptab-content').innerHTML = tabC('documentation');
+    showToast('Document removed');
+  };
+  window.openDoc = function(pid2, idx) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var d = pr.documents[idx];
+    if (d && d.url) window.open(d.url, '_blank'); else showToast('No file or link attached');
+  };
 }
 
 function markComplete(pid) {
@@ -670,23 +814,34 @@ function openTaskModal(pid, idx) {
   };
 }
 
-function openRaidModal(pid, type) {
+function openRaidModal(pid, type, idx) {
   var p = D.projects.find(function(x){ return x.id === pid; });
+  var isEdit = idx != null;
+  var item = isEdit ? p.raid[type][idx] : null;
   var label = {risks:'Risk',assumptions:'Assumption',issues:'Issue',dependencies:'Dependency'}[type];
-  // risk owner: only project members; with option to add
+  // owner: project members; with option to add
   var ownerPool = p.team.filter(function(m){ return ALL_PEOPLE.indexOf(m) >= 0; });
-  var ownerOpts = '<option value="">— Select —</option>' + ownerPool.map(function(n){ return '<option>' + n + '</option>'; }).join('') +
+  var ownerOpts = '<option value="">— Select —</option>' + ownerPool.map(function(n){ return '<option' + (item && item.owner===n?' selected':'') + '>' + n + '</option>'; }).join('') +
     '<option value="__add__">+ Add member to project…</option>';
   var extra = '';
-  if (type === 'risks')        extra = '<div class="grid-2"><div class="form-group"><div class="form-label">Severity</div><select id="rd-sev"><option>High</option><option selected>Medium</option><option>Low</option></select></div><div class="form-group"><div class="form-label">Mitigation</div><textarea id="rd-mit" placeholder="Describe mitigation plan…" rows="3"></textarea></div></div>';
-  if (type === 'issues')       extra = '<div class="form-group"><div class="form-label">Severity</div><select id="rd-sev"><option>High</option><option selected>Medium</option><option>Low</option></select></div>';
-  if (type === 'dependencies') extra = '<div class="form-group"><div class="form-label">Status</div><select id="rd-depst"><option>Pending</option><option>Active</option><option>Resolved</option></select></div>';
-  showModal('<div class="modal-title">Add ' + label + ' <button class="btn btn-sm" onclick="openProject(\'' + pid + '\')"><i class="ti ti-x"></i></button></div>' +
-    '<div class="form-group"><div class="form-label">Description *</div><textarea id="rd-desc" placeholder="Describe this ' + label.toLowerCase() + '…"></textarea></div>' +
+  if (type === 'risks') {
+    extra = '<div class="grid-2">' +
+      '<div class="form-group"><div class="form-label">Probability (%)</div><input type="number" id="rd-prob" min="0" max="100" value="' + (item ? item.probability : 50) + '"></div>' +
+      '<div class="form-group"><div class="form-label">Impact</div><select id="rd-impact">' + IMPACTS.map(function(s){ return '<option' + (item && item.impact===s ? ' selected' : (!item && s==='Medium' ? ' selected':'')) + '>' + s + '</option>'; }).join('') + '</select></div>' +
+      '</div>' +
+      '<div class="form-group"><div class="form-label">Status</div><select id="rd-status">' + RISK_STATUSES.map(function(s){ return '<option' + (item && item.status===s ? ' selected' : (!item && s==='Open' ? ' selected':'')) + '>' + s + '</option>'; }).join('') + '</select></div>' +
+      '<div class="form-group"><div class="form-label">Mitigation</div><textarea id="rd-mit" placeholder="Describe mitigation plan…" rows="3">' + (item ? (item.mitigation||'') : '') + '</textarea></div>';
+  }
+  if (type === 'issues')       extra = '<div class="form-group"><div class="form-label">Severity</div><select id="rd-sev"><option' + (item && item.severity==='High'?' selected':'') + '>High</option><option' + (!item || item.severity==='Medium'?' selected':'') + '>Medium</option><option' + (item && item.severity==='Low'?' selected':'') + '>Low</option></select></div>' +
+    '<div class="form-group"><div class="form-label">Status</div><select id="rd-issuest"><option' + (!item || item.status==='Open'?' selected':'') + '>Open</option><option' + (item && item.status==='Closed'?' selected':'') + '>Closed</option></select></div>';
+  if (type === 'dependencies') extra = '<div class="form-group"><div class="form-label">Status</div><select id="rd-depst"><option' + (!item || item.status==='Pending'?' selected':'') + '>Pending</option><option' + (item && item.status==='Active'?' selected':'') + '>Active</option><option' + (item && item.status==='Resolved'?' selected':'') + '>Resolved</option></select></div>';
+
+  showModal('<div class="modal-title">' + (isEdit?'Edit ':'Add ') + label + ' <button class="btn btn-sm" onclick="openProject(\'' + pid + '\')"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Description *</div><textarea id="rd-desc" placeholder="Describe this ' + label.toLowerCase() + '…">' + (item ? item.desc : '') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">Owner</div><select id="rd-owner" onchange="handleOwnerChange(\'' + pid + '\')">' + ownerOpts + '</select></div>' +
     extra +
     '<div class="modal-footer"><button class="btn" onclick="openProject(\'' + pid + '\')">Cancel</button>' +
-    '<button class="btn btn-primary" id="rd-save"><i class="ti ti-check"></i> Add ' + label + '</button></div>');
+    '<button class="btn btn-primary" id="rd-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add ' + label) + '</button></div>', true);
 
   window.handleOwnerChange = function(pid2) {
     var sel = document.getElementById('rd-owner');
@@ -699,7 +854,6 @@ function openRaidModal(pid, type) {
         pr2.team.push(nonMembers[num-1]);
         addNotif(nonMembers[num-1], 'You have been added to project "' + pr2.name + '".', 'team');
         showToast(nonMembers[num-1] + ' added to project');
-        // rebuild the select
         var newOpts = '<option value="">— Select —</option>' + pr2.team.filter(function(m){ return ALL_PEOPLE.indexOf(m)>=0; }).map(function(n){ return '<option>' + n + '</option>'; }).join('') + '<option value="__add__">+ Add member to project…</option>';
         sel.innerHTML = newOpts;
       } else {
@@ -713,11 +867,84 @@ function openRaidModal(pid, type) {
     if (!desc){ showToast('Description required'); return; }
     var owner = document.getElementById('rd-owner').value;
     if (owner === '__add__') owner = '';
-    if (type==='risks')        p.raid.risks.push({id:'ri'+Date.now(),desc:desc,severity:document.getElementById('rd-sev').value,owner:owner,mitigation:document.getElementById('rd-mit').value});
-    else if (type==='assumptions')  p.raid.assumptions.push({id:'a'+Date.now(),desc:desc,owner:owner});
-    else if (type==='issues')       p.raid.issues.push({id:'i'+Date.now(),desc:desc,severity:document.getElementById('rd-sev').value,owner:owner,status:'Open'});
-    else if (type==='dependencies') p.raid.dependencies.push({id:'d'+Date.now(),desc:desc,owner:owner,status:document.getElementById('rd-depst').value});
-    showToast(label + ' added'); openProject(pid); setTimeout(function(){ window.switchPTab('raid'); },50);
+
+    if (isEdit) {
+      item.desc = desc; item.owner = owner;
+      if (type==='risks') { item.probability = parseInt(document.getElementById('rd-prob').value)||0; item.impact = document.getElementById('rd-impact').value; item.status = document.getElementById('rd-status').value; item.mitigation = document.getElementById('rd-mit').value; }
+      else if (type==='issues') { item.severity = document.getElementById('rd-sev').value; item.status = document.getElementById('rd-issuest').value; }
+      else if (type==='dependencies') { item.status = document.getElementById('rd-depst').value; }
+      pushLog(item, 'Updated');
+      showToast(label + ' updated');
+    } else {
+      var n;
+      if (type==='risks')        n = {id:'ri'+Date.now(),desc:desc,probability:parseInt(document.getElementById('rd-prob').value)||0,impact:document.getElementById('rd-impact').value,status:document.getElementById('rd-status').value,owner:owner,mitigation:document.getElementById('rd-mit').value};
+      else if (type==='assumptions')  n = {id:'a'+Date.now(),desc:desc,owner:owner};
+      else if (type==='issues')       n = {id:'i'+Date.now(),desc:desc,severity:document.getElementById('rd-sev').value,owner:owner,status:document.getElementById('rd-issuest').value};
+      else if (type==='dependencies') n = {id:'d'+Date.now(),desc:desc,owner:owner,status:document.getElementById('rd-depst').value};
+      pushLog(n, 'Created');
+      p.raid[type].push(n);
+      showToast(label + ' added');
+    }
+    openProject(pid); setTimeout(function(){ window.switchPTab('raid'); },50);
+  };
+}
+
+function openDocModal(pid, idx) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  p.documents = p.documents || [];
+  var isEdit = idx != null;
+  var d = isEdit ? p.documents[idx] : null;
+  var catOpts = DOC_TYPES.concat(['Other']).map(function(c){ return '<option' + (d && d.category===c ? ' selected' : '') + '>' + c + '</option>'; }).join('');
+  var isLink = d ? d.sourceType === 'link' : true;
+
+  showModal('<div class="modal-title">' + (isEdit?'Edit document':'Add document') + ' <button class="btn btn-sm" onclick="openProject(\'' + pid + '\')"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Document type</div><select id="dm-cat">' + catOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Name *</div><input type="text" id="dm-name" value="' + (d ? d.name : '') + '" placeholder="e.g. Project Charter v1"></div>' +
+    '<div class="form-group"><div class="form-label">Source</div>' +
+      '<div class="radio-row">' +
+        '<label><input type="radio" name="dm-src" value="link"' + (isLink ? ' checked' : '') + ' onchange="toggleDocSource()"> External link (Jira, SharePoint, etc.)</label>' +
+        '<label><input type="radio" name="dm-src" value="file"' + (!isLink ? ' checked' : '') + ' onchange="toggleDocSource()"> Upload file</label>' +
+      '</div>' +
+      '<div id="dm-link-row"><input type="text" id="dm-url" value="' + (isLink && d ? d.url : '') + '" placeholder="https://…"></div>' +
+      '<div id="dm-file-row" style="display:none"><input type="file" id="dm-file"></div>' +
+    '</div>' +
+    '<div class="modal-footer"><button class="btn" onclick="openProject(\'' + pid + '\')">Cancel</button>' +
+    '<button class="btn btn-primary" id="dm-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add document') + '</button></div>', true);
+
+  window.toggleDocSource = function() {
+    var checkedEl = document.querySelector('input[name="dm-src"]:checked');
+    var linkRow = document.getElementById('dm-link-row');
+    var fileRow = document.getElementById('dm-file-row');
+    if (!checkedEl || !linkRow || !fileRow) return;
+    var src = checkedEl.value;
+    linkRow.style.display = src === 'link' ? 'block' : 'none';
+    fileRow.style.display = src === 'file' ? 'block' : 'none';
+  };
+  setTimeout(function(){ if (window.toggleDocSource) window.toggleDocSource(); }, 0);
+
+  document.getElementById('dm-save').onclick = function() {
+    var name = document.getElementById('dm-name').value.trim();
+    if (!name) { showToast('Document name required'); return; }
+    var cat = document.getElementById('dm-cat').value;
+    var src = document.querySelector('input[name="dm-src"]:checked').value;
+    var url = '';
+    if (src === 'link') {
+      url = document.getElementById('dm-url').value.trim();
+      if (!url) { showToast('Enter a link URL'); return; }
+    } else {
+      var fileEl = document.getElementById('dm-file');
+      if (fileEl.files && fileEl.files[0]) url = URL.createObjectURL(fileEl.files[0]);
+      else if (isEdit && d.sourceType === 'file') url = d.url;
+      else { showToast('Choose a file to upload'); return; }
+    }
+    if (isEdit) {
+      d.name = name; d.category = cat; d.sourceType = src; d.url = url;
+      showToast('Document updated');
+    } else {
+      p.documents.push({ id:'doc'+Date.now(), category:cat, name:name, sourceType:src, url:url, dateAdded:new Date().toISOString().split('T')[0] });
+      showToast('Document added');
+    }
+    openProject(pid); setTimeout(function(){ window.switchPTab('documentation'); },50);
   };
 }
 
@@ -731,6 +958,9 @@ function editProject(pid) {
   var priorOpts  = PRIORITIES.map(function(s){ return '<option' + (p.priority===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var valOpts    = VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var pmOpts     = '<option value="">— None —</option>' + ALL_PEOPLE.map(function(n){ return '<option' + (p.pm===n?' selected':'') + '>' + n + '</option>'; }).join('');
+  var sponsorOpts = '<option value="">— None —</option>' + ALL_PEOPLE.map(function(n){ return '<option' + (p.sponsor===n?' selected':'') + '>' + n + '</option>'; }).join('');
+  var catOpts    = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option' + (p.category===s?' selected':'') + '>' + s + '</option>'; }).join('');
+  var buOpts     = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var memberOpts = ALL_PEOPLE.concat(ALL_TEAMS).map(function(n) {
     var isTeam = ALL_TEAMS.indexOf(n) >= 0;
     return '<label class="member-check"><input type="checkbox" id="ep-tm-' + n.replace(/ /g,'_') + '"' + (p.team.indexOf(n)>=0?' checked':'') + '> ' + n + (isTeam?' <span class="badge badge-blue" style="font-size:10px">Team</span>':'') + '</label>';
@@ -746,11 +976,16 @@ function editProject(pid) {
       '<div class="form-group"><div class="form-label">Target end</div><input type="date" id="ep-end" value="' + p.end + '"></div>' +
       '<div class="form-group"><div class="form-label">Progress (%)</div><input type="number" id="ep-progress" value="' + p.progress + '" min="0" max="100"></div>' +
       '<div class="form-group"><div class="form-label">Health</div><select id="ep-health"><option value="green"' + (p.health==='green'?' selected':'') + '>Green</option><option value="amber"' + (p.health==='amber'?' selected':'') + '>Amber</option><option value="red"' + (p.health==='red'?' selected':'') + '>Red</option></select></div>' +
+      '<div class="form-group"><div class="form-label">Category</div><select id="ep-category">' + catOpts + '</select></div>' +
+      '<div class="form-group"><div class="form-label">Business unit</div><select id="ep-bu">' + buOpts + '</select></div>' +
     '</div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="ep-desc">' + p.description + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="ep-blocker" value="' + p.blockers + '"></div>' +
     '<div class="divider"></div>' +
+    '<div class="grid-2">' +
+    '<div class="form-group"><div class="form-label">Sponsor</div><select id="ep-sponsor">' + sponsorOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Project manager</div><select id="ep-pm">' + pmOpts + '</select></div>' +
+    '</div>' +
     '<div class="form-group"><div class="form-label">Team members</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' + memberOpts + '</div></div>' +
     '<div class="modal-footer">' +
       (D.role === 'admin' ? '<button class="btn btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
@@ -772,6 +1007,9 @@ function saveProject(pid) {
   p.health = document.getElementById('ep-health').value;
   p.description = document.getElementById('ep-desc').value;
   p.blockers = document.getElementById('ep-blocker').value;
+  var catEl = document.getElementById('ep-category'); if (catEl) p.category = catEl.value;
+  var buEl = document.getElementById('ep-bu'); if (buEl) p.businessUnit = buEl.value;
+  var spEl = document.getElementById('ep-sponsor'); if (spEl) p.sponsor = spEl.value;
   var pmEl = document.getElementById('ep-pm'); if (pmEl) p.pm = pmEl.value;
   var allNames = ALL_PEOPLE.concat(ALL_TEAMS);
   p.team = allNames.filter(function(n){ var el = document.getElementById('ep-tm-' + n.replace(/ /g,'_')); return el && el.checked; });
@@ -790,18 +1028,24 @@ function openNewProjectModal() {
   var valOpts = VALUE_AREAS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var priorOpts = PRIORITIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var pmOpts = '<option value="">— None —</option>' + ALL_PEOPLE.map(function(n){ return '<option>' + n + '</option>'; }).join('');
+  var sponsorOpts = '<option value="">— None —</option>' + ALL_PEOPLE.map(function(n){ return '<option>' + n + '</option>'; }).join('');
+  var catOpts = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
+  var buOpts = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   showModal('<div class="modal-title">Create new project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Project name *</div><input type="text" id="np-name" placeholder="Project name"></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Value area</div><select id="np-value">' + valOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Priority</div><select id="np-priority">' + priorOpts + '</select></div></div>' +
+    '<div class="form-group"><div class="form-label">Priority</div><select id="np-priority">' + priorOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Category</div><select id="np-category">' + catOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Business unit</div><select id="np-bu">' + buOpts + '</select></div></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="np-desc" placeholder="What is this project about?"></textarea></div>' +
-    '<div class="form-group"><div class="form-label">Project manager</div><select id="np-pm">' + pmOpts + '</select></div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor</div><select id="np-sponsor">' + sponsorOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Project manager</div><select id="np-pm">' + pmOpts + '</select></div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
-    '<button class="btn btn-primary" id="np-save"><i class="ti ti-plus"></i> Create project</button></div>');
+    '<button class="btn btn-primary" id="np-save"><i class="ti ti-plus"></i> Create project</button></div>', true);
   document.getElementById('np-save').onclick = function() {
     var name = document.getElementById('np-name').value.trim();
     if (!name){ showToast('Project name required'); return; }
-    D.projects.push({id:'p'+Date.now(),name:name,pm:document.getElementById('np-pm').value,team:[],status:'Not Started',phase:'Not Started',progress:0,start:'',end:'',value:document.getElementById('np-value').value,priority:document.getElementById('np-priority').value,description:document.getElementById('np-desc').value,blockers:'',health:'green',stage:'active',plannedStart:'',requestId:'',milestones:[],tasks:[],raid:{risks:[],assumptions:[],issues:[],dependencies:[]}});
+    D.projects.push({id:'p'+Date.now(),name:name,pm:document.getElementById('np-pm').value,sponsor:document.getElementById('np-sponsor').value,category:document.getElementById('np-category').value,businessUnit:document.getElementById('np-bu').value,team:[],status:'Not Started',phase:'Not Started',progress:0,start:'',end:'',value:document.getElementById('np-value').value,priority:document.getElementById('np-priority').value,description:document.getElementById('np-desc').value,blockers:'',health:'green',stage:'active',plannedStart:'',requestId:'',milestones:[],tasks:[],raid:{risks:[],assumptions:[],issues:[],dependencies:[]},documents:[]});
     closeModal(); showToast('Project created'); pgProjects();
   };
 }
