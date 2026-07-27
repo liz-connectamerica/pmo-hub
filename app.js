@@ -43,11 +43,6 @@ var taskLogOpen = {};
 var raidSearchState = {};
 var docFolderState = {};
 
-function reopenProjectTab(pid, tab) {
-  openProject(pid);
-  if (tab && tab !== 'overview') setTimeout(function(){ if (window.switchPTab) window.switchPTab(tab); }, 50);
-}
-
 function fmtCost(n) {
   if (!n && n !== 0) return '—';
   return '$' + Number(n).toLocaleString();
@@ -167,6 +162,7 @@ function renderNav() {
 }
 
 function nav(page) {
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   currentPage = page; renderNav();
   var map = {
     dashboard:pgDashboard, portfolio:pgPortfolio, requests:pgRequests,
@@ -177,6 +173,16 @@ function nav(page) {
   };
   if (map[page]) map[page]();
 }
+
+function goToProject(pid, tab) {
+  location.hash = '#/project/' + pid + '/' + (tab || 'overview');
+}
+
+function handleRoute() {
+  var m = location.hash.match(/^#\/project\/([^\/]+)(?:\/([^\/]+))?/);
+  if (m) pgProjectDetail(m[1], m[2] || 'overview');
+}
+window.addEventListener('hashchange', handleRoute);
 
 function setRole(r) {
   D.role = r;
@@ -200,7 +206,7 @@ function pgDashboard() {
       '<td><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></td>' +
       '<td class="text-muted">' + (p.pm || '—') + '</td>' +
       '<td>' + (p.blockers ? '<span style="color:#993C1D;font-size:12px"><i class="ti ti-alert-triangle"></i> Yes</span>' : '<span class="text-muted">—</span>') + '</td>' +
-      '<td><button class="btn btn-sm" onclick="openProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
+      '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
   }).join('');
 
   var pendRows = '';
@@ -241,7 +247,7 @@ function pgPortfolio() {
   Object.keys(byVal).forEach(function(v) {
     var cl = cols[i++ % cols.length];
     var cards = byVal[v].map(function(p) {
-      return '<div class="card card-sm" style="cursor:pointer;border:1px solid #e8e8e5;border-radius:10px" onclick="openProject(\'' + p.id + '\')">' +
+      return '<div class="card card-sm" style="cursor:pointer;border:1px solid #e8e8e5;border-radius:10px" onclick="goToProject(\'' + p.id + '\')">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px"><span class="bold" style="font-size:13px">' + p.name + '</span>' + stagePill(p.stage) + '</div>' +
         '<div class="text-muted mb-12" style="line-height:1.5">' + p.description + '</div>' +
         '<div class="progress-bar mb-12"><div class="progress-fill" style="width:' + p.progress + '%"></div></div>' +
@@ -483,7 +489,7 @@ function pgProjects() {
         '<div style="flex:1"><div class="bold mb-12">' + hdot(p.health) + p.name + '</div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.status) + ' ' + bdg(p.priority) + ' <span class="badge badge-gray">' + p.phase + '</span> <span class="badge badge-purple">' + p.value + '</span></div></div>' +
         '<div style="display:flex;gap:8px;flex-shrink:0">' +
-          '<button class="btn btn-sm" onclick="openProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+          '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
           (canEdit(p) ? '<button class="btn btn-sm" onclick="editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
         '</div>' +
       '</div>' +
@@ -505,7 +511,7 @@ function pgCompleted() {
   var rows = cp.map(function(p) {
     return '<tr><td class="bold">' + p.name + '</td><td><span class="badge badge-purple">' + p.value + '</span></td>' +
       '<td>' + bdg(p.priority) + '</td><td class="text-muted">' + (p.pm||'—') + '</td><td class="text-muted">' + (p.end||'—') + '</td>' +
-      '<td><button class="btn btn-sm" onclick="openProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+      '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
       (D.role === 'admin' ? ' <button class="btn btn-sm" onclick="reactivateProject(\'' + p.id + '\')"><i class="ti ti-refresh"></i> Re-activate</button>' : '') +
       '</td></tr>';
   }).join('');
@@ -523,8 +529,12 @@ function reactivateProject(pid) {
 
 // ── Project Detail ─────────────────────────────────────────────────────────────
 
-function openProject(pid) {
+function pgProjectDetail(pid, tab) {
   var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!p) { nav('projects'); return; }
+  tab = tab || 'overview';
+  currentPage = 'projectDetail';
+  renderNav();
   var editable = canEdit(p);
   var isComplete = p.stage === 'complete';
   var tbs = ['overview','milestones','tasks','raid','documentation'];
@@ -762,16 +772,19 @@ function openProject(pid) {
   }
 
   var tabsHtml = tbs.map(function(t) {
-    return '<div class="tab' + (t === 'overview' ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t) + '</div>';
+    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t) + '</div>';
   }).join('');
 
-  showModal(
-    '<div class="modal-title"><div><div style="margin-bottom:8px">' + p.name + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + '</div></div>' +
-    '<button class="btn btn-sm" style="flex-shrink:0" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div class="tab-bar">' + tabsHtml + '</div>' +
-    '<div id="ptab-content">' + tabC('overview') + '</div>', true);
+  tb(p.name, '<button class="btn btn-sm" onclick="nav(\'' + (D.role==='resource' ? 'my-projects' : 'projects') + '\')"><i class="ti ti-arrow-left"></i> Back to projects</button>');
 
-  window.switchPTab = function(t) { tbs.forEach(function(x){ var e = document.getElementById('ptab-' + x); if (e) e.className = 'tab' + (x===t?' active':''); }); document.getElementById('ptab-content').innerHTML = tabC(t); };
+  document.getElementById('content').innerHTML =
+    '<div class="card">' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + '</div>' +
+    '<div class="tab-bar">' + tabsHtml + '</div>' +
+    '<div id="ptab-content">' + tabC(tab) + '</div>' +
+    '</div>';
+
+  window.switchPTab = function(t) { goToProject(pid, t); };
   window.toggleMS   = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.milestones[idx].done=!pr.milestones[idx].done; document.getElementById('ptab-content').innerHTML=tabC('milestones'); };
   window.deleteMS   = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.milestones.splice(idx,1); document.getElementById('ptab-content').innerHTML=tabC('milestones'); };
   window.deleteTask = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.tasks.splice(idx,1); document.getElementById('ptab-content').innerHTML=tabC('tasks'); };
@@ -868,23 +881,23 @@ function markComplete(pid) {
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) r.status = 'Active';
   closeModal(); showToast('"' + p.name + '" marked as complete'); renderNav();
-  if (currentPage === 'projects') pgProjects(); else pgDashboard();
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'projects') pgProjects(); else pgDashboard();
 }
 
 // ── Milestone / Task / RAID modals ─────────────────────────────────────────────
 
 function openMilestoneModal(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  showModal('<div class="modal-title">Add milestone <button class="btn btn-sm" onclick="reopenProjectTab(\'' + pid + '\',\'milestones\')"><i class="ti ti-x"></i></button></div>' +
+  showModal('<div class="modal-title">Add milestone <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Milestone name *</div><input type="text" id="ms-name" placeholder="e.g. Design approved"></div>' +
     '<div class="form-group"><div class="form-label">Target date *</div><input type="date" id="ms-date"></div>' +
-    '<div class="modal-footer"><button class="btn" onclick="reopenProjectTab(\'' + pid + '\',\'milestones\')">Cancel</button>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="ms-save"><i class="ti ti-check"></i> Add milestone</button></div>');
   document.getElementById('ms-save').onclick = function() {
     var name = document.getElementById('ms-name').value.trim(); var date = document.getElementById('ms-date').value;
     if (!name||!date){ showToast('Fill in name and date'); return; }
     p.milestones.push({name:name,date:date,done:false});
-    showToast('Milestone added'); reopenProjectTab(pid, 'milestones');
+    showToast('Milestone added'); closeModal(); if (window.switchPTab) window.switchPTab('milestones');
   };
 }
 
@@ -894,7 +907,7 @@ function openTaskModal(pid, idx) {
   // only project members + all people for admin/pm
   var pool = canEdit(p) ? ALL_PEOPLE.concat(ALL_TEAMS) : p.team;
   var assigneeOpts = pool.map(function(n){ return '<option' + (task && task.assignee===n ? ' selected' : '') + '>' + n + '</option>'; }).join('');
-  showModal('<div class="modal-title">' + (task?'Edit task':'Add task') + ' <button class="btn btn-sm" onclick="reopenProjectTab(\'' + pid + '\',\'tasks\')"><i class="ti ti-x"></i></button></div>' +
+  showModal('<div class="modal-title">' + (task?'Edit task':'Add task') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Task title *</div><input type="text" id="tm-title" value="' + (task?task.title:'') + '" placeholder="Task name"></div>' +
     '<div class="form-group"><div class="form-label">Assignee</div><select id="tm-assignee">' + assigneeOpts + '</select></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Status</div><select id="tm-status">' +
@@ -902,7 +915,7 @@ function openTaskModal(pid, idx) {
       '<option' + (task&&task.status==='In Progress'?' selected':'') + '>In Progress</option>' +
       '<option' + (task&&task.status==='Done'?' selected':'') + '>Done</option></select></div>' +
     '<div class="form-group"><div class="form-label">Due date</div><input type="date" id="tm-due" value="' + (task?task.due:'') + '"></div></div>' +
-    '<div class="modal-footer"><button class="btn" onclick="reopenProjectTab(\'' + pid + '\',\'tasks\')">Cancel</button>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="tm-save"><i class="ti ti-check"></i> ' + (task?'Save changes':'Add task') + '</button></div>');
   document.getElementById('tm-save').onclick = function() {
     var title = document.getElementById('tm-title').value.trim();
@@ -921,7 +934,7 @@ function openTaskModal(pid, idx) {
       var t2 = {id:'t'+Date.now(),title:newVals.title,assignee:newVals.assignee,status:newVals.status,due:newVals.due,log:[{date:new Date().toISOString().split('T')[0],actor:actorName(),action:'Created',detail:''}]};
       p.tasks.push(t2);
     }
-    showToast(idx!=null?'Task updated':'Task added'); reopenProjectTab(pid, 'tasks');
+    showToast(idx!=null?'Task updated':'Task added'); closeModal(); if (window.switchPTab) window.switchPTab('tasks');
   };
 }
 
@@ -947,11 +960,11 @@ function openRaidModal(pid, type, idx) {
     '<div class="form-group"><div class="form-label">Status</div><select id="rd-issuest"><option' + (!item || item.status==='Open'?' selected':'') + '>Open</option><option' + (item && item.status==='Closed'?' selected':'') + '>Closed</option></select></div>';
   if (type === 'dependencies') extra = '<div class="form-group"><div class="form-label">Status</div><select id="rd-depst"><option' + (!item || item.status==='Pending'?' selected':'') + '>Pending</option><option' + (item && item.status==='Active'?' selected':'') + '>Active</option><option' + (item && item.status==='Resolved'?' selected':'') + '>Resolved</option></select></div>';
 
-  showModal('<div class="modal-title">' + (isEdit?'Edit ':'Add ') + label + ' <button class="btn btn-sm" onclick="reopenProjectTab(\'' + pid + '\',\'raid\')"><i class="ti ti-x"></i></button></div>' +
+  showModal('<div class="modal-title">' + (isEdit?'Edit ':'Add ') + label + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Description *</div><textarea id="rd-desc" placeholder="Describe this ' + label.toLowerCase() + '…">' + (item ? item.desc : '') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">Owner</div><select id="rd-owner" onchange="handleOwnerChange(\'' + pid + '\')">' + ownerOpts + '</select></div>' +
     extra +
-    '<div class="modal-footer"><button class="btn" onclick="reopenProjectTab(\'' + pid + '\',\'raid\')">Cancel</button>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="rd-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add ' + label) + '</button></div>', true);
 
   window.handleOwnerChange = function(pid2) {
@@ -996,7 +1009,7 @@ function openRaidModal(pid, type, idx) {
       p.raid[type].push(n);
       showToast(label + ' added');
     }
-    openProject(pid); setTimeout(function(){ window.switchPTab('raid'); },50);
+    closeModal(); if (window.switchPTab) window.switchPTab('raid');
   };
 }
 
@@ -1013,7 +1026,7 @@ function openDocModal(pid, idx) {
   var defaultFolder = d ? (d.folder||'General') : (docFolderState[pid] && docFolderState[pid] !== 'All' ? docFolderState[pid] : 'General');
   var folderOpts = p.docFolders.map(function(f){ return '<option' + (defaultFolder===f?' selected':'') + '>' + f + '</option>'; }).join('') + '<option value="__new__">+ New folder…</option>';
 
-  showModal('<div class="modal-title">' + (isEdit?'Edit document':'Add document') + ' <button class="btn btn-sm" onclick="reopenProjectTab(\'' + pid + '\',\'documentation\')"><i class="ti ti-x"></i></button></div>' +
+  showModal('<div class="modal-title">' + (isEdit?'Edit document':'Add document') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="grid-2">' +
     '<div class="form-group"><div class="form-label">Document type</div><select id="dm-cat">' + catOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Folder</div><select id="dm-folder" onchange="handleDocFolderChange(\'' + pid + '\')">' + folderOpts + '</select></div>' +
@@ -1027,7 +1040,7 @@ function openDocModal(pid, idx) {
       '<div id="dm-link-row"><input type="text" id="dm-url" value="' + (isLink && d ? d.url : '') + '" placeholder="https://…"></div>' +
       '<div id="dm-file-row" style="display:none"><input type="file" id="dm-file"></div>' +
     '</div>' +
-    '<div class="modal-footer"><button class="btn" onclick="reopenProjectTab(\'' + pid + '\',\'documentation\')">Cancel</button>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="dm-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add document') + '</button></div>', true);
 
   window.toggleDocSource = function() {
@@ -1082,7 +1095,7 @@ function openDocModal(pid, idx) {
       p.documents.push({ id:'doc'+Date.now(), category:cat, name:name, sourceType:src, url:url, folder:folder, dateAdded:new Date().toISOString().split('T')[0] });
       showToast('Document added');
     }
-    reopenProjectTab(pid, 'documentation');
+    closeModal(); if (window.switchPTab) window.switchPTab('documentation');
   };
 }
 
@@ -1092,9 +1105,9 @@ function openMoveDocModal(pid, idx) {
   p.docFolders = (p.docFolders && p.docFolders.length) ? p.docFolders : ['General'];
   var folderOpts = p.docFolders.map(function(f){ return '<option' + ((d.folder||'General')===f?' selected':'') + '>' + f + '</option>'; }).join('') + '<option value="__new__">+ New folder…</option>';
 
-  showModal('<div class="modal-title">Move "' + d.name + '" <button class="btn btn-sm" onclick="reopenProjectTab(\'' + pid + '\',\'documentation\')"><i class="ti ti-x"></i></button></div>' +
+  showModal('<div class="modal-title">Move "' + d.name + '" <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Move to folder</div><select id="mv-folder" onchange="handleMoveFolderChange(\'' + pid + '\')">' + folderOpts + '</select></div>' +
-    '<div class="modal-footer"><button class="btn" onclick="reopenProjectTab(\'' + pid + '\',\'documentation\')">Cancel</button>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="mv-save"><i class="ti ti-check"></i> Move</button></div>');
 
   window.handleMoveFolderChange = function(pid2) {
@@ -1120,7 +1133,7 @@ function openMoveDocModal(pid, idx) {
     d.folder = folder;
     docFolderState[pid] = folder;
     showToast('Document moved to "' + folder + '"');
-    reopenProjectTab(pid, 'documentation');
+    closeModal(); if (window.switchPTab) window.switchPTab('documentation');
   };
 }
 
@@ -1190,14 +1203,14 @@ function saveProject(pid) {
   var allNames = ALL_PEOPLE.concat(ALL_TEAMS);
   p.team = allNames.filter(function(n){ var el = document.getElementById('ep-tm-' + n.replace(/ /g,'_')); return el && el.checked; });
   closeModal(); showToast('Project saved');
-  if (currentPage==='projects') pgProjects(); else pgDashboard();
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage==='projects') pgProjects(); else pgDashboard();
 }
 
 function deleteProject(pid) {
   if (!confirm('Delete this project? This cannot be undone.')) return;
   D.projects = D.projects.filter(function(x){ return x.id !== pid; });
   closeModal(); showToast('Project deleted'); renderNav();
-  if (currentPage==='projects') pgProjects(); else pgDashboard();
+  if (currentPage === 'projectDetail') nav('projects'); else if (currentPage==='projects') pgProjects(); else pgDashboard();
 }
 
 function openNewProjectModal() {
@@ -1433,27 +1446,12 @@ function pgMyRequests() {
         '</div></td></tr>';
     }).join('') + '</tbody></table></div></div>';
   document.getElementById('content').innerHTML = html;
-  window.viewLinkedProject = function(pid) { openProjectReadOnly(pid); };
+  window.viewLinkedProject = function(pid) { goToProject(pid); };
   window.revokeRequest = function(rid) {
     if (!confirm('Revoke this request? It will be removed from the PMO queue.')) return;
     var r = D.requests.find(function(x){ return x.id===rid; });
     r.status = 'Revoked'; showToast('Request revoked'); pgMyRequests(); renderNav();
   };
-}
-
-function openProjectReadOnly(pid) {
-  var p = D.projects.find(function(x){ return x.id===pid; });
-  showModal('<div class="modal-title"><div><div style="margin-bottom:8px">' + p.name + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + '</div></div><button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div class="grid-2 mb-16">' +
-      '<div><div class="form-label">Phase</div><span class="badge badge-gray">' + p.phase + '</span></div>' +
-      '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + p.value + '</span></div>' +
-      '<div><div class="form-label">PM</div>' + (p.pm||'—') + '</div>' +
-      '<div><div class="form-label">Target end</div>' + (p.end||'TBD') + '</div>' +
-    '</div>' +
-    '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6;background:#f5f5f3;padding:12px;border-radius:8px">' + p.description + '</div></div>' +
-    '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:12px;color:#777;margin-bottom:4px"><span>Overall progress</span><span>' + p.progress + '%</span></div><div class="progress-bar"><div class="progress-fill" style="width:' + p.progress + '%"></div></div></div>' +
-    (p.blockers ? '<div class="blocker-note" style="margin-top:12px"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
-    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button></div>');
 }
 
 // ── Resource Role Pages ────────────────────────────────────────────────────────
@@ -1469,7 +1467,7 @@ function pgMyProjectsResource() {
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
         '<div><div class="bold mb-12">' + hdot(p.health) + p.name + '</div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.status) + ' ' + stagePill(p.stage) + ' <span class="badge badge-purple">' + p.value + '</span></div></div>' +
-        '<button class="btn btn-sm" onclick="openProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+        '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
       '</div>' +
       '<div class="grid-2 mt-12" style="font-size:12px;color:#777">' +
         '<div>PM: ' + (p.pm||'—') + '</div><div>Due: ' + (p.end||'TBD') + '</div>' +
@@ -1553,4 +1551,8 @@ function pgMyCapacity() {
 
 // ── Boot ────────────────────────────────────────────────────────────────────────
 renderNav();
-nav('dashboard');
+if (location.hash.indexOf('#/project/') === 0) {
+  handleRoute();
+} else {
+  nav('dashboard');
+}
