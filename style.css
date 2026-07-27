@@ -173,7 +173,16 @@ input[type=file] { width: 100%; padding: 8px 10px; border: 1px solid #ddd; borde
 .raid-grid-risks { display: grid; grid-template-columns: 68px 60px 1fr 100px 84px 72px; gap: 10px; }
 .raid-grid-issues { display: grid; grid-template-columns: 80px 1fr 100px 84px 72px; gap: 10px; }
 .raid-grid-hdr { padding: 6px 0; border-bottom: 1px solid #e8e8e5; font-size: 11px; font-weight: 600; color: #777; }
-.raid-grid-row { padding: 10px 0; border-bottom: 1px solid #f0ede8; align-items: start; }
+.raid-grid-row { padding: 10px 0; border-bottom: 1px solid #f0ede8; align-items: center; }
+
+/* Task comments */
+.comment-item { padding: 8px 0; border-bottom: 1px solid #e8e8e5; }
+.comment-item:last-of-type { border-bottom: none; }
+.comment-meta { font-size: 12px; margin-bottom: 3px; }
+.comment-text { font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.comment-actions { display: flex; gap: 4px; margin-top: 4px; }
+.comment-add-row { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e8e8e5; }
+.comment-add-row textarea { flex: 1; min-height: 44px; }
 
 /* Task header filter panel */
 .th-filter-btn { background: none; border: none; cursor: pointer; color: #999; padding: 2px 4px; vertical-align: middle; }

@@ -40,6 +40,8 @@ function getTaskState(pid) {
 
 var raidLogOpen = {};
 var taskLogOpen = {};
+var milestoneLogOpen = {};
+var taskCommentsOpen = {};
 var raidSearchState = {};
 var docFolderState = {};
 
@@ -549,7 +551,7 @@ function pgProjectDetail(pid, tab) {
     return '<div class="mini-timeline">' + sorted.map(function(m) {
       return '<div class="mt-item"><div class="mt-dot' + (m.done ? ' mt-done' : '') + '"></div>' +
         '<div class="mt-body"><div class="mt-name">' + m.name + '</div>' +
-        '<div class="mt-date">' + (m.done ? 'Completed ' + m.date : 'Planned ' + m.date) + '</div></div></div>';
+        '<div class="mt-date">' + (m.done ? 'Completed ' + (m.completedDate || m.date) : 'Planned ' + m.date) + '</div></div></div>';
     }).join('') + '</div>';
   }
 
@@ -588,12 +590,25 @@ function pgProjectDetail(pid, tab) {
       var sorted = sortedMilestones();
       var rows = sorted.map(function(m) {
         var idx = p.milestones.indexOf(m);
-        return '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #f0ede8">' +
+        var logKey = p.id + '|' + m.id;
+        var logOpenNow = !!milestoneLogOpen[logKey];
+        var dateLine = m.done ? ('Completed ' + (m.completedDate || m.date) + (m.completedDate && m.completedDate !== m.date ? ' (target ' + m.date + ')' : '')) : ('Target ' + m.date);
+        var logBlock = '';
+        if (logOpenNow) {
+          var entries = (m.log && m.log.length) ? m.log.slice().reverse().map(function(e){
+            return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+          }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+          logBlock = '<div class="raid-log">' + entries + '</div>';
+        }
+        return '<div style="padding:12px 0;border-bottom:1px solid #f0ede8">' +
+          '<div style="display:flex;align-items:center;gap:12px">' +
           '<i class="ti ' + (m.done ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:22px;color:' + (m.done ? '#1D9E75' : '#ccc') + ';' + (editable ? 'cursor:pointer' : '') + '"' +
           (editable ? ' onclick="toggleMS(\'' + p.id + '\',' + idx + ')"' : '') + '></i>' +
           '<div style="flex:1"><div style="font-size:13px' + (m.done ? ';text-decoration:line-through;color:#999' : '') + '">' + m.name + '</div></div>' +
-          '<div class="text-muted" style="white-space:nowrap">' + m.date + '</div>' +
-          (editable ? '<button class="btn btn-sm btn-danger" onclick="deleteMS(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') + '</div>';
+          '<div class="text-muted" style="white-space:nowrap">' + dateLine + '</div>' +
+          '<button class="btn btn-sm" title="Change log" onclick="toggleMSLog(\'' + p.id + '\',' + idx + ')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+          (editable ? '<button class="btn btn-sm" onclick="openEditMilestone(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteMS(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
+          '</div>' + logBlock + '</div>';
       }).join('');
       return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddMilestone(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add milestone</button>' : '') +
         (sorted.length ? rows : '<div class="empty-state" style="padding:30px"><i class="ti ti-circle-dotted"></i><p>No milestones yet</p></div>');
@@ -655,12 +670,31 @@ function pgProjectDetail(pid, tab) {
           }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
           logRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
         }
+        var comments = task.comments || [];
+        var cKey = p.id + '|' + task.id;
+        var cOpenNow = !!taskCommentsOpen[cKey];
+        var commentsRow = '';
+        if (cOpenNow) {
+          var commentEntries = comments.length ? comments.slice().reverse().map(function(c) {
+            var mine = c.author === actorName();
+            return '<div class="comment-item">' +
+              '<div class="comment-meta"><strong>' + c.author + '</strong> <span class="text-muted">' + c.date + '</span></div>' +
+              '<div class="comment-text">' + c.text + '</div>' +
+              ((editable || mine) ? '<div class="comment-actions"><button class="btn btn-sm" onclick="openEditComment(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteComment(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')"><i class="ti ti-trash"></i></button></div>' : '') +
+              '</div>';
+          }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No comments yet</div>';
+          commentsRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+            commentEntries +
+            '<div class="comment-add-row"><textarea id="cmt-input-' + task.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addComment(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
+            '</div></td></tr>';
+        }
         return '<tr><td style="white-space:normal;word-break:break-word">' + task.title + '</td><td>' + task.assignee + '</td><td>' + bdg(task.status) + '</td><td class="text-muted">' + task.due + '</td>' +
           '<td><div style="display:flex;gap:4px">' +
+          '<button class="btn btn-sm" title="Comments" onclick="toggleTaskComments(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (comments.length ? ' ' + comments.length : '') + '</button>' +
           '<button class="btn btn-sm" title="Change log" onclick="toggleTaskLog(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
           (editable ? '<button class="btn btn-sm" onclick="openEditTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
           (myTask && task.status !== 'Done' ? '<button class="btn btn-sm btn-success" onclick="completeMyTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-check"></i> Done</button>' : '') +
-          '</div></td></tr>' + logRow;
+          '</div></td></tr>' + logRow + commentsRow;
       }).join('');
 
       var header = '<tr><th>Task</th>' +
@@ -784,9 +818,27 @@ function pgProjectDetail(pid, tab) {
     '<div id="ptab-content">' + tabC(tab) + '</div>' +
     '</div>';
 
-  window.switchPTab = function(t) { goToProject(pid, t); };
-  window.toggleMS   = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.milestones[idx].done=!pr.milestones[idx].done; document.getElementById('ptab-content').innerHTML=tabC('milestones'); };
+  window.switchPTab = function(t) {
+    tbs.forEach(function(x){ var e = document.getElementById('ptab-' + x); if (e) e.className = 'tab' + (x===t?' active':''); });
+    document.getElementById('ptab-content').innerHTML = tabC(t);
+    var h = '#/project/' + pid + '/' + t;
+    if (location.hash !== h) location.hash = h;
+  };
+  window.toggleMS   = function(pid2,idx){
+    var pr=D.projects.find(function(x){return x.id===pid2;});
+    var m = pr.milestones[idx];
+    if (!m.done) { openCompleteMilestoneModal(pid2, idx); return; }
+    m.done = false; m.completedDate = null;
+    m.log = m.log || []; m.log.push({ date: new Date().toISOString().split('T')[0], actor: actorName(), action: 'Reopened', detail: '' });
+    document.getElementById('ptab-content').innerHTML=tabC('milestones');
+  };
   window.deleteMS   = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.milestones.splice(idx,1); document.getElementById('ptab-content').innerHTML=tabC('milestones'); };
+  window.toggleMSLog = function(pid2, idx) {
+    var key = pid2 + '|' + p.milestones[idx].id;
+    milestoneLogOpen[key] = !milestoneLogOpen[key];
+    document.getElementById('ptab-content').innerHTML = tabC('milestones');
+  };
+  window.openEditMilestone = function(pid2, idx){ openMilestoneModal(pid2, idx); };
   window.deleteTask = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.tasks.splice(idx,1); document.getElementById('ptab-content').innerHTML=tabC('tasks'); };
   window.deleteRaid = function(pid2,type,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.raid[type].splice(idx,1); document.getElementById('ptab-content').innerHTML=tabC('raid'); };
   window.completeMyTask = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); var tk=pr.tasks[idx]; var old=tk.status; tk.status='Done'; tk.log=tk.log||[]; tk.log.push({date:new Date().toISOString().split('T')[0],actor:actorName(),action:'Updated',detail:'Status: "'+old+'" → "Done"'}); document.getElementById('ptab-content').innerHTML=tabC('tasks'); showToast('Task marked complete'); };
@@ -831,6 +883,41 @@ function pgProjectDetail(pid, tab) {
     var key = pid2 + '|' + taskId;
     taskLogOpen[key] = !taskLogOpen[key];
     document.getElementById('ptab-content').innerHTML = tabC('tasks');
+  };
+  window.toggleTaskComments = function(pid2, taskId) {
+    var key = pid2 + '|' + taskId;
+    taskCommentsOpen[key] = !taskCommentsOpen[key];
+    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+  };
+  window.addComment = function(pid2, taskId) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var tk = pr.tasks.find(function(x){ return x.id === taskId; });
+    var el = document.getElementById('cmt-input-' + taskId);
+    var text = el ? el.value.trim() : '';
+    if (!text) { showToast('Comment cannot be empty'); return; }
+    tk.comments = tk.comments || [];
+    tk.comments.push({ id:'c'+Date.now(), text:text, author:actorName(), date:new Date().toISOString().split('T')[0] });
+    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+    showToast('Comment added');
+  };
+  window.openEditComment = function(pid2, taskId, cid) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var tk = pr.tasks.find(function(x){ return x.id === taskId; });
+    var c = tk.comments.find(function(x){ return x.id === cid; });
+    var text = prompt('Edit comment:', c.text);
+    if (text == null) return;
+    text = text.trim();
+    if (!text) { showToast('Comment cannot be empty'); return; }
+    c.text = text;
+    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+    showToast('Comment updated');
+  };
+  window.deleteComment = function(pid2, taskId, cid) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var tk = pr.tasks.find(function(x){ return x.id === taskId; });
+    tk.comments = tk.comments.filter(function(x){ return x.id !== cid; });
+    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+    showToast('Comment deleted');
   };
   window.toggleRaidLog = function(pid2, type, idx) {
     var key = pid2 + '|' + type + '|' + idx;
@@ -886,18 +973,62 @@ function markComplete(pid) {
 
 // ── Milestone / Task / RAID modals ─────────────────────────────────────────────
 
-function openMilestoneModal(pid) {
+function openMilestoneModal(pid, idx) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  showModal('<div class="modal-title">Add milestone <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div class="form-group"><div class="form-label">Milestone name *</div><input type="text" id="ms-name" placeholder="e.g. Design approved"></div>' +
-    '<div class="form-group"><div class="form-label">Target date *</div><input type="date" id="ms-date"></div>' +
+  var isEdit = idx != null;
+  var m = isEdit ? p.milestones[idx] : null;
+  showModal('<div class="modal-title">' + (isEdit?'Edit milestone':'Add milestone') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Milestone name *</div><input type="text" id="ms-name" value="' + (m?m.name:'') + '" placeholder="e.g. Design approved"></div>' +
+    '<div class="form-group"><div class="form-label">Target date *</div><input type="date" id="ms-date" value="' + (m?m.date:'') + '"></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
-    '<button class="btn btn-primary" id="ms-save"><i class="ti ti-check"></i> Add milestone</button></div>');
+    '<button class="btn btn-primary" id="ms-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add milestone') + '</button></div>');
   document.getElementById('ms-save').onclick = function() {
     var name = document.getElementById('ms-name').value.trim(); var date = document.getElementById('ms-date').value;
     if (!name||!date){ showToast('Fill in name and date'); return; }
-    p.milestones.push({name:name,date:date,done:false});
-    showToast('Milestone added'); closeModal(); if (window.switchPTab) window.switchPTab('milestones');
+    if (isEdit) {
+      var changes = [];
+      if (m.name !== name) changes.push('Name: "' + m.name + '" → "' + name + '"');
+      if (m.date !== date) changes.push('Target date: "' + m.date + '" → "' + date + '"');
+      m.name = name; m.date = date;
+      m.log = m.log || [];
+      if (changes.length) m.log.push({ date: new Date().toISOString().split('T')[0], actor: actorName(), action: 'Updated', detail: changes.join('; ') });
+      showToast('Milestone updated');
+    } else {
+      p.milestones.push({ id:'ms'+Date.now(), name:name, date:date, done:false, log:[{date:new Date().toISOString().split('T')[0],actor:actorName(),action:'Created',detail:''}] });
+      showToast('Milestone added');
+    }
+    closeModal(); if (window.switchPTab) window.switchPTab('milestones');
+  };
+}
+
+function openCompleteMilestoneModal(pid, idx) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var m = p.milestones[idx];
+  showModal('<div class="modal-title">Mark "' + m.name + '" complete <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Completion date</div>' +
+      '<div class="radio-row">' +
+        '<label><input type="radio" name="cm-choice" value="target" checked onchange="toggleCompleteDateRow()"> Target date (' + m.date + ')</label>' +
+        '<label><input type="radio" name="cm-choice" value="custom" onchange="toggleCompleteDateRow()"> Different date</label>' +
+      '</div>' +
+      '<div id="cm-custom-row" style="display:none"><input type="date" id="cm-date" value="' + m.date + '"></div>' +
+    '</div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="cm-save"><i class="ti ti-check"></i> Mark complete</button></div>');
+
+  window.toggleCompleteDateRow = function() {
+    var custom = document.querySelector('input[name="cm-choice"]:checked').value === 'custom';
+    document.getElementById('cm-custom-row').style.display = custom ? 'block' : 'none';
+  };
+
+  document.getElementById('cm-save').onclick = function() {
+    var choice = document.querySelector('input[name="cm-choice"]:checked').value;
+    var completedDate = choice === 'custom' ? document.getElementById('cm-date').value : m.date;
+    if (!completedDate) { showToast('Enter a completion date'); return; }
+    m.done = true; m.completedDate = completedDate;
+    m.log = m.log || [];
+    m.log.push({ date: new Date().toISOString().split('T')[0], actor: actorName(), action: 'Completed', detail: 'Completed date: ' + completedDate + (completedDate !== m.date ? ' (target was ' + m.date + ')' : '') });
+    showToast('"' + m.name + '" marked complete');
+    closeModal(); if (window.switchPTab) window.switchPTab('milestones');
   };
 }
 
@@ -931,7 +1062,7 @@ function openTaskModal(pid, idx) {
       task.log = task.log || [];
       if (changes.length) task.log.push({ date: new Date().toISOString().split('T')[0], actor: actorName(), action: 'Updated', detail: changes.join('; ') });
     } else {
-      var t2 = {id:'t'+Date.now(),title:newVals.title,assignee:newVals.assignee,status:newVals.status,due:newVals.due,log:[{date:new Date().toISOString().split('T')[0],actor:actorName(),action:'Created',detail:''}]};
+      var t2 = {id:'t'+Date.now(),title:newVals.title,assignee:newVals.assignee,status:newVals.status,due:newVals.due,log:[{date:new Date().toISOString().split('T')[0],actor:actorName(),action:'Created',detail:''}],comments:[]};
       p.tasks.push(t2);
     }
     showToast(idx!=null?'Task updated':'Task added'); closeModal(); if (window.switchPTab) window.switchPTab('tasks');
