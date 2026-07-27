@@ -743,13 +743,13 @@ function pgProjectDetail(pid, tab) {
             items.map(function(item) {
               var idx = idxOf(item);
               return '<div class="raid-grid-risks raid-grid-row">' +
-                '<div style="font-size:13px">' + (item.probability != null ? item.probability + '%' : '—') + '</div>' +
-                '<div>' + (item.impact ? bdg(item.impact) : '—') + '</div>' +
-                '<div><div style="font-size:13px;word-break:break-word;white-space:normal;margin-bottom:4px">' + item.desc + '</div>' +
-                '<div style="font-size:12px;color:#555;word-break:break-word;white-space:normal;background:#f5f5f3;padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.mitigation||'—') + '</div></div>' +
-                '<div style="font-size:12px;color:#777;word-break:break-word">' + item.owner + '</div>' +
-                '<div>' + (item.status ? bdg(item.status) : '—') + '</div>' +
-                '<div>' + actionBtns(type, idx, item) + '</div></div>' +
+                '<div style="font-size:13px;display:flex;align-items:center;height:100%">' + (item.probability != null ? item.probability + '%' : '—') + '</div>' +
+                '<div style="display:flex;align-items:center;height:100%">' + (item.impact ? bdg(item.impact) : '—') + '</div>' +
+                '<div style="display:flex;align-items:center;height:100%"><div><div style="font-size:13px;word-break:break-word;white-space:normal;margin-bottom:4px">' + item.desc + '</div>' +
+                '<div style="font-size:12px;color:#555;word-break:break-word;white-space:normal;background:#f5f5f3;padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.mitigation||'—') + '</div></div></div>' +
+                '<div style="font-size:12px;color:#777;word-break:break-word;display:flex;align-items:center;height:100%">' + item.owner + '</div>' +
+                '<div style="display:flex;align-items:center;height:100%">' + (item.status ? bdg(item.status) : '—') + '</div>' +
+                '<div style="display:flex;align-items:center;height:100%">' + actionBtns(type, idx, item) + '</div></div>' +
                 logBlock(type, idx, item);
             }).join('');
         } else if (type === 'issues') {
@@ -757,9 +757,11 @@ function pgProjectDetail(pid, tab) {
             items.map(function(item) {
               var idx = idxOf(item);
               return '<div class="raid-grid-issues raid-grid-row">' +
-                '<div>' + bdg(item.severity) + '</div><div style="font-size:13px;word-break:break-word;white-space:normal">' + item.desc + '</div>' +
-                '<div style="font-size:12px;color:#777">' + item.owner + '</div><div>' + bdg(item.status) + '</div>' +
-                '<div>' + actionBtns(type, idx, item) + '</div></div>' +
+                '<div style="display:flex;align-items:center;height:100%">' + bdg(item.severity) + '</div>' +
+                '<div style="font-size:13px;word-break:break-word;white-space:normal;display:flex;align-items:center;height:100%">' + item.desc + '</div>' +
+                '<div style="font-size:12px;color:#777;display:flex;align-items:center;height:100%">' + item.owner + '</div>' +
+                '<div style="display:flex;align-items:center;height:100%">' + bdg(item.status) + '</div>' +
+                '<div style="display:flex;align-items:center;height:100%">' + actionBtns(type, idx, item) + '</div></div>' +
                 logBlock(type, idx, item);
             }).join('');
         } else {
