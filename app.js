@@ -34,11 +34,19 @@ function pushLog(item, action, detail) {
 
 var taskViewState = {};
 function getTaskState(pid) {
-  if (!taskViewState[pid]) taskViewState[pid] = { sort:'due', dir:'asc', search:'', fAssignee:'', fStatus:'' };
+  if (!taskViewState[pid]) taskViewState[pid] = { sort:'due', dir:'asc', search:'', fAssignee:[], fStatus:[], openFilter:null };
   return taskViewState[pid];
 }
 
 var raidLogOpen = {};
+var taskLogOpen = {};
+var raidSearchState = {};
+var docFolderState = {};
+
+function reopenProjectTab(pid, tab) {
+  openProject(pid);
+  if (tab && tab !== 'overview') setTimeout(function(){ if (window.switchPTab) window.switchPTab(tab); }, 50);
+}
 
 function fmtCost(n) {
   if (!n && n !== 0) return '—';
@@ -591,16 +599,31 @@ function openProject(pid) {
 
       var assigneeChoices = [];
       p.tasks.forEach(function(tk){ if (assigneeChoices.indexOf(tk.assignee) < 0) assigneeChoices.push(tk.assignee); });
-      var filterBar = '<div class="task-filter-bar">' +
-        '<input type="text" id="task-search" placeholder="Search task titles…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onTaskSearch(\'' + p.id + '\',this.value)">' +
-        '<select onchange="onTaskFilter(\'' + p.id + '\',\'fAssignee\',this.value)"><option value="">All assignees</option>' + assigneeChoices.map(function(a){ return '<option' + (st.fAssignee===a?' selected':'') + '>' + a + '</option>'; }).join('') + '</select>' +
-        '<select onchange="onTaskFilter(\'' + p.id + '\',\'fStatus\',this.value)"><option value="">All statuses</option>' + ['To Do','In Progress','Done'].map(function(s){ return '<option' + (st.fStatus===s?' selected':'') + '>' + s + '</option>'; }).join('') + '</select>' +
+      var statusChoices = ['To Do','In Progress','Done'];
+
+      function filterPanel(col, choices, selected) {
+        if (st.openFilter !== col) return '';
+        return '<div class="th-filter-panel" onclick="event.stopPropagation()">' +
+          choices.map(function(c){
+            var esc = c.replace(/'/g,"\\'");
+            return '<label class="th-filter-opt"><input type="checkbox"' + (selected.indexOf(c)>=0?' checked':'') + ' onchange="toggleTaskFilterValue(\'' + p.id + '\',\'' + col + '\',\'' + esc + '\')"> ' + c + '</label>';
+          }).join('') +
+          '<div class="th-filter-actions"><button class="btn btn-sm" onclick="clearTaskFilter(\'' + p.id + '\',\'' + col + '\')">Clear</button><button class="btn btn-sm btn-primary" onclick="closeTaskFilterPanel(\'' + p.id + '\')">Done</button></div>' +
+          '</div>';
+      }
+
+      function filterIcon(col, active) {
+        return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleTaskFilterPanel(\'' + p.id + '\',\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
+      }
+
+      var searchBar = '<div class="task-filter-bar">' +
+        '<input type="text" id="task-search" placeholder="Search tasks…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onTaskSearch(\'' + p.id + '\',this.value)">' +
         '</div>';
 
       var list = p.tasks.slice();
       if (st.search) { var q = st.search.toLowerCase(); list = list.filter(function(tk){ return tk.title.toLowerCase().indexOf(q) >= 0; }); }
-      if (st.fAssignee) list = list.filter(function(tk){ return tk.assignee === st.fAssignee; });
-      if (st.fStatus) list = list.filter(function(tk){ return tk.status === st.fStatus; });
+      if (st.fAssignee.length) list = list.filter(function(tk){ return st.fAssignee.indexOf(tk.assignee) >= 0; });
+      if (st.fStatus.length) list = list.filter(function(tk){ return st.fStatus.indexOf(tk.status) >= 0; });
       if (st.sort) {
         list.sort(function(a,b){
           var av = (a[st.sort]||'').toString(), bv = (b[st.sort]||'').toString();
@@ -613,25 +636,38 @@ function openProject(pid) {
       var trows = list.map(function(task) {
         var idx = p.tasks.indexOf(task);
         var myTask = isResource && task.assignee === currentUser();
+        var logKey = p.id + '|' + task.id;
+        var logOpenNow = !!taskLogOpen[logKey];
+        var logRow = '';
+        if (logOpenNow) {
+          var entries = (task.log && task.log.length) ? task.log.slice().reverse().map(function(e){
+            return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+          }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+          logRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+        }
         return '<tr><td style="white-space:normal;word-break:break-word">' + task.title + '</td><td>' + task.assignee + '</td><td>' + bdg(task.status) + '</td><td class="text-muted">' + task.due + '</td>' +
           '<td><div style="display:flex;gap:4px">' +
+          '<button class="btn btn-sm" title="Change log" onclick="toggleTaskLog(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
           (editable ? '<button class="btn btn-sm" onclick="openEditTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
           (myTask && task.status !== 'Done' ? '<button class="btn btn-sm btn-success" onclick="completeMyTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-check"></i> Done</button>' : '') +
-          '</div></td></tr>';
+          '</div></td></tr>' + logRow;
       }).join('');
 
       var header = '<tr><th>Task</th>' +
-        '<th class="sortable-th" onclick="setTaskSort(\'' + p.id + '\',\'assignee\')">Assignee ' + arrow('assignee') + '</th>' +
-        '<th class="sortable-th" onclick="setTaskSort(\'' + p.id + '\',\'status\')">Status ' + arrow('status') + '</th>' +
+        '<th class="sortable-th" style="position:relative"><span onclick="setTaskSort(\'' + p.id + '\',\'assignee\')">Assignee ' + arrow('assignee') + '</span>' + filterIcon('assignee', st.fAssignee.length>0) + filterPanel('assignee', assigneeChoices, st.fAssignee) + '</th>' +
+        '<th class="sortable-th" style="position:relative"><span onclick="setTaskSort(\'' + p.id + '\',\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.fStatus.length>0) + filterPanel('status', statusChoices, st.fStatus) + '</th>' +
         '<th class="sortable-th" onclick="setTaskSort(\'' + p.id + '\',\'due\')">Due ' + arrow('due') + '</th><th></th></tr>';
 
       return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddTask(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add task</button>' : '') +
-        filterBar +
+        searchBar +
         (p.tasks.length
           ? (list.length ? '<table><thead>' + header + '</thead><tbody>' + trows + '</tbody></table>' : '<div class="empty-state" style="padding:30px"><i class="ti ti-search"></i><p>No tasks match your filters</p></div>')
           : '<div class="empty-state" style="padding:30px"><i class="ti ti-check"></i><p>No tasks yet</p></div>');
     }
     if (t === 'raid') {
+      var raidQ = (raidSearchState[p.id] || '').toLowerCase();
+      function matchesSearch(item) { return !raidQ || (item.desc||'').toLowerCase().indexOf(raidQ) >= 0; }
+
       function actionBtns(type, idx, item) {
         var key = p.id + '|' + type + '|' + idx;
         var isOpen = !!raidLogOpen[key];
@@ -648,15 +684,21 @@ function openProject(pid) {
         }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
         return '<div class="raid-log">' + entries + '</div>';
       }
-      function rSection(label, items, type) {
+      function rSection(label, allItems, type) {
+        var items = allItems.filter(matchesSearch);
         var addBtn = editable ? '<button class="btn btn-sm btn-primary" onclick="openAddRaid(\'' + p.id + '\',\'' + type + '\')"><i class="ti ti-plus"></i> Add</button>' : '';
         var header = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><div class="bold">' + label + '</div>' + addBtn + '</div>';
-        if (!items.length) return header + '<div class="text-muted" style="font-size:12px;margin-bottom:12px">None logged</div><div class="divider"></div>';
+        if (!items.length) {
+          var msg = allItems.length ? 'No matches in this section' : 'None logged';
+          return header + '<div class="text-muted" style="font-size:12px;margin-bottom:12px">' + msg + '</div><div class="divider"></div>';
+        }
         var body;
+        function idxOf(item) { return allItems.indexOf(item); }
         if (type === 'risks') {
-          body = '<div style="display:grid;grid-template-columns:80px 70px 1fr 110px 90px 76px;gap:10px;padding:6px 0;border-bottom:1px solid #e8e8e5;font-size:11px;font-weight:600;color:#777"><div>Probability</div><div>Impact</div><div>Description &amp; Mitigation</div><div>Owner</div><div>Status</div><div></div></div>' +
-            items.map(function(item, idx) {
-              return '<div style="display:grid;grid-template-columns:80px 70px 1fr 110px 90px 76px;gap:10px;padding:10px 0;border-bottom:1px solid #f0ede8;align-items:start">' +
+          body = '<div class="raid-grid-risks raid-grid-hdr"><div>Probability</div><div>Impact</div><div>Description &amp; Mitigation</div><div>Owner</div><div>Status</div><div></div></div>' +
+            items.map(function(item) {
+              var idx = idxOf(item);
+              return '<div class="raid-grid-risks raid-grid-row">' +
                 '<div style="font-size:13px">' + (item.probability != null ? item.probability + '%' : '—') + '</div>' +
                 '<div>' + (item.impact ? bdg(item.impact) : '—') + '</div>' +
                 '<div><div style="font-size:13px;word-break:break-word;white-space:normal;margin-bottom:4px">' + item.desc + '</div>' +
@@ -667,16 +709,18 @@ function openProject(pid) {
                 logBlock(type, idx, item);
             }).join('');
         } else if (type === 'issues') {
-          body = '<div style="display:grid;grid-template-columns:90px 1fr 110px 90px 76px;gap:10px;padding:6px 0;border-bottom:1px solid #e8e8e5;font-size:11px;font-weight:600;color:#777"><div>Severity</div><div>Description</div><div>Owner</div><div>Status</div><div></div></div>' +
-            items.map(function(item, idx) {
-              return '<div style="display:grid;grid-template-columns:90px 1fr 110px 90px 76px;gap:10px;padding:10px 0;border-bottom:1px solid #f0ede8;align-items:start">' +
+          body = '<div class="raid-grid-issues raid-grid-hdr"><div>Severity</div><div>Description</div><div>Owner</div><div>Status</div><div></div></div>' +
+            items.map(function(item) {
+              var idx = idxOf(item);
+              return '<div class="raid-grid-issues raid-grid-row">' +
                 '<div>' + bdg(item.severity) + '</div><div style="font-size:13px;word-break:break-word;white-space:normal">' + item.desc + '</div>' +
                 '<div style="font-size:12px;color:#777">' + item.owner + '</div><div>' + bdg(item.status) + '</div>' +
                 '<div>' + actionBtns(type, idx, item) + '</div></div>' +
                 logBlock(type, idx, item);
             }).join('');
         } else {
-          body = items.map(function(item, idx) {
+          body = items.map(function(item) {
+            var idx = idxOf(item);
             return '<div style="font-size:13px;padding:10px 0;border-bottom:1px solid #f0ede8;display:flex;justify-content:space-between;align-items:center;gap:8px;word-break:break-word">' +
               '<div style="flex:1">' + item.desc + (item.owner ? ' <span class="text-muted">— ' + item.owner + '</span>' : '') + (item.status ? ' ' + bdg(item.status) : '') + '</div>' +
               actionBtns(type, idx, item) + '</div>' +
@@ -685,24 +729,34 @@ function openProject(pid) {
         }
         return header + body + '<div class="divider"></div>';
       }
-      return rSection('Risks', p.raid.risks, 'risks') + rSection('Assumptions', p.raid.assumptions, 'assumptions') + rSection('Issues', p.raid.issues, 'issues') + rSection('Dependencies', p.raid.dependencies, 'dependencies');
+      var raidSearchBar = '<div class="task-filter-bar"><input type="text" id="raid-search" placeholder="Search RAID log…" value="' + (raidSearchState[p.id]||'').replace(/"/g,'&quot;') + '" oninput="onRaidSearch(\'' + p.id + '\',this.value)"></div>';
+      return raidSearchBar + rSection('Risks', p.raid.risks, 'risks') + rSection('Assumptions', p.raid.assumptions, 'assumptions') + rSection('Issues', p.raid.issues, 'issues') + rSection('Dependencies', p.raid.dependencies, 'dependencies');
     }
     if (t === 'documentation') {
       var docs = p.documents || [];
+      p.docFolders = (p.docFolders && p.docFolders.length) ? p.docFolders : ['General'];
+      var activeFolder = docFolderState[p.id] || 'All';
       var missing = DOC_TYPES.filter(function(dt){ return !docs.some(function(d){ return d.category === dt; }); });
       var guidance = missing.length
         ? '<div class="info-banner info-blue"><i class="ti ti-info-circle"></i><div><strong>Still needed:</strong> ' + missing.join(', ') + '. These will disappear from this list once uploaded or linked.</div></div>'
         : '';
-      var rows = docs.map(function(d, idx) {
+      var folderChips = ['All'].concat(p.docFolders).map(function(f) {
+        var esc = f.replace(/'/g,"\\'");
+        return '<button class="btn btn-sm' + (activeFolder===f?' btn-primary':'') + '" onclick="setDocFolder(\'' + p.id + '\',\'' + esc + '\')">' + (f==='All' ? '<i class="ti ti-folders"></i> All' : '<i class="ti ti-folder"></i> ' + f) + '</button>';
+      }).join('') + (editable ? '<button class="btn btn-sm" onclick="newDocFolder(\'' + p.id + '\')"><i class="ti ti-folder-plus"></i> New folder</button>' : '');
+      var shown = activeFolder === 'All' ? docs : docs.filter(function(d){ return (d.folder||'General') === activeFolder; });
+      var rows = shown.map(function(d) {
+        var idx = docs.indexOf(d);
         return '<div class="doc-row"><i class="ti ' + (d.sourceType === 'link' ? 'ti-link' : 'ti-file-text') + ' doc-icon"></i>' +
-          '<div class="doc-info"><div class="doc-name">' + d.name + '</div><div class="text-muted">' + d.category + ' • added ' + d.dateAdded + '</div></div>' +
+          '<div class="doc-info"><div class="doc-name">' + d.name + '</div><div class="text-muted">' + d.category + ' • ' + (d.folder||'General') + ' • added ' + d.dateAdded + '</div></div>' +
           '<button class="btn btn-sm" onclick="openDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-external-link"></i> Open</button>' +
-          (editable ? '<button class="btn btn-sm" onclick="openEditDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
+          (editable ? '<button class="btn btn-sm" title="Move to folder" onclick="openMoveDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-folder-symlink"></i></button><button class="btn btn-sm" onclick="openEditDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
           '</div>';
       }).join('');
       return guidance +
+        '<div class="doc-folder-bar">' + folderChips + '</div>' +
         (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddDoc(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add document</button>' : '') +
-        (docs.length ? rows : '<div class="empty-state" style="padding:30px"><i class="ti ti-files"></i><p>No documents added yet</p></div>');
+        (shown.length ? rows : '<div class="empty-state" style="padding:30px"><i class="ti ti-files"></i><p>No documents in this folder</p></div>');
     }
     return '';
   }
@@ -722,7 +776,7 @@ function openProject(pid) {
   window.deleteMS   = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.milestones.splice(idx,1); document.getElementById('ptab-content').innerHTML=tabC('milestones'); };
   window.deleteTask = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.tasks.splice(idx,1); document.getElementById('ptab-content').innerHTML=tabC('tasks'); };
   window.deleteRaid = function(pid2,type,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.raid[type].splice(idx,1); document.getElementById('ptab-content').innerHTML=tabC('raid'); };
-  window.completeMyTask = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.tasks[idx].status='Done'; document.getElementById('ptab-content').innerHTML=tabC('tasks'); showToast('Task marked complete'); };
+  window.completeMyTask = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); var tk=pr.tasks[idx]; var old=tk.status; tk.status='Done'; tk.log=tk.log||[]; tk.log.push({date:new Date().toISOString().split('T')[0],actor:actorName(),action:'Updated',detail:'Status: "'+old+'" → "Done"'}); document.getElementById('ptab-content').innerHTML=tabC('tasks'); showToast('Task marked complete'); };
   window.openAddMilestone = function(pid2){ openMilestoneModal(pid2); };
   window.openAddTask      = function(pid2){ openTaskModal(pid2, null); };
   window.openEditTask     = function(pid2,idx){ openTaskModal(pid2, idx); };
@@ -739,8 +793,30 @@ function openProject(pid) {
     var el = document.getElementById('task-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
-  window.onTaskFilter = function(pid2, field, val) {
-    getTaskState(pid2)[field] = val;
+  window.toggleTaskFilterPanel = function(pid2, col) {
+    var s = getTaskState(pid2);
+    s.openFilter = s.openFilter === col ? null : col;
+    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+  };
+  window.closeTaskFilterPanel = function(pid2) {
+    getTaskState(pid2).openFilter = null;
+    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+  };
+  window.toggleTaskFilterValue = function(pid2, col, val) {
+    var s = getTaskState(pid2);
+    var arr = col === 'assignee' ? s.fAssignee : s.fStatus;
+    var i = arr.indexOf(val);
+    if (i >= 0) arr.splice(i,1); else arr.push(val);
+    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+  };
+  window.clearTaskFilter = function(pid2, col) {
+    var s = getTaskState(pid2);
+    if (col === 'assignee') s.fAssignee = []; else s.fStatus = [];
+    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+  };
+  window.toggleTaskLog = function(pid2, taskId) {
+    var key = pid2 + '|' + taskId;
+    taskLogOpen[key] = !taskLogOpen[key];
     document.getElementById('ptab-content').innerHTML = tabC('tasks');
   };
   window.toggleRaidLog = function(pid2, type, idx) {
@@ -748,8 +824,31 @@ function openProject(pid) {
     raidLogOpen[key] = !raidLogOpen[key];
     document.getElementById('ptab-content').innerHTML = tabC('raid');
   };
+  window.onRaidSearch = function(pid2, val) {
+    raidSearchState[pid2] = val;
+    document.getElementById('ptab-content').innerHTML = tabC('raid');
+    var el = document.getElementById('raid-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
   window.openAddDoc  = function(pid2){ openDocModal(pid2, null); };
   window.openEditDoc = function(pid2, idx){ openDocModal(pid2, idx); };
+  window.setDocFolder = function(pid2, folder) {
+    docFolderState[pid2] = folder;
+    document.getElementById('ptab-content').innerHTML = tabC('documentation');
+  };
+  window.newDocFolder = function(pid2) {
+    var name = prompt('New folder name:');
+    if (!name) return;
+    name = name.trim();
+    if (!name) return;
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    pr.docFolders = pr.docFolders && pr.docFolders.length ? pr.docFolders : ['General'];
+    if (pr.docFolders.indexOf(name) < 0) pr.docFolders.push(name);
+    docFolderState[pid2] = name;
+    document.getElementById('ptab-content').innerHTML = tabC('documentation');
+    showToast('Folder created');
+  };
+  window.openMoveDoc = function(pid2, idx) { openMoveDocModal(pid2, idx); };
   window.deleteDoc   = function(pid2, idx) {
     var pr = D.projects.find(function(x){ return x.id === pid2; });
     pr.documents.splice(idx, 1);
@@ -776,16 +875,16 @@ function markComplete(pid) {
 
 function openMilestoneModal(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  showModal('<div class="modal-title">Add milestone <button class="btn btn-sm" onclick="openProject(\'' + pid + '\')"><i class="ti ti-x"></i></button></div>' +
+  showModal('<div class="modal-title">Add milestone <button class="btn btn-sm" onclick="reopenProjectTab(\'' + pid + '\',\'milestones\')"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Milestone name *</div><input type="text" id="ms-name" placeholder="e.g. Design approved"></div>' +
     '<div class="form-group"><div class="form-label">Target date *</div><input type="date" id="ms-date"></div>' +
-    '<div class="modal-footer"><button class="btn" onclick="openProject(\'' + pid + '\')">Cancel</button>' +
+    '<div class="modal-footer"><button class="btn" onclick="reopenProjectTab(\'' + pid + '\',\'milestones\')">Cancel</button>' +
     '<button class="btn btn-primary" id="ms-save"><i class="ti ti-check"></i> Add milestone</button></div>');
   document.getElementById('ms-save').onclick = function() {
     var name = document.getElementById('ms-name').value.trim(); var date = document.getElementById('ms-date').value;
     if (!name||!date){ showToast('Fill in name and date'); return; }
     p.milestones.push({name:name,date:date,done:false});
-    showToast('Milestone added'); openProject(pid); setTimeout(function(){ window.switchPTab('milestones'); },50);
+    showToast('Milestone added'); reopenProjectTab(pid, 'milestones');
   };
 }
 
@@ -795,7 +894,7 @@ function openTaskModal(pid, idx) {
   // only project members + all people for admin/pm
   var pool = canEdit(p) ? ALL_PEOPLE.concat(ALL_TEAMS) : p.team;
   var assigneeOpts = pool.map(function(n){ return '<option' + (task && task.assignee===n ? ' selected' : '') + '>' + n + '</option>'; }).join('');
-  showModal('<div class="modal-title">' + (task?'Edit task':'Add task') + ' <button class="btn btn-sm" onclick="openProject(\'' + pid + '\')"><i class="ti ti-x"></i></button></div>' +
+  showModal('<div class="modal-title">' + (task?'Edit task':'Add task') + ' <button class="btn btn-sm" onclick="reopenProjectTab(\'' + pid + '\',\'tasks\')"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Task title *</div><input type="text" id="tm-title" value="' + (task?task.title:'') + '" placeholder="Task name"></div>' +
     '<div class="form-group"><div class="form-label">Assignee</div><select id="tm-assignee">' + assigneeOpts + '</select></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Status</div><select id="tm-status">' +
@@ -803,14 +902,26 @@ function openTaskModal(pid, idx) {
       '<option' + (task&&task.status==='In Progress'?' selected':'') + '>In Progress</option>' +
       '<option' + (task&&task.status==='Done'?' selected':'') + '>Done</option></select></div>' +
     '<div class="form-group"><div class="form-label">Due date</div><input type="date" id="tm-due" value="' + (task?task.due:'') + '"></div></div>' +
-    '<div class="modal-footer"><button class="btn" onclick="openProject(\'' + pid + '\')">Cancel</button>' +
+    '<div class="modal-footer"><button class="btn" onclick="reopenProjectTab(\'' + pid + '\',\'tasks\')">Cancel</button>' +
     '<button class="btn btn-primary" id="tm-save"><i class="ti ti-check"></i> ' + (task?'Save changes':'Add task') + '</button></div>');
   document.getElementById('tm-save').onclick = function() {
     var title = document.getElementById('tm-title').value.trim();
     if (!title){ showToast('Task title required'); return; }
-    var t2 = {id:'t'+Date.now(),title:title,assignee:document.getElementById('tm-assignee').value,status:document.getElementById('tm-status').value,due:document.getElementById('tm-due').value};
-    if (idx!=null) p.tasks[idx]=t2; else p.tasks.push(t2);
-    showToast(idx!=null?'Task updated':'Task added'); openProject(pid); setTimeout(function(){ window.switchPTab('tasks'); },50);
+    var newVals = {title:title,assignee:document.getElementById('tm-assignee').value,status:document.getElementById('tm-status').value,due:document.getElementById('tm-due').value};
+    if (idx!=null) {
+      var fieldLabels = {title:'Title',assignee:'Assignee',status:'Status',due:'Due date'};
+      var changes = [];
+      ['title','assignee','status','due'].forEach(function(f){
+        if (task[f] !== newVals[f]) changes.push(fieldLabels[f] + ': "' + (task[f]||'—') + '" → "' + (newVals[f]||'—') + '"');
+      });
+      task.title = newVals.title; task.assignee = newVals.assignee; task.status = newVals.status; task.due = newVals.due;
+      task.log = task.log || [];
+      if (changes.length) task.log.push({ date: new Date().toISOString().split('T')[0], actor: actorName(), action: 'Updated', detail: changes.join('; ') });
+    } else {
+      var t2 = {id:'t'+Date.now(),title:newVals.title,assignee:newVals.assignee,status:newVals.status,due:newVals.due,log:[{date:new Date().toISOString().split('T')[0],actor:actorName(),action:'Created',detail:''}]};
+      p.tasks.push(t2);
+    }
+    showToast(idx!=null?'Task updated':'Task added'); reopenProjectTab(pid, 'tasks');
   };
 }
 
@@ -836,11 +947,11 @@ function openRaidModal(pid, type, idx) {
     '<div class="form-group"><div class="form-label">Status</div><select id="rd-issuest"><option' + (!item || item.status==='Open'?' selected':'') + '>Open</option><option' + (item && item.status==='Closed'?' selected':'') + '>Closed</option></select></div>';
   if (type === 'dependencies') extra = '<div class="form-group"><div class="form-label">Status</div><select id="rd-depst"><option' + (!item || item.status==='Pending'?' selected':'') + '>Pending</option><option' + (item && item.status==='Active'?' selected':'') + '>Active</option><option' + (item && item.status==='Resolved'?' selected':'') + '>Resolved</option></select></div>';
 
-  showModal('<div class="modal-title">' + (isEdit?'Edit ':'Add ') + label + ' <button class="btn btn-sm" onclick="openProject(\'' + pid + '\')"><i class="ti ti-x"></i></button></div>' +
+  showModal('<div class="modal-title">' + (isEdit?'Edit ':'Add ') + label + ' <button class="btn btn-sm" onclick="reopenProjectTab(\'' + pid + '\',\'raid\')"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Description *</div><textarea id="rd-desc" placeholder="Describe this ' + label.toLowerCase() + '…">' + (item ? item.desc : '') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">Owner</div><select id="rd-owner" onchange="handleOwnerChange(\'' + pid + '\')">' + ownerOpts + '</select></div>' +
     extra +
-    '<div class="modal-footer"><button class="btn" onclick="openProject(\'' + pid + '\')">Cancel</button>' +
+    '<div class="modal-footer"><button class="btn" onclick="reopenProjectTab(\'' + pid + '\',\'raid\')">Cancel</button>' +
     '<button class="btn btn-primary" id="rd-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add ' + label) + '</button></div>', true);
 
   window.handleOwnerChange = function(pid2) {
@@ -889,16 +1000,24 @@ function openRaidModal(pid, type, idx) {
   };
 }
 
+// ── Document modal ─────────────────────────────────────────────────────────────
+
 function openDocModal(pid, idx) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   p.documents = p.documents || [];
+  p.docFolders = (p.docFolders && p.docFolders.length) ? p.docFolders : ['General'];
   var isEdit = idx != null;
   var d = isEdit ? p.documents[idx] : null;
   var catOpts = DOC_TYPES.concat(['Other']).map(function(c){ return '<option' + (d && d.category===c ? ' selected' : '') + '>' + c + '</option>'; }).join('');
   var isLink = d ? d.sourceType === 'link' : true;
+  var defaultFolder = d ? (d.folder||'General') : (docFolderState[pid] && docFolderState[pid] !== 'All' ? docFolderState[pid] : 'General');
+  var folderOpts = p.docFolders.map(function(f){ return '<option' + (defaultFolder===f?' selected':'') + '>' + f + '</option>'; }).join('') + '<option value="__new__">+ New folder…</option>';
 
-  showModal('<div class="modal-title">' + (isEdit?'Edit document':'Add document') + ' <button class="btn btn-sm" onclick="openProject(\'' + pid + '\')"><i class="ti ti-x"></i></button></div>' +
+  showModal('<div class="modal-title">' + (isEdit?'Edit document':'Add document') + ' <button class="btn btn-sm" onclick="reopenProjectTab(\'' + pid + '\',\'documentation\')"><i class="ti ti-x"></i></button></div>' +
+    '<div class="grid-2">' +
     '<div class="form-group"><div class="form-label">Document type</div><select id="dm-cat">' + catOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Folder</div><select id="dm-folder" onchange="handleDocFolderChange(\'' + pid + '\')">' + folderOpts + '</select></div>' +
+    '</div>' +
     '<div class="form-group"><div class="form-label">Name *</div><input type="text" id="dm-name" value="' + (d ? d.name : '') + '" placeholder="e.g. Project Charter v1"></div>' +
     '<div class="form-group"><div class="form-label">Source</div>' +
       '<div class="radio-row">' +
@@ -908,7 +1027,7 @@ function openDocModal(pid, idx) {
       '<div id="dm-link-row"><input type="text" id="dm-url" value="' + (isLink && d ? d.url : '') + '" placeholder="https://…"></div>' +
       '<div id="dm-file-row" style="display:none"><input type="file" id="dm-file"></div>' +
     '</div>' +
-    '<div class="modal-footer"><button class="btn" onclick="openProject(\'' + pid + '\')">Cancel</button>' +
+    '<div class="modal-footer"><button class="btn" onclick="reopenProjectTab(\'' + pid + '\',\'documentation\')">Cancel</button>' +
     '<button class="btn btn-primary" id="dm-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add document') + '</button></div>', true);
 
   window.toggleDocSource = function() {
@@ -922,10 +1041,29 @@ function openDocModal(pid, idx) {
   };
   setTimeout(function(){ if (window.toggleDocSource) window.toggleDocSource(); }, 0);
 
+  window.handleDocFolderChange = function(pid2) {
+    var sel = document.getElementById('dm-folder');
+    if (sel.value === '__new__') {
+      var name = prompt('New folder name:');
+      var pr2 = D.projects.find(function(x){ return x.id === pid2; });
+      if (name && name.trim()) {
+        name = name.trim();
+        pr2.docFolders = pr2.docFolders && pr2.docFolders.length ? pr2.docFolders : ['General'];
+        if (pr2.docFolders.indexOf(name) < 0) pr2.docFolders.push(name);
+        var newOpts = pr2.docFolders.map(function(f){ return '<option' + (f===name?' selected':'') + '>' + f + '</option>'; }).join('') + '<option value="__new__">+ New folder…</option>';
+        sel.innerHTML = newOpts;
+      } else {
+        sel.value = pr2.docFolders[0] || 'General';
+      }
+    }
+  };
+
   document.getElementById('dm-save').onclick = function() {
     var name = document.getElementById('dm-name').value.trim();
     if (!name) { showToast('Document name required'); return; }
     var cat = document.getElementById('dm-cat').value;
+    var folder = document.getElementById('dm-folder').value;
+    if (folder === '__new__') folder = 'General';
     var src = document.querySelector('input[name="dm-src"]:checked').value;
     var url = '';
     if (src === 'link') {
@@ -938,13 +1076,51 @@ function openDocModal(pid, idx) {
       else { showToast('Choose a file to upload'); return; }
     }
     if (isEdit) {
-      d.name = name; d.category = cat; d.sourceType = src; d.url = url;
+      d.name = name; d.category = cat; d.sourceType = src; d.url = url; d.folder = folder;
       showToast('Document updated');
     } else {
-      p.documents.push({ id:'doc'+Date.now(), category:cat, name:name, sourceType:src, url:url, dateAdded:new Date().toISOString().split('T')[0] });
+      p.documents.push({ id:'doc'+Date.now(), category:cat, name:name, sourceType:src, url:url, folder:folder, dateAdded:new Date().toISOString().split('T')[0] });
       showToast('Document added');
     }
-    openProject(pid); setTimeout(function(){ window.switchPTab('documentation'); },50);
+    reopenProjectTab(pid, 'documentation');
+  };
+}
+
+function openMoveDocModal(pid, idx) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var d = p.documents[idx];
+  p.docFolders = (p.docFolders && p.docFolders.length) ? p.docFolders : ['General'];
+  var folderOpts = p.docFolders.map(function(f){ return '<option' + ((d.folder||'General')===f?' selected':'') + '>' + f + '</option>'; }).join('') + '<option value="__new__">+ New folder…</option>';
+
+  showModal('<div class="modal-title">Move "' + d.name + '" <button class="btn btn-sm" onclick="reopenProjectTab(\'' + pid + '\',\'documentation\')"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Move to folder</div><select id="mv-folder" onchange="handleMoveFolderChange(\'' + pid + '\')">' + folderOpts + '</select></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="reopenProjectTab(\'' + pid + '\',\'documentation\')">Cancel</button>' +
+    '<button class="btn btn-primary" id="mv-save"><i class="ti ti-check"></i> Move</button></div>');
+
+  window.handleMoveFolderChange = function(pid2) {
+    var sel = document.getElementById('mv-folder');
+    if (sel.value === '__new__') {
+      var name = prompt('New folder name:');
+      var pr2 = D.projects.find(function(x){ return x.id === pid2; });
+      if (name && name.trim()) {
+        name = name.trim();
+        pr2.docFolders = pr2.docFolders && pr2.docFolders.length ? pr2.docFolders : ['General'];
+        if (pr2.docFolders.indexOf(name) < 0) pr2.docFolders.push(name);
+        var newOpts = pr2.docFolders.map(function(f){ return '<option' + (f===name?' selected':'') + '>' + f + '</option>'; }).join('') + '<option value="__new__">+ New folder…</option>';
+        sel.innerHTML = newOpts;
+      } else {
+        sel.value = pr2.docFolders[0] || 'General';
+      }
+    }
+  };
+
+  document.getElementById('mv-save').onclick = function() {
+    var folder = document.getElementById('mv-folder').value;
+    if (folder === '__new__') folder = 'General';
+    d.folder = folder;
+    docFolderState[pid] = folder;
+    showToast('Document moved to "' + folder + '"');
+    reopenProjectTab(pid, 'documentation');
   };
 }
 

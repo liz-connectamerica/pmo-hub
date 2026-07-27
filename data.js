@@ -29,19 +29,22 @@ var D = {
       milestones:[{name:'Discovery complete',date:'2025-04-30',done:true},{name:'Design approved',date:'2025-05-31',done:true},{name:'Alpha build',date:'2025-07-31',done:false},{name:'UAT',date:'2025-09-01',done:false},{name:'Go-live',date:'2025-09-30',done:false}],
       tasks:[{id:'t1',title:'API integration spec',assignee:'Mia Nguyen',status:'Done',due:'2025-05-20'},{id:'t2',title:'DB schema design',assignee:'Jordan Lee',status:'Done',due:'2025-05-25'},{id:'t3',title:'Backend endpoints',assignee:'Jordan Lee',status:'In Progress',due:'2025-07-01'},{id:'t4',title:'Frontend build',assignee:'Mia Nguyen',status:'To Do',due:'2025-08-01'},{id:'t5',title:'Testing suite',assignee:'Alex Turner',status:'To Do',due:'2025-09-01'}],
       raid:{risks:[{id:'ri1',desc:'Vendor API delays could push delivery',probability:60,impact:'High',status:'Monitoring',owner:'Alex Turner',mitigation:'Weekly check-ins with vendor; escalation path defined if slip exceeds 2 weeks',log:[{date:'2025-04-15',actor:'Alex Turner',action:'Created',detail:''}]}],assumptions:[{id:'a1',desc:'Warehouse team available for UAT in Sept',owner:'Mia Nguyen',log:[{date:'2025-04-15',actor:'Mia Nguyen',action:'Created',detail:''}]}],issues:[{id:'i1',desc:'Dev environment config mismatch',severity:'Medium',owner:'Jordan Lee',status:'Open',log:[{date:'2025-05-02',actor:'Jordan Lee',action:'Created',detail:''}]}],dependencies:[{id:'d1',desc:'Salesforce integration requires IT approval',owner:'Alex Turner',status:'Pending',log:[{date:'2025-04-20',actor:'Alex Turner',action:'Created',detail:''}]}]},
-      documents:[{id:'doc1',category:'Project Charter',name:'Inventory Mgmt Project Charter',sourceType:'link',url:'https://example.sharepoint.com/charter',dateAdded:'2025-04-05'}]
+      documents:[{id:'doc1',category:'Project Charter',name:'Inventory Mgmt Project Charter',sourceType:'link',url:'https://example.sharepoint.com/charter',folder:'Governance',dateAdded:'2025-04-05'}],
+      docFolders:['General','Governance']
     },
     { id:'p2', name:'Customer Portal Redesign', pm:'Mia Nguyen', sponsor:'Robin Chen', category:'Services', businessUnit:'Customer Experience', team:['Mia Nguyen','Sam Park'], status:'At Risk', phase:'Design', progress:20, start:'2025-06-01', end:'2025-11-30', value:'Customer Experience', priority:'High', description:'Full redesign of the customer self-service portal to reduce friction and support load.', blockers:'Design agency contract not yet signed', health:'amber', stage:'active', plannedStart:'2025-06-01', requestId:'r1',
       milestones:[{name:'Discovery complete',date:'2025-06-30',done:true},{name:'Wireframes approved',date:'2025-07-31',done:false},{name:'Dev handoff',date:'2025-09-01',done:false},{name:'Beta launch',date:'2025-11-01',done:false},{name:'Go-live',date:'2025-11-30',done:false}],
       tasks:[{id:'t6',title:'Stakeholder interviews',assignee:'Mia Nguyen',status:'Done',due:'2025-06-20'},{id:'t7',title:'User journey mapping',assignee:'Sam Park',status:'In Progress',due:'2025-07-10'},{id:'t8',title:'Wireframes',assignee:'Sam Park',status:'To Do',due:'2025-07-25'}],
       raid:{risks:[{id:'ri2',desc:'Agency delay may push wireframe timeline',probability:70,impact:'High',status:'Open',owner:'Mia Nguyen',mitigation:'Identify backup agency; shortlist two alternatives by end of June',log:[{date:'2025-06-05',actor:'Mia Nguyen',action:'Created',detail:''}]}],assumptions:[{id:'a2',desc:'Budget of $45k approved by finance',log:[{date:'2025-06-01',actor:'Mia Nguyen',action:'Created',detail:''}]}],issues:[{id:'i2',desc:'Contract signature pending legal review',severity:'High',owner:'Mia Nguyen',status:'Open',log:[{date:'2025-06-10',actor:'Mia Nguyen',action:'Created',detail:''}]}],dependencies:[{id:'d2',desc:'Requires UX research from Marketing team',owner:'Sam Park',status:'Active',log:[{date:'2025-06-03',actor:'Sam Park',action:'Created',detail:''}]}]},
-      documents:[]
+      documents:[],
+      docFolders:['General']
     },
     { id:'p3', name:'HR Onboarding Automation', pm:'', sponsor:'', category:'Transformation', businessUnit:'Human Resources', team:[], status:'Not Started', phase:'Not Started', progress:0, start:'', end:'2025-10-31', value:'Employee Experience', priority:'Medium', description:'Automate the 40-step new hire onboarding process across 6 systems.', blockers:'', health:'green', stage:'backlog', plannedStart:'', requestId:'r3',
       milestones:[{name:'Process mapping',date:'2025-07-31',done:false},{name:'Tool selection',date:'2025-08-15',done:false},{name:'Build complete',date:'2025-10-01',done:false},{name:'Go-live',date:'2025-10-31',done:false}],
       tasks:[],
       raid:{risks:[],assumptions:[{id:'a3',desc:'HR team can dedicate 4hrs/week to project',log:[{date:'2025-06-08',actor:'Priya Patel',action:'Created',detail:''}]}],issues:[],dependencies:[{id:'d3',desc:'Requires IT to provision sandbox HRIS environment',owner:'TBD',status:'Pending',log:[{date:'2025-06-08',actor:'Priya Patel',action:'Created',detail:''}]}]},
-      documents:[]
+      documents:[],
+      docFolders:['General']
     }
   ],
 
