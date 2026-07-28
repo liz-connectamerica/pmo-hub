@@ -210,9 +210,26 @@ function handleRoute() {
 window.addEventListener('hashchange', handleRoute);
 
 function bootAppForUser() {
+  var realRole = D.currentProfile.role;
   document.getElementById('current-user-display').textContent =
-    D.currentProfile.display_name + ' · ' + roleLabel(D.currentProfile.role);
-  D.role = D.currentProfile.role;
+    D.currentProfile.display_name + ' · ' + roleLabel(realRole);
+
+  var previewControl = document.getElementById('preview-role-control');
+  var previewBanner = document.getElementById('preview-banner');
+  if (realRole === 'admin') {
+    previewControl.style.display = 'block';
+    document.getElementById('preview-role-select').value = D.previewRole || '';
+  } else {
+    previewControl.style.display = 'none';
+  }
+  if (D.previewRole) {
+    previewBanner.style.display = 'block';
+    previewBanner.innerHTML = '<i class="ti ti-eye"></i> Previewing as ' + roleLabel(D.previewRole);
+  } else {
+    previewBanner.style.display = 'none';
+  }
+
+  D.role = D.previewRole || realRole;
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app-root').style.display = 'flex';
   renderNav();
@@ -221,6 +238,12 @@ function bootAppForUser() {
   } else {
     nav('dashboard');
   }
+}
+
+function setPreviewRole(role) {
+  if (D.currentProfile.role !== 'admin') return; // safety check; UI is already hidden for non-admins
+  D.previewRole = role || null;
+  bootAppForUser();
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
@@ -1882,6 +1905,7 @@ async function handleLoginSubmit() {
 async function handleLogout() {
   await sb.auth.signOut();
   D.currentProfile = null;
+  D.previewRole = null;
   document.getElementById('app-root').style.display = 'none';
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('auth-email').value = '';

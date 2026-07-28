@@ -34,7 +34,16 @@
     <div id="nav-menu"></div>
     <div class="role-switcher">
       <div class="role-label">Signed in as</div>
-      <div id="current-user-display" style="font-size:13px;font-weight:500;margin-bottom:8px"></div>
+      <div id="current-user-display" style="font-size:13px;font-weight:500;margin-bottom:4px"></div>
+      <div id="preview-banner" style="display:none;font-size:11px;color:#B8860B;margin-bottom:8px"></div>
+      <div id="preview-role-control" style="display:none;margin-bottom:8px">
+        <div class="role-label">Preview as (troubleshooting)</div>
+        <select class="role-select" id="preview-role-select" onchange="setPreviewRole(this.value)">
+          <option value="">My role</option>
+          <option value="pm">Project Manager</option>
+          <option value="exec">Business Partner</option>
+        </select>
+      </div>
       <button class="btn btn-sm" id="logout-btn" style="width:100%;justify-content:center">
         <i class="ti ti-logout"></i> Log out
       </button>
