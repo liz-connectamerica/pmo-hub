@@ -6,19 +6,38 @@
 <title>PMO Hub</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
-<div class="app">
+
+<div class="auth-screen" id="auth-screen" style="display:none">
+  <div class="auth-card">
+    <div class="sidebar-logo" style="margin-bottom:24px"><i class="ti ti-layout-dashboard"></i> PMO Hub</div>
+    <div class="form-group">
+      <div class="form-label">Email</div>
+      <input type="email" id="auth-email" placeholder="you@yourcompany.com">
+    </div>
+    <div class="form-group">
+      <div class="form-label">Password</div>
+      <input type="password" id="auth-password" placeholder="••••••••">
+    </div>
+    <div id="auth-error" class="auth-error" style="display:none"></div>
+    <button class="btn btn-primary" id="auth-submit" style="width:100%;justify-content:center">
+      <i class="ti ti-login"></i> Sign in
+    </button>
+  </div>
+</div>
+
+<div class="app" id="app-root" style="display:none">
   <div class="sidebar">
     <div class="sidebar-logo"><i class="ti ti-layout-dashboard"></i> PMO Hub</div>
     <div id="nav-menu"></div>
     <div class="role-switcher">
-      <div class="role-label">Viewing as</div>
-      <select class="role-select" onchange="setRole(this.value)">
-        <option value="admin">PMO Admin</option>
-        <option value="pm">Project Manager</option>
-        <option value="exec">Business Partner</option>
-      </select>
+      <div class="role-label">Signed in as</div>
+      <div id="current-user-display" style="font-size:13px;font-weight:500;margin-bottom:8px"></div>
+      <button class="btn btn-sm" id="logout-btn" style="width:100%;justify-content:center">
+        <i class="ti ti-logout"></i> Log out
+      </button>
     </div>
   </div>
   <div class="main">

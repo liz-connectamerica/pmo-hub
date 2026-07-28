@@ -1,3 +1,8 @@
+// ── Supabase connection ───────────────────────────────────────────────────────
+var SUPABASE_URL = 'https://mglwdprqbjncnlioifya.supabase.co';
+var SUPABASE_KEY = 'sb_publishable_iEcNnoDk0u7CqoAuh8Kuyg_nDl-QuO3';
+var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function pendingCount() { return D.requests.filter(function(r){ return r.status === 'Pending'; }).length; }
@@ -22,8 +27,7 @@ function hasAssignedWork() {
 }
 
 function currentUser() {
-  var map = { admin:'Morgan Blake', pm:'Alex Turner', exec:'Taylor Brooks' };
-  return map[D.role] || '';
+  return D.currentProfile ? D.currentProfile.display_name : '';
 }
 
 function canEdit(p) {
@@ -205,10 +209,18 @@ function handleRoute() {
 }
 window.addEventListener('hashchange', handleRoute);
 
-function setRole(r) {
-  D.role = r;
-  var def = { admin:'dashboard', pm:'dashboard', exec:'dashboard' };
-  renderNav(); nav(def[r]);
+function bootAppForUser() {
+  document.getElementById('current-user-display').textContent =
+    D.currentProfile.display_name + ' · ' + roleLabel(D.currentProfile.role);
+  D.role = D.currentProfile.role;
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app-root').style.display = 'flex';
+  renderNav();
+  if (location.hash.indexOf('#/project/') === 0) {
+    handleRoute();
+  } else {
+    nav('dashboard');
+  }
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
@@ -1827,10 +1839,75 @@ function pgMyCapacity() {
   };
 }
 
-// ── Boot ────────────────────────────────────────────────────────────────────────
-renderNav();
-if (location.hash.indexOf('#/project/') === 0) {
-  handleRoute();
-} else {
-  nav('dashboard');
+// ── Boot / Auth ────────────────────────────────────────────────────────────────
+
+async function fetchProfile(userId) {
+  var result = await sb.from('profiles').select('id, email, display_name, role').eq('id', userId).single();
+  if (result.error) { console.error('Could not load profile:', result.error); return null; }
+  return result.data;
 }
+
+function showAuthError(msg) {
+  var el = document.getElementById('auth-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+async function handleLoginSubmit() {
+  var email = document.getElementById('auth-email').value.trim();
+  var password = document.getElementById('auth-password').value;
+  var errEl = document.getElementById('auth-error');
+  errEl.style.display = 'none';
+  if (!email || !password) { showAuthError('Enter your email and password.'); return; }
+
+  var submitBtn = document.getElementById('auth-submit');
+  submitBtn.disabled = true;
+
+  var result = await sb.auth.signInWithPassword({ email: email, password: password });
+  submitBtn.disabled = false;
+
+  if (result.error) {
+    showAuthError(result.error.message || 'Could not sign in. Check your email and password.');
+    return;
+  }
+  var profile = await fetchProfile(result.data.user.id);
+  if (!profile) {
+    showAuthError('Signed in, but no profile record was found for this account.');
+    return;
+  }
+  D.currentProfile = profile;
+  bootAppForUser();
+}
+
+async function handleLogout() {
+  await sb.auth.signOut();
+  D.currentProfile = null;
+  document.getElementById('app-root').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('auth-email').value = '';
+  document.getElementById('auth-password').value = '';
+  document.getElementById('auth-error').style.display = 'none';
+}
+
+async function initApp() {
+  document.getElementById('auth-submit').onclick = handleLoginSubmit;
+  document.getElementById('auth-password').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') handleLoginSubmit();
+  });
+  document.getElementById('logout-btn').onclick = handleLogout;
+
+  var sessionResult = await sb.auth.getSession();
+  var session = sessionResult.data && sessionResult.data.session;
+
+  if (session) {
+    var profile = await fetchProfile(session.user.id);
+    if (profile) {
+      D.currentProfile = profile;
+      bootAppForUser();
+      return;
+    }
+  }
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+initApp();
