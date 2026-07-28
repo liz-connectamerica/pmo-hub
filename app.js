@@ -5,12 +5,24 @@ function backlogCount()  { return D.projects.filter(function(p){ return p.stage 
 
 function myProjects() {
   if (D.role === 'pm')       return D.projects.filter(function(p){ return p.pm === currentUser(); });
-  if (D.role === 'resource') return D.projects.filter(function(p){ return p.team.indexOf(currentUser()) >= 0; });
   return D.projects;
 }
 
+function myAssignedProjects() {
+  var me = currentUser();
+  return D.projects.filter(function(p){ return p.team.indexOf(me) >= 0; });
+}
+
+function hasAssignedWork() {
+  var me = currentUser();
+  if (!me) return false;
+  var onActiveProject = D.projects.some(function(p){ return p.stage === 'active' && p.team.indexOf(me) >= 0; });
+  var hasOpenTask = D.projects.some(function(p){ return p.tasks.some(function(t){ return t.assignee === me && t.status !== 'Done'; }); });
+  return onActiveProject || hasOpenTask;
+}
+
 function currentUser() {
-  var map = { admin:'Morgan Blake', pm:'Alex Turner', resource:'Jordan Lee', exec:'Taylor Brooks' };
+  var map = { admin:'Morgan Blake', pm:'Alex Turner', exec:'Taylor Brooks' };
   return map[D.role] || '';
 }
 
@@ -21,7 +33,7 @@ function canEdit(p) {
 }
 
 function roleLabel(r) {
-  var m = { admin:'PMO Admin', pm:'Project Manager', exec:'Business Partner', resource:'Resource' };
+  var m = { admin:'PMO Admin', pm:'Project Manager', exec:'Business Partner' };
   return m[r] || r;
 }
 
@@ -145,22 +157,18 @@ var NAV_DEF = {
       {id:'submit',       icon:'ti-send',  label:'Submit a request'},
       {id:'my-requests',  icon:'ti-clock', label:'My requests'}
     ]}
-  ],
-  resource: [
-    { s:'My Work', items:[
-      {id:'my-projects', icon:'ti-briefcase',      label:'My projects'},
-      {id:'my-tasks',    icon:'ti-check',          label:'My tasks'},
-      {id:'my-capacity', icon:'ti-adjustments',    label:'My capacity'}
-    ]},
-    { s:'Requests', items:[
-      {id:'submit',       icon:'ti-send',  label:'Submit a request'},
-      {id:'my-requests',  icon:'ti-clock', label:'My requests'}
-    ]}
   ]
 };
 
 function renderNav() {
-  var defs = NAV_DEF[D.role] || [];
+  var defs = (NAV_DEF[D.role] || []).slice();
+  if (D.role === 'exec' && hasAssignedWork()) {
+    defs = defs.concat([{ s:'My Work', items:[
+      {id:'my-projects', icon:'ti-briefcase',   label:'My projects'},
+      {id:'my-tasks',    icon:'ti-check',       label:'My tasks'},
+      {id:'my-capacity', icon:'ti-adjustments', label:'My capacity'}
+    ]}]);
+  }
   var h = '';
   defs.forEach(function(sec) {
     h += '<div class="sidebar-section">' + sec.s + '</div>';
@@ -199,7 +207,7 @@ window.addEventListener('hashchange', handleRoute);
 
 function setRole(r) {
   D.role = r;
-  var def = { admin:'dashboard', pm:'dashboard', exec:'dashboard', resource:'my-projects' };
+  var def = { admin:'dashboard', pm:'dashboard', exec:'dashboard' };
   renderNav(); nav(def[r]);
 }
 
@@ -241,7 +249,7 @@ function pgDashboard() {
     var days = (Date.now() - new Date(rd).getTime()) / 86400000;
     return days <= parseInt(rejRange);
   });
-  if (D.role === 'exec') {
+  if (D.role === 'admin' || D.role === 'pm' || D.role === 'exec') {
     rejectedList.forEach(function(r) {
       rejectedRows += '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + r.dept + '</td>' +
         '<td>' + bdg(r.priority) + '</td><td><span class="badge badge-purple">' + r.value + '</span></td>' +
@@ -266,7 +274,7 @@ function pgDashboard() {
       ? '<div class="card mb-16"><div class="section-title">Pending approval <span class="badge badge-amber" style="margin-left:6px">' + pendingCount() + '</span></div>' +
         '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th></th></tr></thead>' +
         '<tbody>' + pendRows + '</tbody></table></div></div>' : '') +
-    (D.role === 'exec'
+    (D.role === 'admin' || D.role === 'pm' || D.role === 'exec'
       ? '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
         '<div class="section-title" style="margin-bottom:0">Rejected proposals <span class="badge badge-gray" style="margin-left:6px">' + rejectedList.length + '</span></div>' +
         '<select id="rej-range" onchange="setRejectedRange(this.value)" style="width:auto;max-width:170px">' +
@@ -584,6 +592,7 @@ function pgProjectDetail(pid, tab) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   if (!p) { nav('projects'); return; }
   tab = tab || 'overview';
+  var cameFromMyProjects = currentPage === 'my-projects';
   currentPage = 'projectDetail';
   renderNav();
   var editable = canEdit(p);
@@ -663,7 +672,6 @@ function pgProjectDetail(pid, tab) {
         (sorted.length ? rows : '<div class="empty-state" style="padding:30px"><i class="ti ti-circle-dotted"></i><p>No milestones yet</p></div>');
     }
     if (t === 'tasks') {
-      var isResource = D.role === 'resource';
       var st = getTaskState(p.id);
 
       function arrow(col) {
@@ -709,7 +717,7 @@ function pgProjectDetail(pid, tab) {
 
       var trows = list.map(function(task) {
         var idx = p.tasks.indexOf(task);
-        var myTask = isResource && task.assignee === currentUser();
+        var myTask = task.assignee === currentUser();
         var logKey = p.id + '|' + task.id;
         var logOpenNow = !!taskLogOpen[logKey];
         var logRow = '';
@@ -861,7 +869,7 @@ function pgProjectDetail(pid, tab) {
     return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t) + '</div>';
   }).join('');
 
-  tb(p.name, '<button class="btn btn-sm" onclick="nav(\'' + (D.role==='resource' ? 'my-projects' : 'projects') + '\')"><i class="ti ti-arrow-left"></i> Back to projects</button>');
+  tb(p.name, '<button class="btn btn-sm" onclick="nav(\'' + (cameFromMyProjects ? 'my-projects' : 'projects') + '\')"><i class="ti ti-arrow-left"></i> Back to projects</button>');
 
   document.getElementById('content').innerHTML =
     '<div class="card">' +
@@ -1728,7 +1736,7 @@ function pgMyRequests() {
 
 function pgMyProjectsResource() {
   tb('My projects');
-  var ps = myProjects();
+  var ps = myAssignedProjects();
   if (!ps.length) { document.getElementById('content').innerHTML = '<div class="empty-state"><i class="ti ti-briefcase"></i><p>You are not assigned to any projects</p></div>'; return; }
   var cards = ps.map(function(p) {
     var myTasks = p.tasks.filter(function(t){ return t.assignee === currentUser(); });
