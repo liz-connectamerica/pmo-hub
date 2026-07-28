@@ -10,7 +10,7 @@ function myProjects() {
 }
 
 function currentUser() {
-  var map = { pm:'Alex Turner', resource:'Jordan Lee', stakeholder:'Sarah Chen' };
+  var map = { admin:'Morgan Blake', pm:'Alex Turner', resource:'Jordan Lee', exec:'Taylor Brooks' };
   return map[D.role] || '';
 }
 
@@ -21,7 +21,7 @@ function canEdit(p) {
 }
 
 function roleLabel(r) {
-  var m = { admin:'PMO Admin', pm:'Project Manager', stakeholder:'Stakeholder', exec:'Executive', resource:'Resource' };
+  var m = { admin:'PMO Admin', pm:'Project Manager', exec:'Business Partner', resource:'Resource' };
   return m[r] || r;
 }
 
@@ -44,6 +44,7 @@ var milestoneLogOpen = {};
 var taskCommentsOpen = {};
 var raidSearchState = {};
 var docFolderState = {};
+var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fStatus:[], openFilter:null };
 
 function fmtCost(n) {
   if (!n && n !== 0) return '—';
@@ -112,6 +113,10 @@ var NAV_DEF = {
       {id:'completed',icon:'ti-circle-check',   label:'Completed'},
       {id:'roadmap',  icon:'ti-road',           label:'Roadmap'},
       {id:'resources',icon:'ti-users',          label:'Resources'}
+    ]},
+    { s:'My Requests', items:[
+      {id:'submit',       icon:'ti-send',  label:'Submit a request'},
+      {id:'my-requests',  icon:'ti-clock', label:'My requests'}
     ]}
   ],
   pm: [
@@ -122,9 +127,7 @@ var NAV_DEF = {
       {id:'completed',icon:'ti-circle-check',   label:'Completed'},
       {id:'roadmap',  icon:'ti-road',           label:'Roadmap'},
       {id:'resources',icon:'ti-users',          label:'Resources'}
-    ]}
-  ],
-  stakeholder: [
+    ]},
     { s:'Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a request'},
       {id:'my-requests',  icon:'ti-clock', label:'My requests'}
@@ -137,6 +140,10 @@ var NAV_DEF = {
       {id:'completed', icon:'ti-circle-check',    label:'Completed'},
       {id:'roadmap',   icon:'ti-road',            label:'Roadmap'},
       {id:'resources', icon:'ti-users',           label:'Resources'}
+    ]},
+    { s:'Requests', items:[
+      {id:'submit',       icon:'ti-send',  label:'Submit a request'},
+      {id:'my-requests',  icon:'ti-clock', label:'My requests'}
     ]}
   ],
   resource: [
@@ -144,6 +151,10 @@ var NAV_DEF = {
       {id:'my-projects', icon:'ti-briefcase',      label:'My projects'},
       {id:'my-tasks',    icon:'ti-check',          label:'My tasks'},
       {id:'my-capacity', icon:'ti-adjustments',    label:'My capacity'}
+    ]},
+    { s:'Requests', items:[
+      {id:'submit',       icon:'ti-send',  label:'Submit a request'},
+      {id:'my-requests',  icon:'ti-clock', label:'My requests'}
     ]}
   ]
 };
@@ -188,7 +199,7 @@ window.addEventListener('hashchange', handleRoute);
 
 function setRole(r) {
   D.role = r;
-  var def = { admin:'dashboard', pm:'dashboard', stakeholder:'submit', exec:'dashboard', resource:'my-projects' };
+  var def = { admin:'dashboard', pm:'dashboard', exec:'dashboard', resource:'my-projects' };
   renderNav(); nav(def[r]);
 }
 
@@ -220,6 +231,16 @@ function pgDashboard() {
     });
   }
 
+  var rejectedRows = '';
+  var rejectedList = D.requests.filter(function(r){ return r.status === 'Rejected'; });
+  if (D.role === 'exec') {
+    rejectedList.forEach(function(r) {
+      rejectedRows += '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + r.dept + '</td>' +
+        '<td>' + bdg(r.priority) + '</td><td><span class="badge badge-purple">' + r.value + '</span></td>' +
+        '<td><button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
+    });
+  }
+
   document.getElementById('content').innerHTML =
     '<div class="grid-4 mb-16">' +
       '<div class="metric"><div class="metric-label">Active projects</div><div class="metric-value">' + active.length + '</div></div>' +
@@ -233,9 +254,16 @@ function pgDashboard() {
       '<thead><tr><th>Project</th><th>Status</th><th>Priority</th><th>Phase</th><th style="min-width:160px">Progress</th><th>PM</th><th>Blockers</th><th></th></tr></thead>' +
       '<tbody>' + projRows + '</tbody></table></div></div>' +
     (D.role === 'admin' && pendingCount() > 0
-      ? '<div class="card"><div class="section-title">Pending approval <span class="badge badge-amber" style="margin-left:6px">' + pendingCount() + '</span></div>' +
+      ? '<div class="card mb-16"><div class="section-title">Pending approval <span class="badge badge-amber" style="margin-left:6px">' + pendingCount() + '</span></div>' +
         '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th></th></tr></thead>' +
-        '<tbody>' + pendRows + '</tbody></table></div></div>' : '');
+        '<tbody>' + pendRows + '</tbody></table></div></div>' : '') +
+    (D.role === 'exec'
+      ? '<div class="card"><div class="section-title">Rejected proposals <span class="badge badge-gray" style="margin-left:6px">' + rejectedList.length + '</span></div>' +
+        (rejectedList.length
+          ? '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th></th></tr></thead>' +
+            '<tbody>' + rejectedRows + '</tbody></table></div>'
+          : '<div class="empty-state" style="padding:24px"><i class="ti ti-mood-empty"></i><p>No rejected proposals</p></div>') +
+        '</div>' : '');
 }
 
 // ── Portfolio ───────────────────────────────────────────────────────────────
@@ -314,7 +342,8 @@ function reviewRequest(id) {
 
   // linked project read-only summary
   if (linkedP) {
-    html += '<div class="divider"></div><div class="form-label" style="margin-bottom:10px">Linked project</div>' +
+    html += '<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="form-label" style="margin-bottom:0">Linked project</div>' +
+      (D.role === 'admin' ? '<button class="btn btn-sm" onclick="closeModal();editProject(\'' + linkedP.id + '\')"><i class="ti ti-edit"></i> Edit project</button>' : '') + '</div>' +
       '<div style="background:#f5f5f3;padding:12px 16px;border-radius:8px;font-size:13px">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="bold">' + linkedP.name + '</span>' + stagePill(linkedP.stage) + '</div>' +
         '<div class="grid-2" style="gap:8px 16px;font-size:12px">' +
@@ -753,12 +782,13 @@ function pgProjectDetail(pid, tab) {
                 logBlock(type, idx, item);
             }).join('');
         } else if (type === 'issues') {
-          body = '<div class="raid-grid-issues raid-grid-hdr"><div>Severity</div><div>Description</div><div>Owner</div><div>Status</div><div></div></div>' +
+          body = '<div class="raid-grid-issues raid-grid-hdr"><div>Severity</div><div>Description &amp; Solution</div><div>Owner</div><div>Status</div><div></div></div>' +
             items.map(function(item) {
               var idx = idxOf(item);
               return '<div class="raid-grid-issues raid-grid-row">' +
                 '<div>' + bdg(item.severity) + '</div>' +
-                '<div style="font-size:13px;word-break:break-word;white-space:normal">' + item.desc + '</div>' +
+                '<div><div style="font-size:13px;word-break:break-word;white-space:normal;margin-bottom:4px">' + item.desc + '</div>' +
+                '<div style="font-size:12px;color:#555;word-break:break-word;white-space:normal;background:#f5f5f3;padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.solution||'—') + '</div></div>' +
                 '<div style="font-size:12px;color:#777">' + item.owner + '</div>' +
                 '<div>' + bdg(item.status) + '</div>' +
                 '<div>' + actionBtns(type, idx, item) + '</div></div>' +
@@ -1090,7 +1120,8 @@ function openRaidModal(pid, type, idx) {
       '<div class="form-group"><div class="form-label">Mitigation</div><textarea id="rd-mit" placeholder="Describe mitigation plan…" rows="3">' + (item ? (item.mitigation||'') : '') + '</textarea></div>';
   }
   if (type === 'issues')       extra = '<div class="form-group"><div class="form-label">Severity</div><select id="rd-sev"><option' + (item && item.severity==='High'?' selected':'') + '>High</option><option' + (!item || item.severity==='Medium'?' selected':'') + '>Medium</option><option' + (item && item.severity==='Low'?' selected':'') + '>Low</option></select></div>' +
-    '<div class="form-group"><div class="form-label">Status</div><select id="rd-issuest"><option' + (!item || item.status==='Open'?' selected':'') + '>Open</option><option' + (item && item.status==='Closed'?' selected':'') + '>Closed</option></select></div>';
+    '<div class="form-group"><div class="form-label">Status</div><select id="rd-issuest"><option' + (!item || item.status==='Open'?' selected':'') + '>Open</option><option' + (item && item.status==='Closed'?' selected':'') + '>Closed</option></select></div>' +
+    '<div class="form-group"><div class="form-label">Solution</div><textarea id="rd-sol" placeholder="Describe the solution or resolution plan…" rows="3">' + (item ? (item.solution||'') : '') + '</textarea></div>';
   if (type === 'dependencies') extra = '<div class="form-group"><div class="form-label">Status</div><select id="rd-depst"><option' + (!item || item.status==='Pending'?' selected':'') + '>Pending</option><option' + (item && item.status==='Active'?' selected':'') + '>Active</option><option' + (item && item.status==='Resolved'?' selected':'') + '>Resolved</option></select></div>';
 
   showModal('<div class="modal-title">' + (isEdit?'Edit ':'Add ') + label + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
@@ -1128,7 +1159,7 @@ function openRaidModal(pid, type, idx) {
     if (isEdit) {
       item.desc = desc; item.owner = owner;
       if (type==='risks') { item.probability = parseInt(document.getElementById('rd-prob').value)||0; item.impact = document.getElementById('rd-impact').value; item.status = document.getElementById('rd-status').value; item.mitigation = document.getElementById('rd-mit').value; }
-      else if (type==='issues') { item.severity = document.getElementById('rd-sev').value; item.status = document.getElementById('rd-issuest').value; }
+      else if (type==='issues') { item.severity = document.getElementById('rd-sev').value; item.status = document.getElementById('rd-issuest').value; item.solution = document.getElementById('rd-sol').value; }
       else if (type==='dependencies') { item.status = document.getElementById('rd-depst').value; }
       pushLog(item, 'Updated');
       showToast(label + ' updated');
@@ -1136,7 +1167,7 @@ function openRaidModal(pid, type, idx) {
       var n;
       if (type==='risks')        n = {id:'ri'+Date.now(),desc:desc,probability:parseInt(document.getElementById('rd-prob').value)||0,impact:document.getElementById('rd-impact').value,status:document.getElementById('rd-status').value,owner:owner,mitigation:document.getElementById('rd-mit').value};
       else if (type==='assumptions')  n = {id:'a'+Date.now(),desc:desc,owner:owner};
-      else if (type==='issues')       n = {id:'i'+Date.now(),desc:desc,severity:document.getElementById('rd-sev').value,owner:owner,status:document.getElementById('rd-issuest').value};
+      else if (type==='issues')       n = {id:'i'+Date.now(),desc:desc,severity:document.getElementById('rd-sev').value,owner:owner,status:document.getElementById('rd-issuest').value,solution:document.getElementById('rd-sol').value};
       else if (type==='dependencies') n = {id:'d'+Date.now(),desc:desc,owner:owner,status:document.getElementById('rd-depst').value};
       pushLog(n, 'Created');
       p.raid[type].push(n);
@@ -1336,7 +1367,7 @@ function saveProject(pid) {
   var allNames = ALL_PEOPLE.concat(ALL_TEAMS);
   p.team = allNames.filter(function(n){ var el = document.getElementById('ep-tm-' + n.replace(/ /g,'_')); return el && el.checked; });
   closeModal(); showToast('Project saved');
-  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage==='projects') pgProjects(); else pgDashboard();
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage==='projects') pgProjects(); else if (currentPage === 'requests') pgRequests(); else pgDashboard();
 }
 
 function deleteProject(pid) {
@@ -1385,17 +1416,93 @@ function pgRoadmap() {
     return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + p.name + '</div>' +
       '<div class="tl-wrap"><div class="tl-bar" style="left:' + ((offsets[p.id]||0)/12*100) + '%;width:' + ((durs[p.id]||3)/12*100) + '%;background:' + (colors[p.id]||'#534AB7') + '">' + p.phase + '</div></div></div>';
   }).join('');
-  var msRows = [];
+  var msItems = [];
   D.projects.filter(function(p){ return p.stage==='active'; }).forEach(function(p) {
-    p.milestones.filter(function(m){ return !m.done; }).slice(0,2).forEach(function(m) {
-      msRows.push('<tr><td class="bold">' + p.name + '</td><td>' + m.name + '</td><td class="text-muted">' + m.date + '</td><td><span class="badge badge-amber">Upcoming</span></td></tr>');
+    p.milestones.filter(function(m){ return !m.done; }).forEach(function(m) {
+      msItems.push({ project:p.name, milestone:m.name, due:m.date, status:'Upcoming' });
     });
   });
+
+  var st = roadmapMsState;
+  function msArrow(col) {
+    if (st.sort !== col) return '';
+    return '<span class="sort-arrow">' + (st.dir === 'asc' ? '▲' : '▼') + '</span>';
+  }
+  var projectChoices = [];
+  msItems.forEach(function(it){ if (projectChoices.indexOf(it.project) < 0) projectChoices.push(it.project); });
+  var statusChoices = ['Upcoming'];
+
+  function msFilterPanel(col, choices, selected) {
+    if (st.openFilter !== col) return '';
+    return '<div class="th-filter-panel" onclick="event.stopPropagation()">' +
+      choices.map(function(c){
+        var esc = c.replace(/'/g,"\\'");
+        return '<label class="th-filter-opt"><input type="checkbox"' + (selected.indexOf(c)>=0?' checked':'') + ' onchange="toggleMsFilterValue(\'' + col + '\',\'' + esc + '\')"> ' + c + '</label>';
+      }).join('') +
+      '<div class="th-filter-actions"><button class="btn btn-sm" onclick="clearMsFilter(\'' + col + '\')">Clear</button><button class="btn btn-sm btn-primary" onclick="closeMsFilterPanel()">Done</button></div>' +
+      '</div>';
+  }
+  function msFilterIcon(col, active) {
+    return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMsFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
+  }
+
+  var msSearchBar = '<div class="task-filter-bar"><input type="text" id="ms-search" placeholder="Search milestones…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onMsSearch(this.value)"></div>';
+
+  var msList = msItems.slice();
+  if (st.search) { var q = st.search.toLowerCase(); msList = msList.filter(function(it){ return it.milestone.toLowerCase().indexOf(q) >= 0; }); }
+  if (st.fProject.length) msList = msList.filter(function(it){ return st.fProject.indexOf(it.project) >= 0; });
+  if (st.fStatus.length) msList = msList.filter(function(it){ return st.fStatus.indexOf(it.status) >= 0; });
+  if (st.sort) {
+    msList.sort(function(a,b){
+      var av = (a[st.sort]||'').toString(), bv = (b[st.sort]||'').toString();
+      if (av < bv) return st.dir === 'asc' ? -1 : 1;
+      if (av > bv) return st.dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+
+  var msRows = msList.map(function(it) {
+    return '<tr><td class="bold">' + it.project + '</td><td>' + it.milestone + '</td><td class="text-muted">' + it.due + '</td><td><span class="badge badge-amber">' + it.status + '</span></td></tr>';
+  }).join('');
+
+  var msHeader = '<tr>' +
+    '<th class="sortable-th" style="position:relative"><span onclick="setMsSort(\'project\')">Project ' + msArrow('project') + '</span>' + msFilterIcon('fProject', st.fProject.length>0) + msFilterPanel('fProject', projectChoices, st.fProject) + '</th>' +
+    '<th class="sortable-th" onclick="setMsSort(\'milestone\')">Milestone ' + msArrow('milestone') + '</th>' +
+    '<th class="sortable-th" onclick="setMsSort(\'due\')">Due ' + msArrow('due') + '</th>' +
+    '<th class="sortable-th" style="position:relative"><span onclick="setMsSort(\'status\')">Status ' + msArrow('status') + '</span>' + msFilterIcon('fStatus', st.fStatus.length>0) + msFilterPanel('fStatus', statusChoices, st.fStatus) + '</th>' +
+    '</tr>';
   document.getElementById('content').innerHTML =
     '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">12-month view — Apr 2025 – Mar 2026</div>' +
     '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + months.map(function(m){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + m + '</div>'; }).join('') + '</div>' +
     (all.length ? bars : '<div class="text-muted">No active or planned projects</div>') + '</div>' +
-    '<div class="card"><div class="section-title">Upcoming milestones</div><div class="table-wrap"><table><thead><tr><th>Project</th><th>Milestone</th><th>Due</th><th>Status</th></tr></thead><tbody>' + msRows.join('') + '</tbody></table></div></div>';
+    '<div class="card"><div class="section-title">Upcoming milestones</div>' + msSearchBar +
+    (msItems.length
+      ? (msList.length ? '<div class="table-wrap"><table><thead>' + msHeader + '</thead><tbody>' + msRows + '</tbody></table></div>' : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No milestones match your filters</p></div>')
+      : '<div class="empty-state" style="padding:24px"><i class="ti ti-flag"></i><p>No upcoming milestones</p></div>') +
+    '</div>';
+
+  window.setMsSort = function(col) {
+    if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; }
+    pgRoadmap();
+  };
+  window.onMsSearch = function(val) {
+    st.search = val;
+    pgRoadmap();
+    var el = document.getElementById('ms-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.toggleMsFilterPanel = function(col) {
+    st.openFilter = st.openFilter === col ? null : col;
+    pgRoadmap();
+  };
+  window.closeMsFilterPanel = function() { st.openFilter = null; pgRoadmap(); };
+  window.toggleMsFilterValue = function(col, val) {
+    var arr = st[col];
+    var i = arr.indexOf(val);
+    if (i >= 0) arr.splice(i,1); else arr.push(val);
+    pgRoadmap();
+  };
+  window.clearMsFilter = function(col) { st[col] = []; pgRoadmap(); };
 }
 
 // ── Resources ──────────────────────────────────────────────────────────────────
@@ -1560,8 +1667,8 @@ function pgSubmit() {
 function pgMyRequests() {
   tb('My requests');
   var me = currentUser() || 'Current User';
-  var mine = D.requests.filter(function(r){ return r.submitter === me || r.submitter === 'Sarah Chen' || r.submitter === 'Priya Patel'; });
-  var myNotifs = D.notifications.filter(function(n){ return n.submitter === me || n.submitter === 'Sarah Chen' || n.submitter === 'Priya Patel'; });
+  var mine = D.requests.filter(function(r){ return r.submitter === me; });
+  var myNotifs = D.notifications.filter(function(n){ return n.submitter === me; });
   var html = '';
   if (myNotifs.length) html += myNotifs.map(function(n){
     return '<div class="notif-banner"><i class="ti ti-bell" style="font-size:20px;flex-shrink:0"></i><div><div style="font-weight:600;margin-bottom:3px">' + (n.type==='planned'?'Project scheduled':n.type==='approved'?'Request approved':'Update') + '</div>' + n.msg + '</div></div>';
