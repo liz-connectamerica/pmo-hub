@@ -45,6 +45,7 @@ var taskCommentsOpen = {};
 var raidSearchState = {};
 var docFolderState = {};
 var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fStatus:[], openFilter:null };
+var rejectedFilterState = { range:'30' };
 
 function fmtCost(n) {
   if (!n && n !== 0) return '—';
@@ -138,8 +139,7 @@ var NAV_DEF = {
       {id:'dashboard', icon:'ti-layout-dashboard',label:'Dashboard'},
       {id:'portfolio', icon:'ti-folder-open',     label:'Portfolio'},
       {id:'completed', icon:'ti-circle-check',    label:'Completed'},
-      {id:'roadmap',   icon:'ti-road',            label:'Roadmap'},
-      {id:'resources', icon:'ti-users',           label:'Resources'}
+      {id:'roadmap',   icon:'ti-road',            label:'Roadmap'}
     ]},
     { s:'Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a request'},
@@ -232,11 +232,20 @@ function pgDashboard() {
   }
 
   var rejectedRows = '';
-  var rejectedList = D.requests.filter(function(r){ return r.status === 'Rejected'; });
+  var rejectedAll = D.requests.filter(function(r){ return r.status === 'Rejected'; });
+  var rejRange = rejectedFilterState.range;
+  var rejectedList = rejectedAll.filter(function(r){
+    if (rejRange === 'all') return true;
+    var rd = r.rejectedDate || r.date;
+    if (!rd) return true;
+    var days = (Date.now() - new Date(rd).getTime()) / 86400000;
+    return days <= parseInt(rejRange);
+  });
   if (D.role === 'exec') {
     rejectedList.forEach(function(r) {
       rejectedRows += '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + r.dept + '</td>' +
         '<td>' + bdg(r.priority) + '</td><td><span class="badge badge-purple">' + r.value + '</span></td>' +
+        '<td class="text-muted">' + (r.rejectedDate || r.date || '—') + '</td>' +
         '<td><button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
     });
   }
@@ -258,12 +267,21 @@ function pgDashboard() {
         '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th></th></tr></thead>' +
         '<tbody>' + pendRows + '</tbody></table></div></div>' : '') +
     (D.role === 'exec'
-      ? '<div class="card"><div class="section-title">Rejected proposals <span class="badge badge-gray" style="margin-left:6px">' + rejectedList.length + '</span></div>' +
+      ? '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
+        '<div class="section-title" style="margin-bottom:0">Rejected proposals <span class="badge badge-gray" style="margin-left:6px">' + rejectedList.length + '</span></div>' +
+        '<select id="rej-range" onchange="setRejectedRange(this.value)" style="width:auto;max-width:170px">' +
+          '<option value="30"' + (rejRange==='30'?' selected':'') + '>Last 30 days</option>' +
+          '<option value="90"' + (rejRange==='90'?' selected':'') + '>Last 90 days</option>' +
+          '<option value="365"' + (rejRange==='365'?' selected':'') + '>Last year</option>' +
+          '<option value="all"' + (rejRange==='all'?' selected':'') + '>All time</option>' +
+        '</select></div>' +
         (rejectedList.length
-          ? '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th></th></tr></thead>' +
+          ? '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th>Rejected</th><th></th></tr></thead>' +
             '<tbody>' + rejectedRows + '</tbody></table></div>'
-          : '<div class="empty-state" style="padding:24px"><i class="ti ti-mood-empty"></i><p>No rejected proposals</p></div>') +
+          : '<div class="empty-state" style="padding:24px"><i class="ti ti-mood-empty"></i><p>No rejected proposals in this range</p></div>') +
         '</div>' : '');
+
+  window.setRejectedRange = function(val) { rejectedFilterState.range = val; pgDashboard(); };
 }
 
 // ── Portfolio ───────────────────────────────────────────────────────────────
@@ -380,6 +398,8 @@ function decideReq(id, decision) {
     D.projects.push(p);
     r.status = 'Backlog'; r.linkedProject = p.id;
     addNotif(r.submitter, 'Your request "' + r.title + '" has been approved and added to the backlog.', 'approved');
+  } else if (decision === 'Rejected') {
+    r.rejectedDate = new Date().toISOString().split('T')[0];
   }
   closeModal(); showToast(decision === 'Approved' ? 'Approved — added to backlog' : 'Request rejected');
   renderNav();
@@ -1157,11 +1177,21 @@ function openRaidModal(pid, type, idx) {
     if (owner === '__add__') owner = '';
 
     if (isEdit) {
-      item.desc = desc; item.owner = owner;
-      if (type==='risks') { item.probability = parseInt(document.getElementById('rd-prob').value)||0; item.impact = document.getElementById('rd-impact').value; item.status = document.getElementById('rd-status').value; item.mitigation = document.getElementById('rd-mit').value; }
-      else if (type==='issues') { item.severity = document.getElementById('rd-sev').value; item.status = document.getElementById('rd-issuest').value; item.solution = document.getElementById('rd-sol').value; }
-      else if (type==='dependencies') { item.status = document.getElementById('rd-depst').value; }
-      pushLog(item, 'Updated');
+      var fieldLabels = { desc:'Description', owner:'Owner', probability:'Probability', impact:'Impact', status:'Status', mitigation:'Mitigation', severity:'Severity', solution:'Solution' };
+      var newVals = { desc:desc, owner:owner };
+      if (type==='risks') { newVals.probability = parseInt(document.getElementById('rd-prob').value)||0; newVals.impact = document.getElementById('rd-impact').value; newVals.status = document.getElementById('rd-status').value; newVals.mitigation = document.getElementById('rd-mit').value; }
+      else if (type==='issues') { newVals.severity = document.getElementById('rd-sev').value; newVals.status = document.getElementById('rd-issuest').value; newVals.solution = document.getElementById('rd-sol').value; }
+      else if (type==='dependencies') { newVals.status = document.getElementById('rd-depst').value; }
+
+      var changes = [];
+      Object.keys(newVals).forEach(function(f){
+        var oldV = item[f] != null ? item[f].toString() : '';
+        var newV = newVals[f] != null ? newVals[f].toString() : '';
+        if (oldV !== newV) changes.push((fieldLabels[f]||f) + ': "' + (oldV||'—') + (f==='probability'&&oldV!==''?'%':'') + '" → "' + (newV||'—') + (f==='probability'&&newV!==''?'%':'') + '"');
+      });
+      Object.keys(newVals).forEach(function(f){ item[f] = newVals[f]; });
+
+      if (changes.length) pushLog(item, 'Updated', changes.join('; '));
       showToast(label + ' updated');
     } else {
       var n;
