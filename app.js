@@ -3,26 +3,171 @@ var SUPABASE_URL = 'https://mglwdprqbjncnlioifya.supabase.co';
 var SUPABASE_KEY = 'sb_publishable_iEcNnoDk0u7CqoAuh8Kuyg_nDl-QuO3';
 var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ── Real data loading ─────────────────────────────────────────────────────────
+// Fetches everything project-related from Supabase and reshapes it into the
+// same in-memory shape the rest of the app already expects (D.projects), so
+// the existing render code needs minimal changes. Each project keeps both a
+// display name (e.g. p.pm) and, where it matters for permissions, a real
+// linked account id (e.g. p.pmId) alongside it.
+
+function ymd(isoString) {
+  if (!isoString) return null;
+  return isoString.split('T')[0];
+}
+
+function groupBy(rows, key) {
+  var out = {};
+  (rows || []).forEach(function(row) {
+    var k = row[key];
+    if (!out[k]) out[k] = [];
+    out[k].push(row);
+  });
+  return out;
+}
+
+async function loadAllProjects() {
+  var results = await Promise.all([
+    sb.from('projects').select('*'),
+    sb.from('profiles').select('id, display_name'),
+    sb.from('project_team').select('*'),
+    sb.from('milestones').select('*'),
+    sb.from('milestone_log').select('*'),
+    sb.from('tasks').select('*'),
+    sb.from('task_log').select('*'),
+    sb.from('task_comments').select('*'),
+    sb.from('raid_items').select('*'),
+    sb.from('raid_log').select('*'),
+    sb.from('doc_folders').select('*'),
+    sb.from('documents').select('*')
+  ]);
+
+  for (var i = 0; i < results.length; i++) {
+    if (results[i].error) { console.error('loadAllProjects query failed:', results[i].error); return []; }
+  }
+
+  var projectsRows      = results[0].data || [];
+  var profilesRows      = results[1].data || [];
+  var teamRows          = results[2].data || [];
+  var milestoneRows     = results[3].data || [];
+  var milestoneLogRows  = results[4].data || [];
+  var taskRows          = results[5].data || [];
+  var taskLogRows       = results[6].data || [];
+  var commentRows       = results[7].data || [];
+  var raidRows          = results[8].data || [];
+  var raidLogRows       = results[9].data || [];
+  var folderRows        = results[10].data || [];
+  var docRows           = results[11].data || [];
+
+  var nameById = {};
+  profilesRows.forEach(function(p){ nameById[p.id] = p.display_name; });
+
+  var teamByProject      = groupBy(teamRows, 'project_id');
+  var milestonesByProj   = groupBy(milestoneRows, 'project_id');
+  var msLogByMilestone   = groupBy(milestoneLogRows, 'milestone_id');
+  var tasksByProj        = groupBy(taskRows, 'project_id');
+  var taskLogByTask      = groupBy(taskLogRows, 'task_id');
+  var commentsByTask     = groupBy(commentRows, 'task_id');
+  var raidByProj         = groupBy(raidRows, 'project_id');
+  var raidLogByItem      = groupBy(raidLogRows, 'raid_item_id');
+  var foldersByProj      = groupBy(folderRows, 'project_id');
+  var docsByProj         = groupBy(docRows, 'project_id');
+  var folderNameById     = {};
+  folderRows.forEach(function(f){ folderNameById[f.id] = f.name; });
+
+  function mapLog(rows) {
+    return (rows || []).map(function(r){
+      return { date: ymd(r.logged_at), actor: r.actor_name, action: r.action, detail: r.detail || '' };
+    });
+  }
+
+  return projectsRows.map(function(pr) {
+    var teamRowsForProj = teamByProject[pr.id] || [];
+    var teamIds = teamRowsForProj.map(function(t){ return t.user_id; });
+    var teamNames = teamIds.map(function(id){ return nameById[id] || id; });
+
+    var milestones = (milestonesByProj[pr.id] || []).map(function(m) {
+      return {
+        id: m.id, name: m.name, date: m.target_date, done: m.done,
+        completedDate: m.completed_date,
+        log: mapLog(msLogByMilestone[m.id])
+      };
+    });
+
+    var tasks = (tasksByProj[pr.id] || []).map(function(t) {
+      return {
+        id: t.id, title: t.title,
+        assignee: t.assignee_name || (t.assignee_id ? nameById[t.assignee_id] : ''),
+        assigneeId: t.assignee_id, status: t.status, due: t.due_date,
+        log: mapLog(taskLogByTask[t.id]),
+        comments: (commentsByTask[t.id] || []).map(function(c) {
+          return { id: c.id, text: c.body, author: c.author_name, date: ymd(c.created_at) };
+        })
+      };
+    });
+
+    var raid = { risks: [], assumptions: [], issues: [], dependencies: [] };
+    (raidByProj[pr.id] || []).forEach(function(r) {
+      var base = { id: r.id, desc: r.description, owner: r.owner_name, status: r.status, log: mapLog(raidLogByItem[r.id]) };
+      if (r.type === 'risk') {
+        raid.risks.push(Object.assign(base, { probability: r.probability, impact: r.impact, mitigation: r.mitigation }));
+      } else if (r.type === 'assumption') {
+        raid.assumptions.push(base);
+      } else if (r.type === 'issue') {
+        raid.issues.push(Object.assign(base, { severity: r.severity, solution: r.solution }));
+      } else if (r.type === 'dependency') {
+        raid.dependencies.push(base);
+      }
+    });
+
+    var documents = (docsByProj[pr.id] || []).map(function(d) {
+      return {
+        id: d.id, category: d.category, name: d.name, sourceType: d.source_type,
+        url: d.url, folder: d.folder_id ? (folderNameById[d.folder_id] || 'General') : 'General',
+        dateAdded: d.added_at
+      };
+    });
+    var docFolders = (foldersByProj[pr.id] || []).map(function(f){ return f.name; });
+    if (docFolders.indexOf('General') < 0) docFolders.unshift('General');
+
+    return {
+      id: pr.id, name: pr.name,
+      pm: pr.pm_name || (pr.pm_id ? nameById[pr.pm_id] : ''), pmId: pr.pm_id,
+      sponsor: pr.sponsor, category: pr.category, businessUnit: pr.business_unit,
+      team: teamNames, teamIds: teamIds,
+      status: pr.status, phase: pr.phase, progress: pr.progress,
+      start: pr.start_date, end: pr.end_date, plannedStart: pr.planned_start,
+      value: pr.value_area, priority: pr.priority, description: pr.description,
+      blockers: pr.blockers, health: pr.health, stage: pr.stage, requestId: pr.request_id,
+      milestones: milestones, tasks: tasks, raid: raid,
+      documents: documents, docFolders: docFolders.length ? docFolders : ['General']
+    };
+  });
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function pendingCount() { return D.requests.filter(function(r){ return r.status === 'Pending'; }).length; }
 function backlogCount()  { return D.projects.filter(function(p){ return p.stage  === 'backlog'; }).length; }
 
 function myProjects() {
-  if (D.role === 'pm')       return D.projects.filter(function(p){ return p.pm === currentUser(); });
+  if (D.role === 'pm') {
+    var myId = D.currentProfile ? D.currentProfile.id : null;
+    return D.projects.filter(function(p){ return p.pmId === myId; });
+  }
   return D.projects;
 }
 
 function myAssignedProjects() {
-  var me = currentUser();
-  return D.projects.filter(function(p){ return p.team.indexOf(me) >= 0; });
+  var myId = D.currentProfile ? D.currentProfile.id : null;
+  if (!myId) return [];
+  return D.projects.filter(function(p){ return (p.teamIds||[]).indexOf(myId) >= 0; });
 }
 
 function hasAssignedWork() {
-  var me = currentUser();
-  if (!me) return false;
-  var onActiveProject = D.projects.some(function(p){ return p.stage === 'active' && p.team.indexOf(me) >= 0; });
-  var hasOpenTask = D.projects.some(function(p){ return p.tasks.some(function(t){ return t.assignee === me && t.status !== 'Done'; }); });
+  var myId = D.currentProfile ? D.currentProfile.id : null;
+  if (!myId) return false;
+  var onActiveProject = D.projects.some(function(p){ return p.stage === 'active' && (p.teamIds||[]).indexOf(myId) >= 0; });
+  var hasOpenTask = D.projects.some(function(p){ return p.tasks.some(function(t){ return t.assigneeId === myId && t.status !== 'Done'; }); });
   return onActiveProject || hasOpenTask;
 }
 
@@ -32,7 +177,7 @@ function currentUser() {
 
 function canEdit(p) {
   if (D.role === 'admin') return true;
-  if (D.role === 'pm')    return p.pm === currentUser();
+  if (D.role === 'pm')    return !!(p.pmId && D.currentProfile && p.pmId === D.currentProfile.id);
   return false;
 }
 
@@ -131,6 +276,9 @@ var NAV_DEF = {
       {id:'roadmap',  icon:'ti-road',           label:'Roadmap'},
       {id:'resources',icon:'ti-users',          label:'Resources'}
     ]},
+    { s:'Data Tools', items:[
+      {id:'import-projects', icon:'ti-file-upload', label:'Import Projects'}
+    ]},
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a request'},
       {id:'my-requests',  icon:'ti-clock', label:'My requests'}
@@ -194,7 +342,8 @@ function nav(page) {
     backlog:pgBacklog, planned:pgPlanned, projects:pgProjects,
     completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
     submit:pgSubmit, 'my-requests':pgMyRequests,
-    'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity
+    'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
+    'import-projects':pgImportProjects
   };
   if (map[page]) map[page]();
 }
@@ -209,7 +358,7 @@ function handleRoute() {
 }
 window.addEventListener('hashchange', handleRoute);
 
-function bootAppForUser() {
+async function bootAppForUser(skipReload) {
   var realRole = D.currentProfile.role;
   document.getElementById('current-user-display').textContent =
     D.currentProfile.display_name + ' · ' + roleLabel(realRole);
@@ -233,6 +382,12 @@ function bootAppForUser() {
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app-root').style.display = 'flex';
   renderNav();
+
+  if (!skipReload) {
+    document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading your projects…</p></div>';
+    D.projects = await loadAllProjects();
+  }
+
   if (location.hash.indexOf('#/project/') === 0) {
     handleRoute();
   } else {
@@ -240,10 +395,14 @@ function bootAppForUser() {
   }
 }
 
+async function refreshProjects() {
+  D.projects = await loadAllProjects();
+}
+
 function setPreviewRole(role) {
   if (D.currentProfile.role !== 'admin') return; // safety check; UI is already hidden for non-admins
   D.previewRole = role || null;
-  bootAppForUser();
+  bootAppForUser(true);
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
@@ -752,7 +911,7 @@ function pgProjectDetail(pid, tab) {
 
       var trows = list.map(function(task) {
         var idx = p.tasks.indexOf(task);
-        var myTask = task.assignee === currentUser();
+        var myTask = !!(task.assigneeId && D.currentProfile && task.assigneeId === D.currentProfile.id);
         var logKey = p.id + '|' + task.id;
         var logOpenNow = !!taskLogOpen[logKey];
         var logRow = '';
@@ -1579,6 +1738,179 @@ function pgRoadmap() {
 }
 
 // ── Resources ──────────────────────────────────────────────────────────────────
+
+// ── Import Projects (Excel) ──────────────────────────────────────────────────
+
+var importState = { rows: null, profilesByEmail: null };
+
+function formatDateCell(val) {
+  if (val === null || val === undefined || val === '') return null;
+  if (val instanceof Date) return val.toISOString().split('T')[0];
+  var s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  var d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  return null;
+}
+
+function matchOneOf(val, options) {
+  if (!val) return null;
+  var s = String(val).trim().toLowerCase();
+  for (var i = 0; i < options.length; i++) {
+    if (options[i].toLowerCase() === s) return options[i];
+  }
+  return undefined; // signals "provided but didn't match"
+}
+
+function validateImportRow(row, profilesByEmail) {
+  var errors = [];
+  var name = String(row['Project Name'] || '').trim();
+  if (!name) errors.push('Missing Project Name');
+
+  var stageRaw = row['Stage'];
+  var stage = stageRaw ? matchOneOf(stageRaw, ['Backlog','Planned','Active','Complete']) : 'Backlog';
+  if (stage === undefined) errors.push('Stage "' + stageRaw + '" is not one of Backlog/Planned/Active/Complete');
+
+  var priorityRaw = row['Priority'];
+  var priority = priorityRaw ? matchOneOf(priorityRaw, ['Critical','High','Medium','Low']) : null;
+  if (priority === undefined) errors.push('Priority "' + priorityRaw + '" is not one of Critical/High/Medium/Low');
+
+  var categoryRaw = row['Category'];
+  var category = categoryRaw ? matchOneOf(categoryRaw, CATEGORIES) : null;
+  if (category === undefined) errors.push('Category "' + categoryRaw + '" is not a recognized category');
+
+  var startDate = formatDateCell(row['Start Date']);
+  if (row['Start Date'] && !startDate) errors.push('Start Date "' + row['Start Date'] + '" could not be read');
+  var endDate = formatDateCell(row['Target End Date']);
+  if (row['Target End Date'] && !endDate) errors.push('Target End Date "' + row['Target End Date'] + '" could not be read');
+
+  var progress = row['Progress %'] !== '' && row['Progress %'] != null ? parseInt(row['Progress %']) : 0;
+  if (isNaN(progress)) progress = 0;
+  progress = Math.max(0, Math.min(100, progress));
+
+  var pmEmail = String(row['PM Email'] || '').trim().toLowerCase();
+  var pmProfile = pmEmail ? profilesByEmail[pmEmail] : null;
+
+  return {
+    valid: errors.length === 0,
+    errors: errors,
+    record: {
+      name: name,
+      sponsor: row['Sponsor'] || null,
+      pm_id: pmProfile ? pmProfile.id : null,
+      pm_name: pmProfile ? pmProfile.display_name : (pmEmail || null),
+      category: category || null,
+      business_unit: row['Business Unit'] || null,
+      stage: (stage || 'Backlog').toLowerCase(),
+      status: row['Status'] || null,
+      priority: priority || null,
+      value_area: row['Value Area'] || null,
+      start_date: startDate,
+      end_date: endDate,
+      progress: progress,
+      description: row['Description'] || null,
+      blockers: row['Current Blockers'] || null,
+      health: 'green'
+    }
+  };
+}
+
+function renderImportPreview() {
+  var rows = importState.rows;
+  var validated = rows.map(function(r){ return validateImportRow(r, importState.profilesByEmail); });
+  var validCount = validated.filter(function(v){ return v.valid; }).length;
+
+  var tableRows = validated.map(function(v, idx) {
+    return '<tr>' +
+      '<td>' + (v.valid ? '<i class="ti ti-circle-check" style="color:#1D9E75"></i>' : '<i class="ti ti-alert-circle" style="color:#A32D2D"></i>') + '</td>' +
+      '<td>' + (v.record.name || '<span class="text-muted">(missing)</span>') + '</td>' +
+      '<td>' + (v.record.stage || '') + '</td>' +
+      '<td>' + (v.record.pm_name || '<span class="text-muted">—</span>') + '</td>' +
+      '<td style="color:#A32D2D;font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
+      '</tr>';
+  }).join('');
+
+  document.getElementById('import-preview').innerHTML =
+    '<div class="info-banner ' + (validCount === rows.length ? 'info-blue' : 'info-blue') + '" style="margin-bottom:14px">' +
+      '<i class="ti ti-info-circle"></i><div>' + validCount + ' of ' + rows.length + ' rows are ready to import' +
+      (validCount < rows.length ? '. Rows with errors will be skipped — fix them in your spreadsheet and re-upload if you want them included.' : '.') +
+      '</div></div>' +
+    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>PM</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
+    (validCount > 0 ? '<button class="btn btn-primary mt-12" id="confirm-import-btn"><i class="ti ti-upload"></i> Import ' + validCount + ' project' + (validCount===1?'':'s') + '</button>' : '');
+
+  if (validCount > 0) {
+    document.getElementById('confirm-import-btn').onclick = runImport;
+  }
+}
+
+async function runImport() {
+  var btn = document.getElementById('confirm-import-btn');
+  btn.disabled = true; btn.textContent = 'Importing…';
+
+  var validated = importState.rows.map(function(r){ return validateImportRow(r, importState.profilesByEmail); });
+  var records = validated.filter(function(v){ return v.valid; }).map(function(v){ return v.record; });
+
+  var result = await sb.from('projects').insert(records);
+  if (result.error) {
+    showToast('Import failed: ' + result.error.message);
+    btn.disabled = false; btn.textContent = 'Import ' + records.length + ' projects';
+    return;
+  }
+  showToast(records.length + ' project' + (records.length===1?'':'s') + ' imported');
+  importState = { rows: null, profilesByEmail: null };
+  await refreshProjects();
+  nav('projects');
+}
+
+async function handleImportFile(file) {
+  document.getElementById('import-preview').innerHTML = '<div class="text-muted" style="padding:12px">Reading file…</div>';
+
+  var profilesResult = await sb.from('profiles').select('id, email, display_name');
+  var profilesByEmail = {};
+  (profilesResult.data || []).forEach(function(p){ profilesByEmail[(p.email||'').toLowerCase()] = p; });
+  importState.profilesByEmail = profilesByEmail;
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      var sheet = wb.Sheets['Projects'] || wb.Sheets[wb.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      rows = rows.filter(function(r){ return String(r['Project Name']||'').trim() !== ''; });
+      if (!rows.length) {
+        document.getElementById('import-preview').innerHTML = '<div class="empty-state" style="padding:24px"><i class="ti ti-file-off"></i><p>No project rows found in that file</p></div>';
+        return;
+      }
+      importState.rows = rows;
+      renderImportPreview();
+    } catch (err) {
+      document.getElementById('import-preview').innerHTML = '<div class="empty-state" style="padding:24px"><i class="ti ti-alert-triangle"></i><p>Could not read that file: ' + err.message + '</p></div>';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function pgImportProjects() {
+  tb('Import Projects');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can import projects.</p></div>';
+    return;
+  }
+  importState = { rows: null, profilesByEmail: null };
+  document.getElementById('content').innerHTML =
+    '<div class="card mb-16">' +
+    '<div class="section-title">Bring in existing projects</div>' +
+    '<p class="text-muted" style="font-size:13px;margin-bottom:16px">Use this to add in-flight projects directly, without sending each one through the request/approval workflow.</p>' +
+    '<a class="btn btn-sm mb-16" href="pmo-hub-project-import-template.xlsx" download><i class="ti ti-download"></i> Download the import template</a>' +
+    '<div class="form-group"><div class="form-label">Upload your filled-in template</div><input type="file" id="import-file" accept=".xlsx"></div>' +
+    '</div>' +
+    '<div id="import-preview"></div>';
+
+  document.getElementById('import-file').addEventListener('change', function(e) {
+    if (e.target.files && e.target.files[0]) handleImportFile(e.target.files[0]);
+  });
+}
 
 function pgResources() {
   tb('Resources & capacity', D.role==='admin' ? '<button class="btn btn-primary" onclick="openManageResources()"><i class="ti ti-settings"></i> Manage resources</button>' : '');
