@@ -60,6 +60,9 @@ async function loadAllProjects() {
 
   var nameById = {};
   profilesRows.forEach(function(p){ nameById[p.id] = p.display_name; });
+  D.people = profilesRows.map(function(p){ return p.display_name; });
+  D.peopleByName = {};
+  profilesRows.forEach(function(p){ D.peopleByName[p.display_name] = p; });
 
   var teamByProject      = groupBy(teamRows, 'project_id');
   var milestonesByProj   = groupBy(milestoneRows, 'project_id');
@@ -127,6 +130,8 @@ async function loadAllProjects() {
       };
     });
     var docFolders = (foldersByProj[pr.id] || []).map(function(f){ return f.name; });
+    var docFolderIds = {};
+    (foldersByProj[pr.id] || []).forEach(function(f){ docFolderIds[f.name] = f.id; });
     if (docFolders.indexOf('General') < 0) docFolders.unshift('General');
 
     return {
@@ -139,7 +144,7 @@ async function loadAllProjects() {
       value: pr.value_area, priority: pr.priority, description: pr.description,
       blockers: pr.blockers, health: pr.health, stage: pr.stage, requestId: pr.request_id,
       milestones: milestones, tasks: tasks, raid: raid,
-      documents: documents, docFolders: docFolders.length ? docFolders : ['General']
+      documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
     };
   });
 }
@@ -179,6 +184,10 @@ function canEdit(p) {
   if (D.role === 'admin') return true;
   if (D.role === 'pm')    return !!(p.pmId && D.currentProfile && p.pmId === D.currentProfile.id);
   return false;
+}
+
+function resolveAssignee(name) {
+  return (D.peopleByName && D.peopleByName[name]) ? D.peopleByName[name] : null;
 }
 
 function roleLabel(r) {
@@ -642,8 +651,8 @@ function pgBacklog() {
 
 function openScheduleModal(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  var pmOpts = '<option value="">— None (assign later) —</option>' + ALL_PEOPLE.map(function(n){ return '<option value="' + n + '"' + (p.pm === n ? ' selected' : '') + '>' + n + '</option>'; }).join('');
-  var memberOpts = ALL_PEOPLE.concat(ALL_TEAMS).map(function(n) {
+  var pmOpts = '<option value="">— None (assign later) —</option>' + D.people.map(function(n){ return '<option value="' + n + '"' + (p.pm === n ? ' selected' : '') + '>' + n + '</option>'; }).join('');
+  var memberOpts = D.people.concat(ALL_TEAMS).map(function(n) {
     var isTeam = ALL_TEAMS.indexOf(n) >= 0;
     var chk = p.team.indexOf(n) >= 0 ? ' checked' : '';
     return '<label class="member-check"><input type="checkbox" id="schm-' + n.replace(/ /g,'_') + '"' + chk + '> ' + n + (isTeam ? ' <span class="badge badge-blue" style="font-size:10px">Team</span>' : '') + '</label>';
@@ -659,14 +668,31 @@ function openScheduleModal(pid) {
     '<button class="btn btn-primary" onclick="scheduleProject(\'' + p.id + '\')"><i class="ti ti-calendar-check"></i> Save changes</button></div>', true);
 }
 
-function scheduleProject(pid) {
+async function scheduleProject(pid) {
   var p     = D.projects.find(function(x){ return x.id === pid; });
   var start = document.getElementById('sch-start').value;
   var end   = document.getElementById('sch-end').value;
   if (!start || !end) { showToast('Please set a start and end date'); return; }
-  var allNames = ALL_PEOPLE.concat(ALL_TEAMS);
-  p.team = allNames.filter(function(n){ var el = document.getElementById('schm-' + n.replace(/ /g,'_')); return el && el.checked; });
-  p.pm = document.getElementById('sch-pm').value;
+  var allNames = D.people.concat(ALL_TEAMS);
+  var newTeamNames = allNames.filter(function(n){ var el = document.getElementById('schm-' + n.replace(/ /g,'_')); return el && el.checked; });
+  var pmName = document.getElementById('sch-pm').value;
+  var pmProfile = resolveAssignee(pmName);
+
+  var result = await sb.from('projects').update({
+    planned_start: start, start_date: start, end_date: end, stage: 'planned',
+    pm_id: pmProfile ? pmProfile.id : null, pm_name: pmName || null
+  }).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+
+  var newRealIds = newTeamNames.map(function(n){ return resolveAssignee(n); }).filter(Boolean).map(function(pr){ return pr.id; });
+  var oldIds = p.teamIds || [];
+  var toAdd = newRealIds.filter(function(id){ return oldIds.indexOf(id) < 0; });
+  var toRemove = oldIds.filter(function(id){ return newRealIds.indexOf(id) < 0; });
+  if (toAdd.length) await sb.from('project_team').insert(toAdd.map(function(id){ return { project_id: pid, user_id: id }; }));
+  for (var i = 0; i < toRemove.length; i++) { await sb.from('project_team').delete().eq('project_id', pid).eq('user_id', toRemove[i]); }
+
+  p.team = newTeamNames; p.teamIds = newRealIds;
+  p.pm = pmName; p.pmId = pmProfile ? pmProfile.id : null;
   p.plannedStart = start; p.start = start; p.end = end; p.stage = 'planned';
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) { r.status = 'Planned'; r.linkedProject = pid; }
@@ -721,7 +747,7 @@ function pgPlanned() {
 function activateProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   // require at least one named resource (not just a team name)
-  var hasResource = p.team.some(function(m){ return ALL_PEOPLE.indexOf(m) >= 0; });
+  var hasResource = p.team.some(function(m){ return D.people.indexOf(m) >= 0; });
   if (!hasResource) { showToast('Please assign at least one individual resource before activating', 'error'); openScheduleModal(pid); return; }
   p.stage = 'active'; p.status = 'On Track';
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
@@ -1078,24 +1104,55 @@ function pgProjectDetail(pid, tab) {
     var h = '#/project/' + pid + '/' + t;
     if (location.hash !== h) location.hash = h;
   };
-  window.toggleMS   = function(pid2,idx){
+  window.toggleMS   = async function(pid2,idx){
     var pr=D.projects.find(function(x){return x.id===pid2;});
     var m = pr.milestones[idx];
     if (!m.done) { openCompleteMilestoneModal(pid2, idx); return; }
+    var result = await sb.from('milestones').update({ done: false, completed_date: null }).eq('id', m.id);
+    if (result.error) { showToast('Could not save: ' + result.error.message); return; }
     m.done = false; m.completedDate = null;
-    m.log = m.log || []; m.log.push({ date: new Date().toISOString().split('T')[0], actor: actorName(), action: 'Reopened', detail: '' });
+    m.log = m.log || []; m.log.push(await writeLog('milestone_log', 'milestone_id', m.id, 'Reopened', ''));
     document.getElementById('ptab-content').innerHTML=tabC('milestones');
   };
-  window.deleteMS   = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.milestones.splice(idx,1); document.getElementById('ptab-content').innerHTML=tabC('milestones'); };
+  window.deleteMS   = async function(pid2,idx){
+    var pr=D.projects.find(function(x){return x.id===pid2;});
+    var m = pr.milestones[idx];
+    var result = await sb.from('milestones').delete().eq('id', m.id);
+    if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+    pr.milestones.splice(idx,1);
+    document.getElementById('ptab-content').innerHTML=tabC('milestones');
+  };
   window.toggleMSLog = function(pid2, idx) {
     var key = pid2 + '|' + p.milestones[idx].id;
     milestoneLogOpen[key] = !milestoneLogOpen[key];
     document.getElementById('ptab-content').innerHTML = tabC('milestones');
   };
   window.openEditMilestone = function(pid2, idx){ openMilestoneModal(pid2, idx); };
-  window.deleteTask = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.tasks.splice(idx,1); document.getElementById('ptab-content').innerHTML=tabC('tasks'); };
-  window.deleteRaid = function(pid2,type,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); pr.raid[type].splice(idx,1); document.getElementById('ptab-content').innerHTML=tabC('raid'); };
-  window.completeMyTask = function(pid2,idx){ var pr=D.projects.find(function(x){return x.id===pid2;}); var tk=pr.tasks[idx]; var old=tk.status; tk.status='Done'; tk.log=tk.log||[]; tk.log.push({date:new Date().toISOString().split('T')[0],actor:actorName(),action:'Updated',detail:'Status: "'+old+'" → "Done"'}); document.getElementById('ptab-content').innerHTML=tabC('tasks'); showToast('Task marked complete'); };
+  window.deleteTask = async function(pid2,idx){
+    var pr=D.projects.find(function(x){return x.id===pid2;});
+    var tk = pr.tasks[idx];
+    var result = await sb.from('tasks').delete().eq('id', tk.id);
+    if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+    pr.tasks.splice(idx,1);
+    document.getElementById('ptab-content').innerHTML=tabC('tasks');
+  };
+  window.deleteRaid = async function(pid2,type,idx){
+    var pr=D.projects.find(function(x){return x.id===pid2;});
+    var itemToDelete = pr.raid[type][idx];
+    var result = await sb.from('raid_items').delete().eq('id', itemToDelete.id);
+    if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+    pr.raid[type].splice(idx,1);
+    document.getElementById('ptab-content').innerHTML=tabC('raid');
+  };
+  window.completeMyTask = async function(pid2,idx){
+    var pr=D.projects.find(function(x){return x.id===pid2;});
+    var tk=pr.tasks[idx]; var old=tk.status;
+    var result = await sb.from('tasks').update({ status: 'Done' }).eq('id', tk.id);
+    if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+    tk.status='Done'; tk.log=tk.log||[];
+    tk.log.push(await writeLog('task_log', 'task_id', tk.id, 'Updated', 'Status: "'+old+'" → "Done"'));
+    document.getElementById('ptab-content').innerHTML=tabC('tasks'); showToast('Task marked complete');
+  };
   window.openAddMilestone = function(pid2){ openMilestoneModal(pid2); };
   window.openAddTask      = function(pid2){ openTaskModal(pid2, null); };
   window.openEditTask     = function(pid2,idx){ openTaskModal(pid2, idx); };
@@ -1143,18 +1200,22 @@ function pgProjectDetail(pid, tab) {
     taskCommentsOpen[key] = !taskCommentsOpen[key];
     document.getElementById('ptab-content').innerHTML = tabC('tasks');
   };
-  window.addComment = function(pid2, taskId) {
+  window.addComment = async function(pid2, taskId) {
     var pr = D.projects.find(function(x){ return x.id === pid2; });
     var tk = pr.tasks.find(function(x){ return x.id === taskId; });
     var el = document.getElementById('cmt-input-' + taskId);
     var text = el ? el.value.trim() : '';
     if (!text) { showToast('Comment cannot be empty'); return; }
+    var result = await sb.from('task_comments').insert({
+      task_id: taskId, author_id: D.currentProfile.id, author_name: D.currentProfile.display_name, body: text
+    }).select().single();
+    if (result.error) { showToast('Could not save: ' + result.error.message); return; }
     tk.comments = tk.comments || [];
-    tk.comments.push({ id:'c'+Date.now(), text:text, author:actorName(), date:new Date().toISOString().split('T')[0] });
+    tk.comments.push({ id: result.data.id, text: text, author: D.currentProfile.display_name, date: ymd(result.data.created_at) });
     document.getElementById('ptab-content').innerHTML = tabC('tasks');
     showToast('Comment added');
   };
-  window.openEditComment = function(pid2, taskId, cid) {
+  window.openEditComment = async function(pid2, taskId, cid) {
     var pr = D.projects.find(function(x){ return x.id === pid2; });
     var tk = pr.tasks.find(function(x){ return x.id === taskId; });
     var c = tk.comments.find(function(x){ return x.id === cid; });
@@ -1162,13 +1223,17 @@ function pgProjectDetail(pid, tab) {
     if (text == null) return;
     text = text.trim();
     if (!text) { showToast('Comment cannot be empty'); return; }
+    var result = await sb.from('task_comments').update({ body: text, edited_at: new Date().toISOString() }).eq('id', cid);
+    if (result.error) { showToast('Could not save: ' + result.error.message); return; }
     c.text = text;
     document.getElementById('ptab-content').innerHTML = tabC('tasks');
     showToast('Comment updated');
   };
-  window.deleteComment = function(pid2, taskId, cid) {
+  window.deleteComment = async function(pid2, taskId, cid) {
     var pr = D.projects.find(function(x){ return x.id === pid2; });
     var tk = pr.tasks.find(function(x){ return x.id === taskId; });
+    var result = await sb.from('task_comments').delete().eq('id', cid);
+    if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
     tk.comments = tk.comments.filter(function(x){ return x.id !== cid; });
     document.getElementById('ptab-content').innerHTML = tabC('tasks');
     showToast('Comment deleted');
@@ -1190,21 +1255,29 @@ function pgProjectDetail(pid, tab) {
     docFolderState[pid2] = folder;
     document.getElementById('ptab-content').innerHTML = tabC('documentation');
   };
-  window.newDocFolder = function(pid2) {
+  window.newDocFolder = async function(pid2) {
     var name = prompt('New folder name:');
     if (!name) return;
     name = name.trim();
     if (!name) return;
     var pr = D.projects.find(function(x){ return x.id === pid2; });
     pr.docFolders = pr.docFolders && pr.docFolders.length ? pr.docFolders : ['General'];
-    if (pr.docFolders.indexOf(name) < 0) pr.docFolders.push(name);
+    if (pr.docFolders.indexOf(name) >= 0) { docFolderState[pid2] = name; document.getElementById('ptab-content').innerHTML = tabC('documentation'); return; }
+    var result = await sb.from('doc_folders').insert({ project_id: pid2, name: name }).select().single();
+    if (result.error) { showToast('Could not create folder: ' + result.error.message); return; }
+    pr.docFolders.push(name);
+    pr.docFolderIds = pr.docFolderIds || {};
+    pr.docFolderIds[name] = result.data.id;
     docFolderState[pid2] = name;
     document.getElementById('ptab-content').innerHTML = tabC('documentation');
     showToast('Folder created');
   };
   window.openMoveDoc = function(pid2, idx) { openMoveDocModal(pid2, idx); };
-  window.deleteDoc   = function(pid2, idx) {
+  window.deleteDoc   = async function(pid2, idx) {
     var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var doc = pr.documents[idx];
+    var result = await sb.from('documents').delete().eq('id', doc.id);
+    if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
     pr.documents.splice(idx, 1);
     document.getElementById('ptab-content').innerHTML = tabC('documentation');
     showToast('Document removed');
@@ -1216,8 +1289,10 @@ function pgProjectDetail(pid, tab) {
   };
 }
 
-function markComplete(pid) {
+async function markComplete(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
+  var result = await sb.from('projects').update({ stage: 'complete', status: 'Completed', progress: 100 }).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
   p.stage = 'complete'; p.status = 'Completed'; p.progress = 100;
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) r.status = 'Active';
@@ -1226,6 +1301,14 @@ function markComplete(pid) {
 }
 
 // ── Milestone / Task / RAID modals ─────────────────────────────────────────────
+
+async function writeLog(table, fkCol, fkVal, action, detail) {
+  var entry = { actor_id: D.currentProfile.id, actor_name: D.currentProfile.display_name, action: action, detail: detail || '' };
+  entry[fkCol] = fkVal;
+  var result = await sb.from(table).insert(entry).select().single();
+  if (result.error) { console.error(table + ' log write failed:', result.error); return { date: new Date().toISOString().split('T')[0], actor: D.currentProfile.display_name, action: action, detail: detail || '' }; }
+  return { date: ymd(result.data.logged_at), actor: result.data.actor_name, action: result.data.action, detail: result.data.detail || '' };
+}
 
 function openMilestoneModal(pid, idx) {
   var p = D.projects.find(function(x){ return x.id === pid; });
@@ -1236,19 +1319,27 @@ function openMilestoneModal(pid, idx) {
     '<div class="form-group"><div class="form-label">Target date *</div><input type="date" id="ms-date" value="' + (m?m.date:'') + '"></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="ms-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add milestone') + '</button></div>');
-  document.getElementById('ms-save').onclick = function() {
+  document.getElementById('ms-save').onclick = async function() {
     var name = document.getElementById('ms-name').value.trim(); var date = document.getElementById('ms-date').value;
     if (!name||!date){ showToast('Fill in name and date'); return; }
+    var btn = document.getElementById('ms-save'); btn.disabled = true;
+
     if (isEdit) {
       var changes = [];
       if (m.name !== name) changes.push('Name: "' + m.name + '" → "' + name + '"');
       if (m.date !== date) changes.push('Target date: "' + m.date + '" → "' + date + '"');
+      var result = await sb.from('milestones').update({ name: name, target_date: date }).eq('id', m.id);
+      if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
       m.name = name; m.date = date;
       m.log = m.log || [];
-      if (changes.length) m.log.push({ date: new Date().toISOString().split('T')[0], actor: actorName(), action: 'Updated', detail: changes.join('; ') });
+      if (changes.length) m.log.push(await writeLog('milestone_log', 'milestone_id', m.id, 'Updated', changes.join('; ')));
       showToast('Milestone updated');
     } else {
-      p.milestones.push({ id:'ms'+Date.now(), name:name, date:date, done:false, log:[{date:new Date().toISOString().split('T')[0],actor:actorName(),action:'Created',detail:''}] });
+      var insertResult = await sb.from('milestones').insert({ project_id: pid, name: name, target_date: date, done: false }).select().single();
+      if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
+      var newM = { id: insertResult.data.id, name: name, date: date, done: false, completedDate: null, log: [] };
+      newM.log.push(await writeLog('milestone_log', 'milestone_id', newM.id, 'Created', ''));
+      p.milestones.push(newM);
       showToast('Milestone added');
     }
     closeModal(); if (window.switchPTab) window.switchPTab('milestones');
@@ -1274,13 +1365,17 @@ function openCompleteMilestoneModal(pid, idx) {
     document.getElementById('cm-custom-row').style.display = custom ? 'block' : 'none';
   };
 
-  document.getElementById('cm-save').onclick = function() {
+  document.getElementById('cm-save').onclick = async function() {
     var choice = document.querySelector('input[name="cm-choice"]:checked').value;
     var completedDate = choice === 'custom' ? document.getElementById('cm-date').value : m.date;
     if (!completedDate) { showToast('Enter a completion date'); return; }
+    var btn = document.getElementById('cm-save'); btn.disabled = true;
+
+    var result = await sb.from('milestones').update({ done: true, completed_date: completedDate }).eq('id', m.id);
+    if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
     m.done = true; m.completedDate = completedDate;
     m.log = m.log || [];
-    m.log.push({ date: new Date().toISOString().split('T')[0], actor: actorName(), action: 'Completed', detail: 'Completed date: ' + completedDate + (completedDate !== m.date ? ' (target was ' + m.date + ')' : '') });
+    m.log.push(await writeLog('milestone_log', 'milestone_id', m.id, 'Completed', 'Completed date: ' + completedDate + (completedDate !== m.date ? ' (target was ' + m.date + ')' : '')));
     showToast('"' + m.name + '" marked complete');
     closeModal(); if (window.switchPTab) window.switchPTab('milestones');
   };
@@ -1290,7 +1385,7 @@ function openTaskModal(pid, idx) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   var task = idx != null ? p.tasks[idx] : null;
   // only project members + all people for admin/pm
-  var pool = canEdit(p) ? ALL_PEOPLE.concat(ALL_TEAMS) : p.team;
+  var pool = canEdit(p) ? D.people.concat(ALL_TEAMS) : p.team;
   var assigneeOpts = pool.map(function(n){ return '<option' + (task && task.assignee===n ? ' selected' : '') + '>' + n + '</option>'; }).join('');
   showModal('<div class="modal-title">' + (task?'Edit task':'Add task') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Task title *</div><input type="text" id="tm-title" value="' + (task?task.title:'') + '" placeholder="Task name"></div>' +
@@ -1302,21 +1397,36 @@ function openTaskModal(pid, idx) {
     '<div class="form-group"><div class="form-label">Due date</div><input type="date" id="tm-due" value="' + (task?task.due:'') + '"></div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="tm-save"><i class="ti ti-check"></i> ' + (task?'Save changes':'Add task') + '</button></div>');
-  document.getElementById('tm-save').onclick = function() {
+  document.getElementById('tm-save').onclick = async function() {
     var title = document.getElementById('tm-title').value.trim();
     if (!title){ showToast('Task title required'); return; }
+    var btn = document.getElementById('tm-save'); btn.disabled = true;
     var newVals = {title:title,assignee:document.getElementById('tm-assignee').value,status:document.getElementById('tm-status').value,due:document.getElementById('tm-due').value};
+    var assigneeProfile = resolveAssignee(newVals.assignee);
+
     if (idx!=null) {
       var fieldLabels = {title:'Title',assignee:'Assignee',status:'Status',due:'Due date'};
       var changes = [];
       ['title','assignee','status','due'].forEach(function(f){
         if (task[f] !== newVals[f]) changes.push(fieldLabels[f] + ': "' + (task[f]||'—') + '" → "' + (newVals[f]||'—') + '"');
       });
-      task.title = newVals.title; task.assignee = newVals.assignee; task.status = newVals.status; task.due = newVals.due;
+      var result = await sb.from('tasks').update({
+        title: newVals.title, assignee_id: assigneeProfile ? assigneeProfile.id : null,
+        assignee_name: newVals.assignee, status: newVals.status, due_date: newVals.due || null
+      }).eq('id', task.id);
+      if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+      task.title = newVals.title; task.assignee = newVals.assignee; task.assigneeId = assigneeProfile ? assigneeProfile.id : null;
+      task.status = newVals.status; task.due = newVals.due;
       task.log = task.log || [];
-      if (changes.length) task.log.push({ date: new Date().toISOString().split('T')[0], actor: actorName(), action: 'Updated', detail: changes.join('; ') });
+      if (changes.length) task.log.push(await writeLog('task_log', 'task_id', task.id, 'Updated', changes.join('; ')));
     } else {
-      var t2 = {id:'t'+Date.now(),title:newVals.title,assignee:newVals.assignee,status:newVals.status,due:newVals.due,log:[{date:new Date().toISOString().split('T')[0],actor:actorName(),action:'Created',detail:''}],comments:[]};
+      var insertResult = await sb.from('tasks').insert({
+        project_id: pid, title: newVals.title, assignee_id: assigneeProfile ? assigneeProfile.id : null,
+        assignee_name: newVals.assignee, status: newVals.status, due_date: newVals.due || null
+      }).select().single();
+      if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
+      var t2 = {id:insertResult.data.id,title:newVals.title,assignee:newVals.assignee,assigneeId:assigneeProfile?assigneeProfile.id:null,status:newVals.status,due:newVals.due,log:[],comments:[]};
+      t2.log.push(await writeLog('task_log', 'task_id', t2.id, 'Created', ''));
       p.tasks.push(t2);
     }
     showToast(idx!=null?'Task updated':'Task added'); closeModal(); if (window.switchPTab) window.switchPTab('tasks');
@@ -1329,7 +1439,7 @@ function openRaidModal(pid, type, idx) {
   var item = isEdit ? p.raid[type][idx] : null;
   var label = {risks:'Risk',assumptions:'Assumption',issues:'Issue',dependencies:'Dependency'}[type];
   // owner: project members; with option to add
-  var ownerPool = p.team.filter(function(m){ return ALL_PEOPLE.indexOf(m) >= 0; });
+  var ownerPool = p.team.filter(function(m){ return D.people.indexOf(m) >= 0; });
   var ownerOpts = '<option value="">— Select —</option>' + ownerPool.map(function(n){ return '<option' + (item && item.owner===n?' selected':'') + '>' + n + '</option>'; }).join('') +
     '<option value="__add__">+ Add member to project…</option>';
   var extra = '';
@@ -1353,18 +1463,23 @@ function openRaidModal(pid, type, idx) {
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="rd-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add ' + label) + '</button></div>', true);
 
-  window.handleOwnerChange = function(pid2) {
+  window.handleOwnerChange = async function(pid2) {
     var sel = document.getElementById('rd-owner');
     if (sel.value === '__add__') {
       var pr2 = D.projects.find(function(x){ return x.id === pid2; });
-      var nonMembers = ALL_PEOPLE.filter(function(n){ return pr2.team.indexOf(n) < 0; });
+      var nonMembers = D.people.filter(function(n){ return pr2.team.indexOf(n) < 0; });
       var chosen = prompt('Select person to add to project:\n' + nonMembers.map(function(n,i){ return (i+1)+'. '+n; }).join('\n') + '\n\nEnter number:');
       var num = parseInt(chosen);
       if (num && nonMembers[num-1]) {
-        pr2.team.push(nonMembers[num-1]);
-        addNotif(nonMembers[num-1], 'You have been added to project "' + pr2.name + '".', 'team');
-        showToast(nonMembers[num-1] + ' added to project');
-        var newOpts = '<option value="">— Select —</option>' + pr2.team.filter(function(m){ return ALL_PEOPLE.indexOf(m)>=0; }).map(function(n){ return '<option>' + n + '</option>'; }).join('') + '<option value="__add__">+ Add member to project…</option>';
+        var chosenName = nonMembers[num-1];
+        var chosenProfile = resolveAssignee(chosenName);
+        var result = await sb.from('project_team').insert({ project_id: pid2, user_id: chosenProfile.id });
+        if (result.error) { showToast('Could not add member: ' + result.error.message); sel.value = ''; return; }
+        pr2.team.push(chosenName);
+        pr2.teamIds.push(chosenProfile.id);
+        addNotif(chosenName, 'You have been added to project "' + pr2.name + '".', 'team');
+        showToast(chosenName + ' added to project');
+        var newOpts = '<option value="">— Select —</option>' + pr2.team.filter(function(m){ return D.people.indexOf(m)>=0; }).map(function(n){ return '<option>' + n + '</option>'; }).join('') + '<option value="__add__">+ Add member to project…</option>';
         sel.innerHTML = newOpts;
       } else {
         sel.value = '';
@@ -1372,11 +1487,13 @@ function openRaidModal(pid, type, idx) {
     }
   };
 
-  document.getElementById('rd-save').onclick = function() {
+  document.getElementById('rd-save').onclick = async function() {
     var desc = document.getElementById('rd-desc').value.trim();
     if (!desc){ showToast('Description required'); return; }
     var owner = document.getElementById('rd-owner').value;
     if (owner === '__add__') owner = '';
+    var btn = document.getElementById('rd-save'); btn.disabled = true;
+    var dbType = { risks:'risk', assumptions:'assumption', issues:'issue', dependencies:'dependency' }[type];
 
     if (isEdit) {
       var fieldLabels = { desc:'Description', owner:'Owner', probability:'Probability', impact:'Impact', status:'Status', mitigation:'Mitigation', severity:'Severity', solution:'Solution' };
@@ -1391,17 +1508,33 @@ function openRaidModal(pid, type, idx) {
         var newV = newVals[f] != null ? newVals[f].toString() : '';
         if (oldV !== newV) changes.push((fieldLabels[f]||f) + ': "' + (oldV||'—') + (f==='probability'&&oldV!==''?'%':'') + '" → "' + (newV||'—') + (f==='probability'&&newV!==''?'%':'') + '"');
       });
-      Object.keys(newVals).forEach(function(f){ item[f] = newVals[f]; });
 
-      if (changes.length) pushLog(item, 'Updated', changes.join('; '));
+      var dbUpdate = { description: newVals.desc, owner_name: newVals.owner || null };
+      if (newVals.probability !== undefined) dbUpdate.probability = newVals.probability;
+      if (newVals.impact !== undefined) dbUpdate.impact = newVals.impact;
+      if (newVals.mitigation !== undefined) dbUpdate.mitigation = newVals.mitigation;
+      if (newVals.severity !== undefined) dbUpdate.severity = newVals.severity;
+      if (newVals.solution !== undefined) dbUpdate.solution = newVals.solution;
+      if (newVals.status !== undefined) dbUpdate.status = newVals.status;
+
+      var result = await sb.from('raid_items').update(dbUpdate).eq('id', item.id);
+      if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+      Object.keys(newVals).forEach(function(f){ item[f] = newVals[f]; });
+      if (changes.length) item.log.push(await writeLog('raid_log', 'raid_item_id', item.id, 'Updated', changes.join('; ')));
       showToast(label + ' updated');
     } else {
-      var n;
-      if (type==='risks')        n = {id:'ri'+Date.now(),desc:desc,probability:parseInt(document.getElementById('rd-prob').value)||0,impact:document.getElementById('rd-impact').value,status:document.getElementById('rd-status').value,owner:owner,mitigation:document.getElementById('rd-mit').value};
-      else if (type==='assumptions')  n = {id:'a'+Date.now(),desc:desc,owner:owner};
-      else if (type==='issues')       n = {id:'i'+Date.now(),desc:desc,severity:document.getElementById('rd-sev').value,owner:owner,status:document.getElementById('rd-issuest').value,solution:document.getElementById('rd-sol').value};
-      else if (type==='dependencies') n = {id:'d'+Date.now(),desc:desc,owner:owner,status:document.getElementById('rd-depst').value};
-      pushLog(n, 'Created');
+      var record = { project_id: pid, type: dbType, description: desc, owner_name: owner || null };
+      if (type==='risks')   { record.probability = parseInt(document.getElementById('rd-prob').value)||0; record.impact = document.getElementById('rd-impact').value; record.status = document.getElementById('rd-status').value; record.mitigation = document.getElementById('rd-mit').value; }
+      else if (type==='issues')       { record.severity = document.getElementById('rd-sev').value; record.status = document.getElementById('rd-issuest').value; record.solution = document.getElementById('rd-sol').value; }
+      else if (type==='dependencies') { record.status = document.getElementById('rd-depst').value; }
+
+      var insertResult = await sb.from('raid_items').insert(record).select().single();
+      if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
+      var n = { id: insertResult.data.id, desc: desc, owner: owner, log: [] };
+      if (type==='risks')        { n.probability = record.probability; n.impact = record.impact; n.status = record.status; n.mitigation = record.mitigation; }
+      else if (type==='issues')       { n.severity = record.severity; n.status = record.status; n.solution = record.solution; }
+      else if (type==='dependencies') { n.status = record.status; }
+      n.log.push(await writeLog('raid_log', 'raid_item_id', n.id, 'Created', ''));
       p.raid[type].push(n);
       showToast(label + ' added');
     }
@@ -1450,7 +1583,7 @@ function openDocModal(pid, idx) {
   };
   setTimeout(function(){ if (window.toggleDocSource) window.toggleDocSource(); }, 0);
 
-  window.handleDocFolderChange = function(pid2) {
+  window.handleDocFolderChange = async function(pid2) {
     var sel = document.getElementById('dm-folder');
     if (sel.value === '__new__') {
       var name = prompt('New folder name:');
@@ -1458,7 +1591,13 @@ function openDocModal(pid, idx) {
       if (name && name.trim()) {
         name = name.trim();
         pr2.docFolders = pr2.docFolders && pr2.docFolders.length ? pr2.docFolders : ['General'];
-        if (pr2.docFolders.indexOf(name) < 0) pr2.docFolders.push(name);
+        if (pr2.docFolders.indexOf(name) < 0) {
+          var folderResult = await sb.from('doc_folders').insert({ project_id: pid2, name: name }).select().single();
+          if (folderResult.error) { showToast('Could not create folder: ' + folderResult.error.message); sel.value = pr2.docFolders[0] || 'General'; return; }
+          pr2.docFolders.push(name);
+          pr2.docFolderIds = pr2.docFolderIds || {};
+          pr2.docFolderIds[name] = folderResult.data.id;
+        }
         var newOpts = pr2.docFolders.map(function(f){ return '<option' + (f===name?' selected':'') + '>' + f + '</option>'; }).join('') + '<option value="__new__">+ New folder…</option>';
         sel.innerHTML = newOpts;
       } else {
@@ -1467,7 +1606,7 @@ function openDocModal(pid, idx) {
     }
   };
 
-  document.getElementById('dm-save').onclick = function() {
+  document.getElementById('dm-save').onclick = async function() {
     var name = document.getElementById('dm-name').value.trim();
     if (!name) { showToast('Document name required'); return; }
     var cat = document.getElementById('dm-cat').value;
@@ -1484,11 +1623,22 @@ function openDocModal(pid, idx) {
       else if (isEdit && d.sourceType === 'file') url = d.url;
       else { showToast('Choose a file to upload'); return; }
     }
+    var folderId = (folder === 'General') ? null : ((p.docFolderIds && p.docFolderIds[folder]) || null);
+    var btn = document.getElementById('dm-save'); btn.disabled = true;
+
     if (isEdit) {
+      var result = await sb.from('documents').update({
+        category: cat, name: name, source_type: src, url: url, folder_id: folderId
+      }).eq('id', d.id);
+      if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
       d.name = name; d.category = cat; d.sourceType = src; d.url = url; d.folder = folder;
       showToast('Document updated');
     } else {
-      p.documents.push({ id:'doc'+Date.now(), category:cat, name:name, sourceType:src, url:url, folder:folder, dateAdded:new Date().toISOString().split('T')[0] });
+      var insertResult = await sb.from('documents').insert({
+        project_id: pid, category: cat, name: name, source_type: src, url: url, folder_id: folderId, added_by: D.currentProfile.id
+      }).select().single();
+      if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
+      p.documents.push({ id: insertResult.data.id, category:cat, name:name, sourceType:src, url:url, folder:folder, dateAdded: insertResult.data.added_at });
       showToast('Document added');
     }
     closeModal(); if (window.switchPTab) window.switchPTab('documentation');
@@ -1506,7 +1656,7 @@ function openMoveDocModal(pid, idx) {
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="mv-save"><i class="ti ti-check"></i> Move</button></div>');
 
-  window.handleMoveFolderChange = function(pid2) {
+  window.handleMoveFolderChange = async function(pid2) {
     var sel = document.getElementById('mv-folder');
     if (sel.value === '__new__') {
       var name = prompt('New folder name:');
@@ -1514,7 +1664,13 @@ function openMoveDocModal(pid, idx) {
       if (name && name.trim()) {
         name = name.trim();
         pr2.docFolders = pr2.docFolders && pr2.docFolders.length ? pr2.docFolders : ['General'];
-        if (pr2.docFolders.indexOf(name) < 0) pr2.docFolders.push(name);
+        if (pr2.docFolders.indexOf(name) < 0) {
+          var folderResult = await sb.from('doc_folders').insert({ project_id: pid2, name: name }).select().single();
+          if (folderResult.error) { showToast('Could not create folder: ' + folderResult.error.message); sel.value = pr2.docFolders[0] || 'General'; return; }
+          pr2.docFolders.push(name);
+          pr2.docFolderIds = pr2.docFolderIds || {};
+          pr2.docFolderIds[name] = folderResult.data.id;
+        }
         var newOpts = pr2.docFolders.map(function(f){ return '<option' + (f===name?' selected':'') + '>' + f + '</option>'; }).join('') + '<option value="__new__">+ New folder…</option>';
         sel.innerHTML = newOpts;
       } else {
@@ -1523,9 +1679,13 @@ function openMoveDocModal(pid, idx) {
     }
   };
 
-  document.getElementById('mv-save').onclick = function() {
+  document.getElementById('mv-save').onclick = async function() {
     var folder = document.getElementById('mv-folder').value;
     if (folder === '__new__') folder = 'General';
+    var folderId = (folder === 'General') ? null : ((p.docFolderIds && p.docFolderIds[folder]) || null);
+    var btn = document.getElementById('mv-save'); btn.disabled = true;
+    var result = await sb.from('documents').update({ folder_id: folderId }).eq('id', d.id);
+    if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
     d.folder = folder;
     docFolderState[pid] = folder;
     showToast('Document moved to "' + folder + '"');
@@ -1542,11 +1702,11 @@ function editProject(pid) {
   var phaseOpts  = PHASES.map(function(s){   return '<option' + (p.phase===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var priorOpts  = PRIORITIES.map(function(s){ return '<option' + (p.priority===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var valOpts    = VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  var pmOpts     = '<option value="">— None —</option>' + ALL_PEOPLE.map(function(n){ return '<option' + (p.pm===n?' selected':'') + '>' + n + '</option>'; }).join('');
-  var sponsorOpts = '<option value="">— None —</option>' + ALL_PEOPLE.map(function(n){ return '<option' + (p.sponsor===n?' selected':'') + '>' + n + '</option>'; }).join('');
+  var pmOpts     = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option' + (p.pm===n?' selected':'') + '>' + n + '</option>'; }).join('');
+  var sponsorOpts = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option' + (p.sponsor===n?' selected':'') + '>' + n + '</option>'; }).join('');
   var catOpts    = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option' + (p.category===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var buOpts     = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  var memberOpts = ALL_PEOPLE.concat(ALL_TEAMS).map(function(n) {
+  var memberOpts = D.people.concat(ALL_TEAMS).map(function(n) {
     var isTeam = ALL_TEAMS.indexOf(n) >= 0;
     return '<label class="member-check"><input type="checkbox" id="ep-tm-' + n.replace(/ /g,'_') + '"' + (p.team.indexOf(n)>=0?' checked':'') + '> ' + n + (isTeam?' <span class="badge badge-blue" style="font-size:10px">Team</span>':'') + '</label>';
   }).join('');
@@ -1579,31 +1739,61 @@ function editProject(pid) {
     '</div>', true);
 }
 
-function saveProject(pid) {
+async function saveProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  p.name = document.getElementById('ep-name').value;
-  p.status = document.getElementById('ep-status').value;
-  p.phase = document.getElementById('ep-phase').value;
-  p.priority = document.getElementById('ep-priority').value;
-  p.value = document.getElementById('ep-value').value;
-  p.start = document.getElementById('ep-start').value;
-  p.end = document.getElementById('ep-end').value;
-  p.progress = parseInt(document.getElementById('ep-progress').value) || 0;
-  p.health = document.getElementById('ep-health').value;
-  p.description = document.getElementById('ep-desc').value;
-  p.blockers = document.getElementById('ep-blocker').value;
-  var catEl = document.getElementById('ep-category'); if (catEl) p.category = catEl.value;
-  var buEl = document.getElementById('ep-bu'); if (buEl) p.businessUnit = buEl.value;
-  var spEl = document.getElementById('ep-sponsor'); if (spEl) p.sponsor = spEl.value;
-  var pmEl = document.getElementById('ep-pm'); if (pmEl) p.pm = pmEl.value;
-  var allNames = ALL_PEOPLE.concat(ALL_TEAMS);
-  p.team = allNames.filter(function(n){ var el = document.getElementById('ep-tm-' + n.replace(/ /g,'_')); return el && el.checked; });
+  var newVals = {
+    name: document.getElementById('ep-name').value,
+    status: document.getElementById('ep-status').value,
+    phase: document.getElementById('ep-phase').value,
+    priority: document.getElementById('ep-priority').value,
+    value_area: document.getElementById('ep-value').value,
+    start_date: document.getElementById('ep-start').value || null,
+    end_date: document.getElementById('ep-end').value || null,
+    progress: parseInt(document.getElementById('ep-progress').value) || 0,
+    health: document.getElementById('ep-health').value,
+    description: document.getElementById('ep-desc').value,
+    blockers: document.getElementById('ep-blocker').value
+  };
+  var catEl = document.getElementById('ep-category'); if (catEl) newVals.category = catEl.value || null;
+  var buEl = document.getElementById('ep-bu'); if (buEl) newVals.business_unit = buEl.value || null;
+  var spEl = document.getElementById('ep-sponsor'); if (spEl) newVals.sponsor = spEl.value || null;
+  var pmEl = document.getElementById('ep-pm');
+  var pmProfile = pmEl ? resolveAssignee(pmEl.value) : null;
+  if (pmEl) { newVals.pm_id = pmProfile ? pmProfile.id : null; newVals.pm_name = pmEl.value || null; }
+
+  var saveBtn = document.querySelector('.modal-footer .btn-primary'); if (saveBtn) saveBtn.disabled = true;
+  var result = await sb.from('projects').update(newVals).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); if (saveBtn) saveBtn.disabled = false; return; }
+
+  p.name = newVals.name; p.status = newVals.status; p.phase = newVals.phase; p.priority = newVals.priority;
+  p.value = newVals.value_area; p.start = newVals.start_date; p.end = newVals.end_date; p.progress = newVals.progress;
+  p.health = newVals.health; p.description = newVals.description; p.blockers = newVals.blockers;
+  if (catEl) p.category = newVals.category;
+  if (buEl) p.businessUnit = newVals.business_unit;
+  if (spEl) p.sponsor = newVals.sponsor;
+  if (pmEl) { p.pm = pmEl.value; p.pmId = newVals.pm_id; }
+
+  // Team membership: diff against real linked accounts only (teams/groups aren't
+  // linkable to a real row yet — that's part of the Resources migration, still to come)
+  var allNames = D.people.concat(ALL_TEAMS);
+  var newTeamNames = allNames.filter(function(n){ var el = document.getElementById('ep-tm-' + n.replace(/ /g,'_')); return el && el.checked; });
+  var newRealIds = newTeamNames.map(function(n){ return resolveAssignee(n); }).filter(Boolean).map(function(pr){ return pr.id; });
+  var oldIds = p.teamIds || [];
+  var toAdd = newRealIds.filter(function(id){ return oldIds.indexOf(id) < 0; });
+  var toRemove = oldIds.filter(function(id){ return newRealIds.indexOf(id) < 0; });
+  if (toAdd.length) await sb.from('project_team').insert(toAdd.map(function(id){ return { project_id: pid, user_id: id }; }));
+  for (var i = 0; i < toRemove.length; i++) { await sb.from('project_team').delete().eq('project_id', pid).eq('user_id', toRemove[i]); }
+  p.team = newTeamNames;
+  p.teamIds = newRealIds;
+
   closeModal(); showToast('Project saved');
   if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage==='projects') pgProjects(); else if (currentPage === 'requests') pgRequests(); else pgDashboard();
 }
 
-function deleteProject(pid) {
+async function deleteProject(pid) {
   if (!confirm('Delete this project? This cannot be undone.')) return;
+  var result = await sb.from('projects').delete().eq('id', pid);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
   D.projects = D.projects.filter(function(x){ return x.id !== pid; });
   closeModal(); showToast('Project deleted'); renderNav();
   if (currentPage === 'projectDetail') nav('projects'); else if (currentPage==='projects') pgProjects(); else pgDashboard();
@@ -1612,8 +1802,8 @@ function deleteProject(pid) {
 function openNewProjectModal() {
   var valOpts = VALUE_AREAS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var priorOpts = PRIORITIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
-  var pmOpts = '<option value="">— None —</option>' + ALL_PEOPLE.map(function(n){ return '<option>' + n + '</option>'; }).join('');
-  var sponsorOpts = '<option value="">— None —</option>' + ALL_PEOPLE.map(function(n){ return '<option>' + n + '</option>'; }).join('');
+  var pmOpts = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option>' + n + '</option>'; }).join('');
+  var sponsorOpts = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var catOpts = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var buOpts = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   showModal('<div class="modal-title">Create new project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
@@ -1627,10 +1817,33 @@ function openNewProjectModal() {
     '<div class="form-group"><div class="form-label">Project manager</div><select id="np-pm">' + pmOpts + '</select></div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="np-save"><i class="ti ti-plus"></i> Create project</button></div>', true);
-  document.getElementById('np-save').onclick = function() {
+  document.getElementById('np-save').onclick = async function() {
     var name = document.getElementById('np-name').value.trim();
     if (!name){ showToast('Project name required'); return; }
-    D.projects.push({id:'p'+Date.now(),name:name,pm:document.getElementById('np-pm').value,sponsor:document.getElementById('np-sponsor').value,category:document.getElementById('np-category').value,businessUnit:document.getElementById('np-bu').value,team:[],status:'Not Started',phase:'Not Started',progress:0,start:'',end:'',value:document.getElementById('np-value').value,priority:document.getElementById('np-priority').value,description:document.getElementById('np-desc').value,blockers:'',health:'green',stage:'active',plannedStart:'',requestId:'',milestones:[],tasks:[],raid:{risks:[],assumptions:[],issues:[],dependencies:[]},documents:[]});
+    var pmName = document.getElementById('np-pm').value;
+    var pmProfile = resolveAssignee(pmName);
+    var sponsorName = document.getElementById('np-sponsor').value;
+    var btn = document.getElementById('np-save'); btn.disabled = true;
+
+    var record = {
+      name: name, pm_id: pmProfile ? pmProfile.id : null, pm_name: pmName || null, sponsor: sponsorName || null,
+      category: document.getElementById('np-category').value || null, business_unit: document.getElementById('np-bu').value || null,
+      status: 'Not Started', phase: 'Not Started', progress: 0,
+      value_area: document.getElementById('np-value').value, priority: document.getElementById('np-priority').value,
+      description: document.getElementById('np-desc').value, blockers: '', health: 'green', stage: 'active'
+    };
+    var result = await sb.from('projects').insert(record).select().single();
+    if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+
+    D.projects.push({
+      id: result.data.id, name:name, pm:pmName, pmId: pmProfile?pmProfile.id:null, sponsor:sponsorName,
+      category:record.category, businessUnit:record.business_unit, team:[], teamIds:[],
+      status:'Not Started', phase:'Not Started', progress:0, start:'', end:'',
+      value:record.value_area, priority:record.priority, description:record.description,
+      blockers:'', health:'green', stage:'active', plannedStart:'', requestId:'',
+      milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]},
+      documents:[], docFolders:['General'], docFolderIds:{}
+    });
     closeModal(); showToast('Project created'); pgProjects();
   };
 }
