@@ -1182,7 +1182,7 @@ function pgProjectDetail(pid, tab) {
           '<button class="btn btn-sm" title="Comments" onclick="toggleTaskComments(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (comments.length ? ' ' + comments.length : '') + '</button>' +
           '<button class="btn btn-sm" title="Change log" onclick="toggleTaskLog(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
           (editable ? '<button class="btn btn-sm" onclick="openEditTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
-          (myTask && task.status !== 'Done' ? '<button class="btn btn-sm btn-success" onclick="completeMyTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-check"></i> Done</button>' : '') +
+          (myTask && task.status !== 'Done' ? '<button class="btn btn-sm btn-success" onclick="openCompleteTaskPrompt(\'' + p.id + '\',' + idx + ')"><i class="ti ti-check"></i> Done</button>' : '') +
           '</div></td></tr>' + logRow + commentsRow;
       }).join('');
 
@@ -1356,13 +1356,36 @@ function pgProjectDetail(pid, tab) {
     pr.raid[type].splice(idx,1);
     document.getElementById('ptab-content').innerHTML=tabC('raid');
   };
-  window.completeMyTask = async function(pid2,idx){
+  window.openCompleteTaskPrompt = function(pid2, idx) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var task = pr.tasks[idx];
+    showModal('<div class="modal-title">Mark "' + task.title + '" as done <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+      '<div class="form-group"><div class="form-label">Add a comment (optional)</div><textarea id="complete-task-comment" rows="3" placeholder="Anything worth noting about this completion?"></textarea></div>' +
+      '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+      '<button class="btn btn-primary" id="complete-task-confirm"><i class="ti ti-check"></i> Mark done</button></div>');
+    document.getElementById('complete-task-confirm').onclick = async function() {
+      var commentText = document.getElementById('complete-task-comment').value.trim();
+      var btn = document.getElementById('complete-task-confirm'); btn.disabled = true;
+      await completeMyTask(pid2, idx, commentText);
+      closeModal();
+    };
+  };
+  window.completeMyTask = async function(pid2,idx,commentText){
     var pr=D.projects.find(function(x){return x.id===pid2;});
     var tk=pr.tasks[idx]; var old=tk.status;
     var result = await sb.from('tasks').update({ status: 'Done' }).eq('id', tk.id);
     if (result.error) { showToast('Could not save: ' + result.error.message); return; }
     tk.status='Done'; tk.log=tk.log||[];
     tk.log.push(await writeLog('task_log', 'task_id', tk.id, 'Updated', 'Status: "'+old+'" → "Done"'));
+    if (commentText) {
+      var commentResult = await sb.from('task_comments').insert({
+        task_id: tk.id, author_id: D.currentProfile.id, author_name: D.currentProfile.display_name, body: commentText
+      }).select().single();
+      if (!commentResult.error) {
+        tk.comments = tk.comments || [];
+        tk.comments.push({ id: commentResult.data.id, text: commentText, author: D.currentProfile.display_name, date: ymd(commentResult.data.created_at) });
+      }
+    }
     document.getElementById('ptab-content').innerHTML=tabC('tasks'); showToast('Task marked complete');
   };
   window.openAddMilestone = function(pid2){ openMilestoneModal(pid2); };
