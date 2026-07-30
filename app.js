@@ -25,6 +25,34 @@ function groupBy(rows, key) {
   return out;
 }
 
+async function loadRequests() {
+  var result = await sb.from('requests').select('*');
+  if (result.error) { console.error('loadRequests query failed:', result.error); return []; }
+  return (result.data || []).map(function(r) {
+    return {
+      id: r.id, title: r.title, submitter: r.submitter_name, submitterId: r.submitter_id,
+      dept: r.dept, date: r.submitted_at, status: r.status, priority: r.priority,
+      value: r.value_area, impact: r.impact, description: r.description,
+      effort: r.effort, cost: r.cost, feedback: r.feedback,
+      linkedProject: r.linked_project, rejectedDate: r.rejected_date
+    };
+  });
+}
+
+async function syncRequestStatus(requestId, updates) {
+  if (!requestId) return;
+  var r = D.requests.find(function(x){ return x.id === requestId; });
+  if (!r) return;
+  var dbUpdates = {};
+  if (updates.status !== undefined) dbUpdates.status = updates.status;
+  if (updates.linkedProject !== undefined) dbUpdates.linked_project = updates.linkedProject;
+  if (updates.feedback !== undefined) dbUpdates.feedback = updates.feedback;
+  if (updates.rejectedDate !== undefined) dbUpdates.rejected_date = updates.rejectedDate;
+  var result = await sb.from('requests').update(dbUpdates).eq('id', requestId);
+  if (result.error) { console.error('Could not sync request status:', result.error); return; }
+  Object.assign(r, updates);
+}
+
 async function loadResources() {
   var results = await Promise.all([
     sb.from('resources').select('*'),
@@ -429,9 +457,10 @@ async function bootAppForUser(skipReload) {
 
   if (!skipReload) {
     document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading your projects…</p></div>';
-    var loaded = await Promise.all([loadAllProjects(), loadResources()]);
+    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests()]);
     D.projects = loaded[0];
     D.resources = loaded[1];
+    D.requests = loaded[2];
   }
 
   if (location.hash.indexOf('#/project/') === 0) {
@@ -447,6 +476,10 @@ async function refreshProjects() {
 
 async function refreshResources() {
   D.resources = await loadResources();
+}
+
+async function refreshRequests() {
+  D.requests = await loadRequests();
 }
 
 function setPreviewRole(role) {
@@ -640,18 +673,37 @@ function reviewRequest(id) {
   showModal(html);
 }
 
-function decideReq(id, decision) {
+async function decideReq(id, decision) {
   var r  = D.requests.find(function(x){ return x.id === id; });
   var fb = document.getElementById('rfb');
-  r.feedback = fb ? fb.value : r.feedback;
-  r.status   = decision;
+  var feedbackVal = fb ? fb.value : r.feedback;
+
   if (decision === 'Approved') {
-    var p = { id:'p'+Date.now(), name:r.title, pm:'', team:[], status:'Not Started', phase:'Not Started', progress:0, start:'', end:'', value:r.value, priority:r.priority, description:r.description, blockers:'', health:'green', stage:'backlog', plannedStart:'', requestId:r.id, milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]} };
-    D.projects.push(p);
-    r.status = 'Backlog'; r.linkedProject = p.id;
+    var projectRecord = {
+      name: r.title, status: 'Not Started', phase: 'Not Started', progress: 0,
+      value_area: r.value, priority: r.priority, description: r.description,
+      blockers: '', health: 'green', stage: 'backlog', request_id: r.id
+    };
+    var projResult = await sb.from('projects').insert(projectRecord).select().single();
+    if (projResult.error) { showToast('Could not create project: ' + projResult.error.message); return; }
+
+    var reqResult = await sb.from('requests').update({ status: 'Backlog', feedback: feedbackVal, linked_project: projResult.data.id }).eq('id', id);
+    if (reqResult.error) { showToast('Could not update request: ' + reqResult.error.message); return; }
+
+    D.projects.push({
+      id: projResult.data.id, name: r.title, pm:'', pmId:null, sponsor:'', category:null, businessUnit:null,
+      team:[], teamIds:[], status:'Not Started', phase:'Not Started', progress:0, start:'', end:'',
+      value:r.value, priority:r.priority, description:r.description, blockers:'', health:'green',
+      stage:'backlog', plannedStart:'', requestId:r.id, milestones:[], tasks:[],
+      raid:{risks:[],assumptions:[],issues:[],dependencies:[]}, documents:[], docFolders:['General'], docFolderIds:{}
+    });
+    r.status = 'Backlog'; r.linkedProject = projResult.data.id; r.feedback = feedbackVal;
     addNotif(r.submitter, 'Your request "' + r.title + '" has been approved and added to the backlog.', 'approved');
   } else if (decision === 'Rejected') {
-    r.rejectedDate = new Date().toISOString().split('T')[0];
+    var rejectedDate = new Date().toISOString().split('T')[0];
+    var result = await sb.from('requests').update({ status: 'Rejected', feedback: feedbackVal, rejected_date: rejectedDate }).eq('id', id);
+    if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+    r.status = 'Rejected'; r.feedback = feedbackVal; r.rejectedDate = rejectedDate;
   }
   closeModal(); showToast(decision === 'Approved' ? 'Approved — added to backlog' : 'Request rejected');
   renderNav();
@@ -736,7 +788,7 @@ async function scheduleProject(pid) {
   p.pm = pmName; p.pmId = pmProfile ? pmProfile.id : null;
   p.plannedStart = start; p.start = start; p.end = end; p.stage = 'planned';
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
-  if (r) { r.status = 'Planned'; r.linkedProject = pid; }
+  if (r) await syncRequestStatus(r.id, { status: 'Planned', linkedProject: pid });
   addNotif(r ? r.submitter : '', 'Great news! "' + p.name + '" has been scheduled to start on ' + start + (p.pm ? '. PM: ' + p.pm : '') + '.', 'planned');
   closeModal(); showToast('Project scheduled'); renderNav();
   if (currentPage === 'backlog') pgBacklog();
@@ -785,14 +837,16 @@ function pgPlanned() {
     (pp.length ? cards : '<div class="empty-state"><i class="ti ti-calendar-event"></i><p>No planned projects yet</p></div>');
 }
 
-function activateProject(pid) {
+async function activateProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   // require at least one named resource (not just a team name)
   var hasResource = p.team.some(function(m){ return D.people.indexOf(m) >= 0; });
   if (!hasResource) { showToast('Please assign at least one individual resource before activating', 'error'); openScheduleModal(pid); return; }
+  var result = await sb.from('projects').update({ stage: 'active', status: 'On Track' }).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
   p.stage = 'active'; p.status = 'On Track';
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
-  if (r) r.status = 'Active';
+  if (r) await syncRequestStatus(r.id, { status: 'Active' });
   showToast('"' + p.name + '" is now active'); renderNav();
   if (currentPage === 'planned') pgPlanned(); else pgProjects();
 }
@@ -841,8 +895,10 @@ function pgCompleted() {
     '<tbody>' + rows + '</tbody></table></div></div>';
 }
 
-function reactivateProject(pid) {
+async function reactivateProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
+  var result = await sb.from('projects').update({ stage: 'active', status: 'On Track' }).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
   p.stage = 'active'; p.status = 'On Track';
   showToast('"' + p.name + '" re-activated'); renderNav(); pgCompleted();
 }
@@ -1336,7 +1392,7 @@ async function markComplete(pid) {
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
   p.stage = 'complete'; p.status = 'Completed'; p.progress = 100;
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
-  if (r) r.status = 'Active';
+  if (r) await syncRequestStatus(r.id, { status: 'Active' });
   closeModal(); showToast('"' + p.name + '" marked as complete'); renderNav();
   if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'projects') pgProjects(); else pgDashboard();
 }
@@ -2477,7 +2533,7 @@ function pgSubmit() {
     document.getElementById('f-cost-err').style.display = 'none';
   });
 
-  document.getElementById('f-submit').onclick = function() {
+  document.getElementById('f-submit').onclick = async function() {
     var title  = document.getElementById('f-title').value.trim();
     var desc   = document.getElementById('f-desc').value.trim();
     var impact = document.getElementById('f-impact').value.trim();
@@ -2486,12 +2542,19 @@ function pgSubmit() {
     if (!title||!desc||!impact) { showToast('Please fill in all required fields','error'); return; }
     if (!costRaw || isNaN(Number(costRaw)) || costRaw === '') { errEl.style.display='block'; return; }
     errEl.style.display = 'none';
+    var btn = document.getElementById('f-submit'); btn.disabled = true;
+    var record = {
+      title: title, submitter_id: D.currentProfile.id, submitter_name: currentUser() || 'Current User',
+      dept: document.getElementById('f-dept').value, priority: document.getElementById('f-priority').value,
+      value_area: document.getElementById('f-value').value, impact: impact, description: desc,
+      effort: document.getElementById('f-effort').value, cost: Number(costRaw), status: 'Pending'
+    };
+    var result = await sb.from('requests').insert(record).select().single();
+    if (result.error) { showToast('Could not submit: ' + result.error.message); btn.disabled = false; return; }
     D.requests.push({
-      id:'r'+Date.now(), title:title, submitter:currentUser()||'Current User',
-      dept:document.getElementById('f-dept').value, date:new Date().toISOString().split('T')[0],
-      status:'Pending', priority:document.getElementById('f-priority').value,
-      value:document.getElementById('f-value').value, impact:impact, description:desc,
-      effort:document.getElementById('f-effort').value, cost:Number(costRaw), feedback:''
+      id: result.data.id, title: title, submitter: record.submitter_name, submitterId: D.currentProfile.id,
+      dept: record.dept, date: result.data.submitted_at, status: 'Pending', priority: record.priority,
+      value: record.value_area, impact: impact, description: desc, effort: record.effort, cost: record.cost, feedback: ''
     });
     showToast('Request submitted successfully');
     renderNav();
@@ -2524,9 +2587,11 @@ function pgMyRequests() {
     }).join('') + '</tbody></table></div></div>';
   document.getElementById('content').innerHTML = html;
   window.viewLinkedProject = function(pid) { goToProject(pid); };
-  window.revokeRequest = function(rid) {
+  window.revokeRequest = async function(rid) {
     if (!confirm('Revoke this request? It will be removed from the PMO queue.')) return;
     var r = D.requests.find(function(x){ return x.id===rid; });
+    var result = await sb.from('requests').update({ status: 'Revoked' }).eq('id', rid);
+    if (result.error) { showToast('Could not revoke: ' + result.error.message); return; }
     r.status = 'Revoked'; showToast('Request revoked'); pgMyRequests(); renderNav();
   };
 }
