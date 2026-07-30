@@ -2608,14 +2608,33 @@ function generatePassword() {
   return out;
 }
 
+function pwField(id, label) {
+  return '<div class="form-group"><div class="form-label">' + label + '</div>' +
+    '<div style="display:flex;gap:8px">' +
+    '<input type="password" id="' + id + '">' +
+    '<button type="button" class="btn btn-sm" id="' + id + '-toggle" title="Show/hide"><i class="ti ti-eye"></i></button>' +
+    '</div></div>';
+}
+
+function wirePasswordToggle(id) {
+  document.getElementById(id + '-toggle').onclick = function() {
+    var el = document.getElementById(id);
+    var showing = el.type === 'text';
+    el.type = showing ? 'password' : 'text';
+    this.innerHTML = '<i class="ti ' + (showing ? 'ti-eye' : 'ti-eye-off') + '"></i>';
+  };
+}
+
 function openChangePasswordModal() {
   showModal('<div class="modal-title">Change password <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div class="form-group"><div class="form-label">Current password</div><input type="password" id="cp-current"></div>' +
-    '<div class="form-group"><div class="form-label">New password</div><input type="password" id="cp-new"></div>' +
-    '<div class="form-group"><div class="form-label">Confirm new password</div><input type="password" id="cp-confirm"></div>' +
+    pwField('cp-current', 'Current password') +
+    pwField('cp-new', 'New password') +
+    pwField('cp-confirm', 'Confirm new password') +
     '<div id="cp-error" class="auth-error" style="display:none"></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="cp-save"><i class="ti ti-check"></i> Update password</button></div>');
+  wirePasswordToggle('cp-current'); wirePasswordToggle('cp-new'); wirePasswordToggle('cp-confirm');
+
   document.getElementById('cp-save').onclick = async function() {
     var current = document.getElementById('cp-current').value;
     var next = document.getElementById('cp-new').value;
@@ -2627,10 +2646,7 @@ function openChangePasswordModal() {
     if (next !== confirmVal) { errEl.textContent = 'New passwords do not match.'; errEl.style.display = 'block'; return; }
 
     var btn = document.getElementById('cp-save'); btn.disabled = true;
-    var verifyResult = await sb.auth.signInWithPassword({ email: D.currentProfile.email, password: current });
-    if (verifyResult.error) { errEl.textContent = 'Current password is incorrect.'; errEl.style.display = 'block'; btn.disabled = false; return; }
-
-    var updateResult = await sb.auth.updateUser({ password: next });
+    var updateResult = await sb.auth.updateUser({ password: next, current_password: current });
     btn.disabled = false;
     if (updateResult.error) { errEl.textContent = updateResult.error.message; errEl.style.display = 'block'; return; }
 
@@ -2646,6 +2662,7 @@ async function initApp() {
   });
   document.getElementById('logout-btn').onclick = handleLogout;
   document.getElementById('change-password-btn').onclick = openChangePasswordModal;
+  wirePasswordToggle('auth-password');
 
   var sessionResult = await sb.auth.getSession();
   var session = sessionResult.data && sessionResult.data.session;
