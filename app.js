@@ -2580,14 +2580,79 @@ async function handleLogout() {
   document.getElementById('auth-email').value = '';
   document.getElementById('auth-password').value = '';
   document.getElementById('auth-error').style.display = 'none';
+  document.getElementById('forgot-email').value = '';
+  document.getElementById('forgot-error').style.display = 'none';
+  showAuthMode('login');
+}
+
+function showAuthMode(mode) {
+  document.getElementById('auth-login-mode').style.display = mode === 'login' ? 'block' : 'none';
+  document.getElementById('auth-forgot-mode').style.display = mode === 'forgot' ? 'block' : 'none';
+  document.getElementById('auth-forgot-sent-mode').style.display = mode === 'sent' ? 'block' : 'none';
+}
+
+async function handleForgotPasswordSubmit() {
+  var email = document.getElementById('forgot-email').value.trim();
+  var errEl = document.getElementById('forgot-error');
+  errEl.style.display = 'none';
+  if (!email) { errEl.textContent = 'Enter your email.'; errEl.style.display = 'block'; return; }
+  var btn = document.getElementById('forgot-submit'); btn.disabled = true;
+  var result = await sb.auth.resetPasswordForEmail(email);
+  btn.disabled = false;
+  if (result.error) { errEl.textContent = result.error.message; errEl.style.display = 'block'; return; }
+  showAuthMode('sent');
+}
+
+async function handleSetNewPasswordSubmit() {
+  var pw1 = document.getElementById('newpw-1').value;
+  var pw2 = document.getElementById('newpw-2').value;
+  var errEl = document.getElementById('newpw-error');
+  errEl.style.display = 'none';
+  if (!pw1 || pw1.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; errEl.style.display = 'block'; return; }
+  if (pw1 !== pw2) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = 'block'; return; }
+
+  var btn = document.getElementById('newpw-submit'); btn.disabled = true;
+  var result = await sb.auth.updateUser({ password: pw1 });
+  btn.disabled = false;
+  if (result.error) { errEl.textContent = result.error.message; errEl.style.display = 'block'; return; }
+
+  showToast('Password set — welcome!');
+  var sessionResult = await sb.auth.getSession();
+  var session = sessionResult.data && sessionResult.data.session;
+  if (!session) { document.getElementById('reset-password-screen').style.display = 'none'; document.getElementById('auth-screen').style.display = 'flex'; return; }
+  var profile = await fetchProfile(session.user.id);
+  if (!profile) { document.getElementById('reset-password-screen').style.display = 'none'; document.getElementById('auth-screen').style.display = 'flex'; return; }
+  D.currentProfile = profile;
+  document.getElementById('reset-password-screen').style.display = 'none';
+  await bootAppForUser();
 }
 
 async function initApp() {
+  // Registered up front so a recovery/invite link is caught the moment
+  // Supabase processes the token in the URL, regardless of the normal
+  // session check below.
+  sb.auth.onAuthStateChange(function(event) {
+    if (event === 'PASSWORD_RECOVERY') {
+      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('app-root').style.display = 'none';
+      document.getElementById('reset-password-screen').style.display = 'flex';
+    }
+  });
+
   document.getElementById('auth-submit').onclick = handleLoginSubmit;
   document.getElementById('auth-password').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') handleLoginSubmit();
   });
   document.getElementById('logout-btn').onclick = handleLogout;
+
+  document.getElementById('forgot-password-link').onclick = function(e) { e.preventDefault(); showAuthMode('forgot'); };
+  document.getElementById('back-to-login-link').onclick = function(e) { e.preventDefault(); showAuthMode('login'); };
+  document.getElementById('back-to-login-link-2').onclick = function(e) { e.preventDefault(); showAuthMode('login'); };
+  document.getElementById('forgot-submit').onclick = handleForgotPasswordSubmit;
+  document.getElementById('newpw-submit').onclick = handleSetNewPasswordSubmit;
+  document.getElementById('newpw-2').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') handleSetNewPasswordSubmit();
+  });
 
   var sessionResult = await sb.auth.getSession();
   var session = sessionResult.data && sessionResult.data.session;
