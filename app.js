@@ -406,27 +406,59 @@ function renderNav() {
   document.getElementById('nav-menu').innerHTML = h;
 }
 
+var PAGE_RENDERERS = {
+  dashboard:pgDashboard, portfolio:pgPortfolio, requests:pgRequests,
+  backlog:pgBacklog, planned:pgPlanned, projects:pgProjects,
+  completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
+  submit:pgSubmit, 'my-requests':pgMyRequests,
+  'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
+  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers
+};
+
+function pageAllowedForRole(page, role) {
+  if (page === 'my-projects' || page === 'my-tasks' || page === 'my-capacity') {
+    return hasAssignedWork();
+  }
+  var defs = NAV_DEF[role] || [];
+  for (var i = 0; i < defs.length; i++) {
+    for (var j = 0; j < defs[i].items.length; j++) {
+      if (defs[i].items[j].id === page) return true;
+    }
+  }
+  return false;
+}
+
+function renderPage(page) {
+  if (!PAGE_RENDERERS[page]) page = 'dashboard';
+  currentPage = page;
+  renderNav();
+  if (!pageAllowedForRole(page, D.role)) {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>You do not have permission to view this page.</p></div>';
+    return;
+  }
+  PAGE_RENDERERS[page]();
+}
+
 function nav(page) {
-  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
-  currentPage = page; renderNav();
-  var map = {
-    dashboard:pgDashboard, portfolio:pgPortfolio, requests:pgRequests,
-    backlog:pgBacklog, planned:pgPlanned, projects:pgProjects,
-    completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
-    submit:pgSubmit, 'my-requests':pgMyRequests,
-    'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
-    'import-projects':pgImportProjects, 'admin-users':pgAdminUsers
-  };
-  if (map[page]) map[page]();
+  renderPage(page);
+  var targetHash = '#/' + page;
+  if (location.hash !== targetHash) location.hash = targetHash;
 }
 
 function goToProject(pid, tab) {
-  location.hash = '#/project/' + pid + '/' + (tab || 'overview');
+  pgProjectDetail(pid, tab || 'overview');
+  var targetHash = '#/project/' + pid + '/' + (tab || 'overview');
+  if (location.hash !== targetHash) location.hash = targetHash;
 }
 
 function handleRoute() {
-  var m = location.hash.match(/^#\/project\/([^\/]+)(?:\/([^\/]+))?/);
-  if (m) pgProjectDetail(m[1], m[2] || 'overview');
+  var hash = location.hash;
+  var m = hash.match(/^#\/project\/([^\/]+)(?:\/([^\/]+))?/);
+  if (m) { pgProjectDetail(m[1], m[2] || 'overview'); return; }
+  var m2 = hash.match(/^#\/([a-zA-Z0-9_-]+)/);
+  if (m2) { renderPage(m2[1]); return; }
+  renderPage('dashboard');
 }
 window.addEventListener('hashchange', handleRoute);
 
@@ -463,7 +495,7 @@ async function bootAppForUser(skipReload) {
     D.requests = loaded[2];
   }
 
-  if (location.hash.indexOf('#/project/') === 0) {
+  if (location.hash && location.hash.length > 1) {
     handleRoute();
   } else {
     nav('dashboard');
