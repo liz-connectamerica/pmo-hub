@@ -204,6 +204,7 @@ async function loadAllProjects() {
       start: pr.start_date, end: pr.end_date, plannedStart: pr.planned_start,
       value: pr.value_area, priority: pr.priority, description: pr.description,
       blockers: pr.blockers, health: pr.health, stage: pr.stage, requestId: pr.request_id,
+      holdReason: pr.hold_reason, preHoldStage: pr.pre_hold_stage,
       milestones: milestones, tasks: tasks, raid: raid,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
     };
@@ -280,6 +281,8 @@ var taskCommentsOpen = {};
 var raidSearchState = {};
 var docFolderState = {};
 var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fStatus:[], openFilter:null };
+var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null };
+var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3 };
 var rejectedFilterState = { range:'30' };
 
 function fmtCost(n) {
@@ -309,7 +312,7 @@ function hdot(h) {
 }
 
 function stagePill(s) {
-  var m = { backlog:{bg:'#FAEEDA',c:'#633806',l:'Backlog'}, planned:{bg:'#E6F1FB',c:'#0C447C',l:'Planned'}, active:{bg:'#E1F5EE',c:'#085041',l:'Active'}, complete:{bg:'#f0ede8',c:'#444',l:'Completed'} };
+  var m = { backlog:{bg:'#FAEEDA',c:'#633806',l:'Backlog'}, planned:{bg:'#E6F1FB',c:'#0C447C',l:'Planned'}, active:{bg:'#E1F5EE',c:'#085041',l:'Active'}, complete:{bg:'#f0ede8',c:'#444',l:'Completed'}, hold:{bg:'#FBE7E3',c:'#993C1D',l:'Hold'} };
   var x = m[s] || m.backlog;
   return '<span class="stage-pill" style="background:' + x.bg + ';color:' + x.c + '">' + x.l + '</span>';
 }
@@ -539,15 +542,55 @@ function pgDashboard() {
   var onT = active.filter(function(p){ return p.status === 'On Track'; }).length;
   var atR = active.filter(function(p){ return p.status === 'At Risk';  }).length;
 
-  var projRows = active.map(function(p) {
+  var dst = dashProjState;
+  var statusChoicesD = []; active.forEach(function(p){ if (p.status && statusChoicesD.indexOf(p.status) < 0) statusChoicesD.push(p.status); });
+  var phaseChoicesD = []; active.forEach(function(p){ if (p.phase && phaseChoicesD.indexOf(p.phase) < 0) phaseChoicesD.push(p.phase); });
+
+  var displayed = active.slice();
+  if (dst.search) { var dq = dst.search.toLowerCase(); displayed = displayed.filter(function(p){ return p.name.toLowerCase().indexOf(dq) >= 0; }); }
+  if (dst.fStatus.length) displayed = displayed.filter(function(p){ return dst.fStatus.indexOf(p.status) >= 0; });
+  if (dst.fPhase.length) displayed = displayed.filter(function(p){ return dst.fPhase.indexOf(p.phase) >= 0; });
+  if (dst.sort) {
+    displayed.sort(function(a, b) {
+      var av, bv;
+      if (dst.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+      else if (dst.sort === 'progress') { av = a.progress||0; bv = b.progress||0; }
+      else { av = (a[dst.sort]||'').toString().toLowerCase(); bv = (b[dst.sort]||'').toString().toLowerCase(); }
+      if (av < bv) return dst.dir === 'asc' ? -1 : 1;
+      if (av > bv) return dst.dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+
+  function dArrow(col) { if (dst.sort !== col) return ''; return '<span class="sort-arrow">' + (dst.dir === 'asc' ? '▲' : '▼') + '</span>'; }
+  function dFilterIcon(col, choices) {
+    if (!choices.length) return '';
+    var active2 = (dst[col]||[]).length > 0;
+    return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleDashFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active2 ? ' th-filter-active' : '') + '"></i></button>';
+  }
+  function dFilterPanel(col, choices) {
+    if (dst.openFilter !== col) return '';
+    var selected = dst[col] || [];
+    return '<div class="th-filter-panel" onclick="event.stopPropagation()">' +
+      choices.map(function(c){
+        var esc = c.replace(/'/g,"\\'");
+        return '<label class="th-filter-opt"><input type="checkbox"' + (selected.indexOf(c)>=0?' checked':'') + ' onchange="toggleDashFilterValue(\'' + col + '\',\'' + esc + '\')"> ' + c + '</label>';
+      }).join('') +
+      '<div class="th-filter-actions"><button class="btn btn-sm" onclick="clearDashFilter(\'' + col + '\')">Clear</button><button class="btn btn-sm btn-primary" onclick="closeDashFilterPanel()">Done</button></div>' +
+      '</div>';
+  }
+
+  var projRows = displayed.map(function(p) {
     return '<tr>' +
-      '<td class="bold">' + p.name + '</td><td>' + bdg(p.status) + '</td><td>' + bdg(p.priority) + '</td>' +
+      '<td class="bold">' + hdot(p.health) + p.name + '</td><td>' + bdg(p.status) + '</td><td>' + bdg(p.priority) + '</td>' +
       '<td>' + badgeIf('badge-gray', p.phase) + '</td>' +
       '<td><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></td>' +
       '<td class="text-muted">' + (p.pm || '—') + '</td>' +
       '<td>' + (p.blockers ? '<span style="color:#993C1D;font-size:12px"><i class="ti ti-alert-triangle"></i> Yes</span>' : '<span class="text-muted">—</span>') + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
   }).join('');
+
+  var dashSearchBar = '<div class="task-filter-bar"><input type="text" id="dash-proj-search" placeholder="Search projects by name…" value="' + dst.search.replace(/"/g,'&quot;') + '" oninput="onDashProjSearch(this.value)"></div>';
 
   var pendRows = '';
   if (D.role === 'admin') {
@@ -586,9 +629,18 @@ function pgDashboard() {
         ? '<div class="metric"><div class="metric-label">Pending requests</div><div class="metric-value" style="color:#534AB7">' + pendingCount() + '</div></div>'
         : '<div class="metric"><div class="metric-label">In backlog</div><div class="metric-value">' + backlogCount() + '</div></div>') +
     '</div>' +
-    '<div class="card mb-16"><div class="section-title">Active projects</div><div class="table-wrap"><table>' +
-      '<thead><tr><th>Project</th><th>Status</th><th>Priority</th><th>Phase</th><th style="min-width:160px">Progress</th><th>PM</th><th>Blockers</th><th></th></tr></thead>' +
-      '<tbody>' + projRows + '</tbody></table></div></div>' +
+    '<div class="card mb-16"><div class="section-title">Active projects</div>' + dashSearchBar +
+      (displayed.length ? '<div class="table-wrap"><table>' +
+      '<thead><tr>' +
+        '<th class="sortable-th" onclick="setDashProjSort(\'name\')">Project ' + dArrow('name') + '</th>' +
+        '<th class="sortable-th" style="position:relative"><span onclick="setDashProjSort(\'status\')">Status ' + dArrow('status') + '</span>' + dFilterIcon('fStatus', statusChoicesD) + dFilterPanel('fStatus', statusChoicesD) + '</th>' +
+        '<th class="sortable-th" onclick="setDashProjSort(\'priority\')">Priority ' + dArrow('priority') + '</th>' +
+        '<th class="sortable-th" style="position:relative"><span onclick="setDashProjSort(\'phase\')">Phase ' + dArrow('phase') + '</span>' + dFilterIcon('fPhase', phaseChoicesD) + dFilterPanel('fPhase', phaseChoicesD) + '</th>' +
+        '<th class="sortable-th" style="min-width:160px" onclick="setDashProjSort(\'progress\')">Progress ' + dArrow('progress') + '</th>' +
+        '<th>PM</th><th>Blockers</th><th></th></tr></thead>' +
+      '<tbody>' + projRows + '</tbody></table></div>'
+      : (active.length ? '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No projects match your search/filters</p></div>' : '<div class="empty-state" style="padding:24px"><i class="ti ti-briefcase"></i><p>No active projects</p></div>')) +
+    '</div>' +
     (D.role === 'admin' && pendingCount() > 0
       ? '<div class="card mb-16"><div class="section-title">Pending approval <span class="badge badge-amber" style="margin-left:6px">' + pendingCount() + '</span></div>' +
         '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th></th></tr></thead>' +
@@ -609,22 +661,52 @@ function pgDashboard() {
         '</div>' : '');
 
   window.setRejectedRange = function(val) { rejectedFilterState.range = val; pgDashboard(); };
+  window.setDashProjSort = function(col) {
+    if (dst.sort === col) dst.dir = dst.dir === 'asc' ? 'desc' : 'asc'; else { dst.sort = col; dst.dir = 'asc'; }
+    pgDashboard();
+  };
+  window.onDashProjSearch = function(val) {
+    dst.search = val;
+    pgDashboard();
+    var el = document.getElementById('dash-proj-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.toggleDashFilterPanel = function(col) { dst.openFilter = dst.openFilter === col ? null : col; pgDashboard(); };
+  window.closeDashFilterPanel = function() { dst.openFilter = null; pgDashboard(); };
+  window.toggleDashFilterValue = function(col, val) {
+    var arr = dst[col];
+    var i = arr.indexOf(val);
+    if (i >= 0) arr.splice(i,1); else arr.push(val);
+    pgDashboard();
+  };
+  window.clearDashFilter = function(col) { dst[col] = []; pgDashboard(); };
 }
 
 // ── Portfolio ───────────────────────────────────────────────────────────────
 
 function pgPortfolio() {
   tb('Portfolio');
+  var stageOrder = { active: 0, planned: 1, backlog: 2, hold: 3, complete: 4 };
   var byVal = {};
   D.projects.filter(function(p){ return p.stage !== 'complete'; }).forEach(function(p){ if (!byVal[p.value]) byVal[p.value] = []; byVal[p.value].push(p); });
+  Object.keys(byVal).forEach(function(v) {
+    byVal[v].sort(function(a, b) {
+      var ar = stageOrder[a.stage]; if (ar == null) ar = 9;
+      var br = stageOrder[b.stage]; if (br == null) br = 9;
+      return ar - br;
+    });
+  });
   var cols = ['badge-purple','badge-teal','badge-blue','badge-coral','badge-amber'];
   var i = 0, h = '';
   Object.keys(byVal).forEach(function(v) {
     var cl = cols[i++ % cols.length];
     var cards = byVal[v].map(function(p) {
+      var req = p.requestId ? D.requests.find(function(r){ return r.id === p.requestId; }) : null;
       return '<div class="card card-sm" style="cursor:pointer;border:1px solid #e8e8e5;border-radius:10px" onclick="goToProject(\'' + p.id + '\')">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px"><span class="bold" style="font-size:13px">' + p.name + '</span>' + stagePill(p.stage) + '</div>' +
+        (p.stage === 'hold' && p.holdReason ? '<div class="text-muted mb-12" style="font-size:12px"><i class="ti ti-player-pause"></i> ' + p.holdReason + '</div>' : '') +
         '<div class="text-muted mb-12" style="line-height:1.5">' + (p.description||'') + '</div>' +
+        (req && req.cost != null ? '<div class="text-muted mb-12" style="font-size:12px"><i class="ti ti-currency-dollar"></i> Estimated cost: ' + fmtCost(req.cost) + '</div>' : '') +
         '<div class="progress-bar mb-12"><div class="progress-fill" style="width:' + p.progress + '%"></div></div>' +
         '<div style="display:flex;justify-content:space-between"><span class="text-muted">' + (p.pm || 'No PM') + '</span><span class="text-muted">' + (p.end || 'TBD') + '</span></div></div>';
     }).join('');
@@ -996,11 +1078,16 @@ function pgProjectDetail(pid, tab) {
         '</div>' +
         '<div class="form-group"><div class="form-label">Team</div><div style="display:flex;gap:8px;flex-wrap:wrap">' + teamHtml + '</div></div>' +
         (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '') +
+        (p.stage === 'hold' ? '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
         '<div class="form-group" style="margin-top:16px"><div class="form-label">Timeline</div>' + timelineHtml() +
         '<button class="btn btn-sm mt-12" onclick="window.switchPTab(\'milestones\')"><i class="ti ti-list"></i> View milestones</button></div>' +
         (editable && !isComplete ? '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #e8e8e5;display:flex;justify-content:flex-end;gap:8px">' +
           '<button class="btn btn-primary" onclick="closeModal();editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit project</button>' +
-          '<button class="btn btn-success" onclick="markComplete(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>' +
+          (p.stage === 'hold'
+            ? '<button class="btn btn-success" onclick="resumeFromHold(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Resume</button>'
+            : ((p.stage === 'active' || p.stage === 'planned') ? '<button class="btn" onclick="putOnHold(\'' + p.id + '\')"><i class="ti ti-player-pause"></i> Put on hold</button>' : '') +
+              '<button class="btn btn-success" onclick="markComplete(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>'
+          ) +
           '</div>' : '');
     }
     if (t === 'milestones') {
@@ -1426,6 +1513,29 @@ function pgProjectDetail(pid, tab) {
     var d = pr.documents[idx];
     if (d && d.url) window.open(d.url, '_blank'); else showToast('No file or link attached');
   };
+}
+
+async function putOnHold(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var reason = prompt('Why is "' + p.name + '" going on hold?');
+  if (reason == null) return;
+  reason = reason.trim();
+  if (!reason) { showToast('A hold reason is required'); return; }
+  var result = await sb.from('projects').update({ stage: 'hold', hold_reason: reason, pre_hold_stage: p.stage }).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  p.preHoldStage = p.stage; p.stage = 'hold'; p.holdReason = reason;
+  closeModal(); showToast('"' + p.name + '" is now on hold'); renderNav();
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else pgDashboard();
+}
+
+async function resumeFromHold(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var resumeStage = p.preHoldStage || 'planned';
+  var result = await sb.from('projects').update({ stage: resumeStage, hold_reason: null, pre_hold_stage: null }).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  p.stage = resumeStage; p.holdReason = null; p.preHoldStage = null;
+  closeModal(); showToast('"' + p.name + '" resumed'); renderNav();
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else pgDashboard();
 }
 
 async function markComplete(pid) {
@@ -1996,14 +2106,45 @@ function openNewProjectModal() {
 
 function pgRoadmap() {
   tb('Roadmap');
-  var months = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
-  var colors = {p1:'#534AB7',p2:'#1D9E75',p3:'#EF9F27',p4:'#D85A30'};
-  var offsets = {p1:0,p2:2,p3:3,p4:3.5};
-  var durs = {p1:6,p2:6,p3:4,p4:8.5};
+  var windowStart = new Date(); windowStart.setDate(1); windowStart.setHours(0,0,0,0);
+  var windowMonths = 12;
+  var monthLabels = [];
+  for (var mi = 0; mi < windowMonths; mi++) {
+    var md = new Date(windowStart.getFullYear(), windowStart.getMonth() + mi, 1);
+    monthLabels.push(md.toLocaleString('en-US', { month: 'short' }) + (md.getMonth() === 0 ? " '" + String(md.getFullYear()).slice(2) : ''));
+  }
+  var windowEndLabel = new Date(windowStart.getFullYear(), windowStart.getMonth() + windowMonths - 1, 1);
+  var rangeLabel = windowStart.toLocaleString('en-US', { month: 'long', year: 'numeric' }) + ' – ' + windowEndLabel.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+  function monthsFromWindowStart(dateStr) {
+    if (!dateStr) return null;
+    var d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return null;
+    var yearDiff = d.getFullYear() - windowStart.getFullYear();
+    var monthDiff = d.getMonth() - windowStart.getMonth();
+    var dayFrac = (d.getDate() - 1) / 30.44;
+    return yearDiff * 12 + monthDiff + dayFrac;
+  }
+
+  var barColors = ['#534AB7', '#1D9E75', '#EF9F27', '#D85A30', '#185FA5', '#993C1D'];
   var all = D.projects.filter(function(p){ return p.stage==='active'||p.stage==='planned'; });
-  var bars = all.map(function(p) {
-    return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + p.name + '</div>' +
-      '<div class="tl-wrap"><div class="tl-bar" style="left:' + ((offsets[p.id]||0)/12*100) + '%;width:' + ((durs[p.id]||3)/12*100) + '%;background:' + (colors[p.id]||'#534AB7') + '">' + p.phase + '</div></div></div>';
+  var bars = all.map(function(p, i) {
+    var startOffset = monthsFromWindowStart(p.start);
+    var endOffset = monthsFromWindowStart(p.end);
+    var hasBar = startOffset !== null && endOffset !== null && endOffset > 0 && startOffset < windowMonths;
+    var barHtml;
+    if (hasBar) {
+      var clampedStart = Math.max(0, startOffset);
+      var clampedEnd = Math.min(windowMonths, endOffset);
+      var widthPct = Math.max(1, clampedEnd - clampedStart) / windowMonths * 100;
+      var leftPct = clampedStart / windowMonths * 100;
+      barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColors[i % barColors.length] + '">' + (p.phase||'') + '</div></div>';
+    } else {
+      barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">No schedule set</span></div>';
+    }
+    return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' +
+      '<button class="btn btn-sm" style="padding:2px 6px;margin-right:6px" title="View project" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button>' +
+      p.name + '</div>' + barHtml + '</div>';
   }).join('');
   var msItems = [];
   D.projects.filter(function(p){ return p.stage==='active'; }).forEach(function(p) {
@@ -2061,8 +2202,8 @@ function pgRoadmap() {
     '<th class="sortable-th" style="position:relative"><span onclick="setMsSort(\'status\')">Status ' + msArrow('status') + '</span>' + msFilterIcon('fStatus', st.fStatus.length>0) + msFilterPanel('fStatus', statusChoices, st.fStatus) + '</th>' +
     '</tr>';
   document.getElementById('content').innerHTML =
-    '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">12-month view — Apr 2025 – Mar 2026</div>' +
-    '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + months.map(function(m){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + m + '</div>'; }).join('') + '</div>' +
+    '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">12-month view — ' + rangeLabel + '</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + m + '</div>'; }).join('') + '</div>' +
     (all.length ? bars : '<div class="text-muted">No active or planned projects</div>') + '</div>' +
     '<div class="card"><div class="section-title">Upcoming milestones</div>' + msSearchBar +
     (msItems.length
@@ -2125,8 +2266,8 @@ function validateImportRow(row, profilesByEmail) {
   if (!name) errors.push('Missing Project Name');
 
   var stageRaw = row['Stage'];
-  var stage = stageRaw ? matchOneOf(stageRaw, ['Backlog','Planned','Active','Complete']) : 'Backlog';
-  if (stage === undefined) errors.push('Stage "' + stageRaw + '" is not one of Backlog/Planned/Active/Complete');
+  var stage = stageRaw ? matchOneOf(stageRaw, ['Backlog','Planned','Active','Complete','Hold']) : 'Backlog';
+  if (stage === undefined) errors.push('Stage "' + stageRaw + '" is not one of Backlog/Planned/Active/Complete/Hold');
 
   var priorityRaw = row['Priority'];
   var priority = priorityRaw ? matchOneOf(priorityRaw, ['Critical','High','Medium','Low']) : null;
