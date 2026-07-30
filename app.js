@@ -296,7 +296,7 @@ function tb(title, actions) {
 
 function showModal(html, wide) {
   document.getElementById('modal-root').innerHTML =
-    '<div class="modal-overlay" id="mov" onclick="if(event.target.id===\'mov\')closeModal()">' +
+    '<div class="modal-overlay" id="mov">' +
     '<div class="modal' + (wide ? ' modal-wide' : '') + '">' + html + '</div></div>';
 }
 function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
