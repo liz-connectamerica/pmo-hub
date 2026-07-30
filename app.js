@@ -7,8 +7,8 @@ var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // Fetches everything project-related from Supabase and reshapes it into the
 // same in-memory shape the rest of the app already expects (D.projects), so
 // the existing render code needs minimal changes. Each project keeps both a
-// display name (e.g. p.pm) and, where it matters for permissions, a real
-// linked account id (e.g. p.pmId) alongside it.
+// display name (e.g. p.owner) and, where it matters for permissions, a real
+// linked account id (e.g. p.ownerId) alongside it.
 
 function ymd(isoString) {
   if (!isoString) return null;
@@ -196,7 +196,7 @@ async function loadAllProjects() {
 
     return {
       id: pr.id, name: pr.name,
-      pm: pr.pm_name || (pr.pm_id ? nameById[pr.pm_id] : ''), pmId: pr.pm_id,
+      owner: pr.owner_name || (pr.owner_id ? nameById[pr.owner_id] : ''), ownerId: pr.owner_id,
       sponsor: pr.sponsor, sponsorEmail: pr.sponsor_email, sponsorId: pr.sponsor_id,
       category: pr.category, businessUnit: pr.business_unit,
       team: teamNames, teamIds: teamIds,
@@ -217,23 +217,19 @@ function pendingCount() { return D.requests.filter(function(r){ return r.status 
 function backlogCount()  { return D.projects.filter(function(p){ return p.stage  === 'backlog'; }).length; }
 
 function myProjects() {
-  if (D.role === 'pm') {
-    var myId = D.currentProfile ? D.currentProfile.id : null;
-    return D.projects.filter(function(p){ return p.pmId === myId; });
-  }
   return D.projects;
 }
 
 function myAssignedProjects() {
   var myId = D.currentProfile ? D.currentProfile.id : null;
   if (!myId) return [];
-  return D.projects.filter(function(p){ return (p.teamIds||[]).indexOf(myId) >= 0; });
+  return D.projects.filter(function(p){ return (p.teamIds||[]).indexOf(myId) >= 0 || p.ownerId === myId; });
 }
 
 function hasAssignedWork() {
   var myId = D.currentProfile ? D.currentProfile.id : null;
   if (!myId) return false;
-  var onActiveProject = D.projects.some(function(p){ return p.stage === 'active' && (p.teamIds||[]).indexOf(myId) >= 0; });
+  var onActiveProject = D.projects.some(function(p){ return p.stage === 'active' && ((p.teamIds||[]).indexOf(myId) >= 0 || p.ownerId === myId); });
   var hasOpenTask = D.projects.some(function(p){ return p.tasks.some(function(t){ return t.assigneeId === myId && t.status !== 'Done'; }); });
   return onActiveProject || hasOpenTask;
 }
@@ -244,8 +240,7 @@ function currentUser() {
 
 function canEdit(p) {
   if (D.role === 'admin') return true;
-  if (D.role === 'pm')    return !!(p.pmId && D.currentProfile && p.pmId === D.currentProfile.id);
-  return false;
+  return !!(p.ownerId && D.currentProfile && p.ownerId === D.currentProfile.id);
 }
 
 function teamNames() {
@@ -257,7 +252,7 @@ function resolveAssignee(name) {
 }
 
 function roleLabel(r) {
-  var m = { admin:'PMO Admin', pm:'Project Manager', exec:'Business Partner' };
+  var m = { admin:'PMO Admin', member:'Member' };
   return m[r] || r;
 }
 
@@ -371,26 +366,17 @@ var NAV_DEF = {
       {id:'admin-users', icon:'ti-users-group', label:'Manage Users'}
     ]}
   ],
-  pm: [
-    { s:'Overview',    items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'}] },
-    { s:'My Projects', items:[
-      {id:'projects', icon:'ti-briefcase',      label:'Active projects'},
-      {id:'planned',  icon:'ti-calendar-event', label:'Planned'},
-      {id:'completed',icon:'ti-circle-check',   label:'Completed'},
-      {id:'roadmap',  icon:'ti-road',           label:'Roadmap'},
-      {id:'resources',icon:'ti-users',          label:'Resources'}
-    ]},
-    { s:'Requests', items:[
-      {id:'submit',       icon:'ti-send',  label:'Submit a request'},
-      {id:'my-requests',  icon:'ti-clock', label:'My requests'}
-    ]}
-  ],
-  exec: [
+  member: [
     { s:'Overview', items:[
-      {id:'dashboard', icon:'ti-layout-dashboard',label:'Dashboard'},
-      {id:'portfolio', icon:'ti-folder-open',     label:'Portfolio'},
-      {id:'completed', icon:'ti-circle-check',    label:'Completed'},
-      {id:'roadmap',   icon:'ti-road',            label:'Roadmap'}
+      {id:'dashboard', icon:'ti-layout-dashboard', label:'Dashboard'},
+      {id:'portfolio', icon:'ti-folder-open',      label:'Portfolio'}
+    ]},
+    { s:'Projects', items:[
+      {id:'planned',   icon:'ti-calendar-event', label:'Planned'},
+      {id:'projects',  icon:'ti-briefcase',      label:'Active projects'},
+      {id:'completed', icon:'ti-circle-check',   label:'Completed'},
+      {id:'roadmap',   icon:'ti-road',           label:'Roadmap'},
+      {id:'resources', icon:'ti-users',          label:'Resources'}
     ]},
     { s:'Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a request'},
@@ -587,7 +573,7 @@ function pgDashboard() {
       '<td class="bold">' + hdot(p.health) + p.name + '</td><td>' + bdg(p.status) + '</td><td>' + bdg(p.priority) + '</td>' +
       '<td>' + badgeIf('badge-gray', p.phase) + '</td>' +
       '<td><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></td>' +
-      '<td class="text-muted">' + (p.pm || '—') + '</td>' +
+      '<td class="text-muted">' + (p.owner || '—') + '</td>' +
       '<td>' + (p.blockers ? '<span style="color:#993C1D;font-size:12px"><i class="ti ti-alert-triangle"></i> Yes</span>' : '<span class="text-muted">—</span>') + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
   }).join('');
@@ -613,7 +599,7 @@ function pgDashboard() {
     var days = (Date.now() - new Date(rd).getTime()) / 86400000;
     return days <= parseInt(rejRange);
   });
-  if (D.role === 'admin' || D.role === 'pm' || D.role === 'exec') {
+  if (true) { // rejected proposals visible to everyone
     rejectedList.forEach(function(r) {
       rejectedRows += '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + r.dept + '</td>' +
         '<td>' + bdg(r.priority) + '</td><td><span class="badge badge-purple">' + r.value + '</span></td>' +
@@ -647,7 +633,7 @@ function pgDashboard() {
       ? '<div class="card mb-16"><div class="section-title">Pending approval <span class="badge badge-amber" style="margin-left:6px">' + pendingCount() + '</span></div>' +
         '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th></th></tr></thead>' +
         '<tbody>' + pendRows + '</tbody></table></div></div>' : '') +
-    (D.role === 'admin' || D.role === 'pm' || D.role === 'exec'
+    (true // rejected proposals visible to everyone
       ? '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
         '<div class="section-title" style="margin-bottom:0">Rejected proposals <span class="badge badge-gray" style="margin-left:6px">' + rejectedList.length + '</span></div>' +
         '<select id="rej-range" onchange="setRejectedRange(this.value)" style="width:auto;max-width:170px">' +
@@ -710,7 +696,7 @@ function pgPortfolio() {
         '<div class="text-muted mb-12" style="line-height:1.5">' + (p.description||'') + '</div>' +
         (req && req.cost != null ? '<div class="text-muted mb-12" style="font-size:12px"><i class="ti ti-currency-dollar"></i> Estimated cost: ' + fmtCost(req.cost) + '</div>' : '') +
         '<div class="progress-bar mb-12"><div class="progress-fill" style="width:' + p.progress + '%"></div></div>' +
-        '<div style="display:flex;justify-content:space-between"><span class="text-muted">' + (p.pm || 'No PM') + '</span><span class="text-muted">' + (p.end || 'TBD') + '</span></div></div>';
+        '<div style="display:flex;justify-content:space-between"><span class="text-muted">' + (p.owner || 'No PM') + '</span><span class="text-muted">' + (p.end || 'TBD') + '</span></div></div>';
     }).join('');
     h += '<div class="card mb-16"><div class="mb-12"><span class="badge ' + cl + '" style="font-size:13px;padding:5px 14px">' + v + '</span></div><div class="grid-2">' + cards + '</div></div>';
   });
@@ -778,7 +764,7 @@ function reviewRequest(id) {
         '<div class="grid-2" style="gap:8px 16px;font-size:12px">' +
           '<div><span class="text-muted">Status: </span>' + bdg(linkedP.status) + '</div>' +
           '<div><span class="text-muted">Phase: </span><span class="badge badge-gray">' + linkedP.phase + '</span></div>' +
-          '<div><span class="text-muted">PM: </span>' + (linkedP.pm || '—') + '</div>' +
+          '<div><span class="text-muted">PM: </span>' + (linkedP.owner || '—') + '</div>' +
           '<div><span class="text-muted">Due: </span>' + (linkedP.end || 'TBD') + '</div>' +
         '</div>' +
         '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:11px;color:#777;margin-bottom:3px"><span>Progress</span><span>' + linkedP.progress + '%</span></div>' +
@@ -817,7 +803,7 @@ async function decideReq(id, decision) {
     if (reqResult.error) { showToast('Could not update request: ' + reqResult.error.message); return; }
 
     D.projects.push({
-      id: projResult.data.id, name: r.title, pm:'', pmId:null, sponsor:'', category:null, businessUnit:null,
+      id: projResult.data.id, name: r.title, owner:'', ownerId:null, sponsor:'', category:null, businessUnit:null,
       team:[], teamIds:[], status:'Not Started', phase:'Not Started', progress:0, start:'', end:'',
       value:r.value, priority:r.priority, description:r.description, blockers:'', health:'green',
       stage:'backlog', plannedStart:'', requestId:r.id, milestones:[], tasks:[],
@@ -870,7 +856,7 @@ function pgBacklog() {
 
 function openScheduleModal(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  var pmOpts = '<option value="">— None (assign later) —</option>' + D.people.map(function(n){ return '<option value="' + n + '"' + (p.pm === n ? ' selected' : '') + '>' + n + '</option>'; }).join('');
+  var ownerOpts = '<option value="">— None (assign later) —</option>' + D.people.map(function(n){ return '<option value="' + n + '"' + (p.owner === n ? ' selected' : '') + '>' + n + '</option>'; }).join('');
   var memberOpts = D.people.concat(teamNames()).map(function(n) {
     var isTeam = teamNames().indexOf(n) >= 0;
     var chk = p.team.indexOf(n) >= 0 ? ' checked' : '';
@@ -879,7 +865,7 @@ function openScheduleModal(pid) {
   showModal(
     '<div class="modal-title">Schedule project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div style="font-weight:600;margin-bottom:16px;color:#534AB7">' + p.name + '</div>' +
-    '<div class="form-group"><div class="form-label">Project manager</div><select id="sch-pm">' + pmOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Project manager</div><select id="sch-owner">' + ownerOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Team members</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' + memberOpts + '</div></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Planned start *</div><input type="date" id="sch-start" value="' + (p.plannedStart||'') + '"></div>' +
     '<div class="form-group"><div class="form-label">Target end *</div><input type="date" id="sch-end" value="' + (p.end||'') + '"></div></div>' +
@@ -894,12 +880,12 @@ async function scheduleProject(pid) {
   if (!start || !end) { showToast('Please set a start and end date'); return; }
   var allNames = D.people.concat(teamNames());
   var newTeamNames = allNames.filter(function(n){ var el = document.getElementById('schm-' + n.replace(/ /g,'_')); return el && el.checked; });
-  var pmName = document.getElementById('sch-pm').value;
-  var pmProfile = resolveAssignee(pmName);
+  var ownerName = document.getElementById('sch-owner').value;
+  var ownerProfile = resolveAssignee(ownerName);
 
   var result = await sb.from('projects').update({
     planned_start: start, start_date: start, end_date: end, stage: 'planned',
-    pm_id: pmProfile ? pmProfile.id : null, pm_name: pmName || null
+    owner_id: ownerProfile ? ownerProfile.id : null, owner_name: ownerName || null
   }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
 
@@ -911,11 +897,11 @@ async function scheduleProject(pid) {
   for (var i = 0; i < toRemove.length; i++) { await sb.from('project_team').delete().eq('project_id', pid).eq('user_id', toRemove[i]); }
 
   p.team = newTeamNames; p.teamIds = newRealIds;
-  p.pm = pmName; p.pmId = pmProfile ? pmProfile.id : null;
+  p.owner = ownerName; p.ownerId = ownerProfile ? ownerProfile.id : null;
   p.plannedStart = start; p.start = start; p.end = end; p.stage = 'planned';
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) await syncRequestStatus(r.id, { status: 'Planned', linkedProject: pid });
-  addNotif(r ? r.submitter : '', 'Great news! "' + p.name + '" has been scheduled to start on ' + start + (p.pm ? '. PM: ' + p.pm : '') + '.', 'planned');
+  addNotif(r ? r.submitter : '', 'Great news! "' + p.name + '" has been scheduled to start on ' + start + (p.owner ? '. PM: ' + p.owner : '') + '.', 'planned');
   closeModal(); showToast('Project scheduled'); renderNav();
   if (currentPage === 'backlog') pgBacklog();
   else if (currentPage === 'planned') pgPlanned();
@@ -932,7 +918,7 @@ function pgPlanned() {
 
   var cards = pp.map(function(p) {
     var startDate = p.plannedStart ? new Date(p.plannedStart) : null;
-    var soonNoPM  = !p.pm && startDate && startDate <= in30;
+    var soonNoPM  = !p.owner && startDate && startDate <= in30;
     return '<div class="project-card">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
         '<div><div class="bold mb-12">' + p.name + '</div>' +
@@ -947,16 +933,14 @@ function pgPlanned() {
       '<div class="grid-2 mt-12" style="font-size:13px">' +
         '<div><span class="text-muted">Start: </span>' + (p.plannedStart||'TBD') + '</div>' +
         '<div><span class="text-muted">End: </span>' + (p.end||'TBD') + '</div>' +
-        '<div><span class="text-muted">PM: </span>' + (p.pm || '<em style="color:#777">Not assigned</em>') + '</div>' +
+        '<div><span class="text-muted">PM: </span>' + (p.owner || '<em style="color:#777">Not assigned</em>') + '</div>' +
         '<div><span class="text-muted">Team: </span>' + p.team.length + ' member' + (p.team.length !== 1 ? 's' : '') + '</div>' +
       '</div>' +
       (soonNoPM ? '<div class="blocker-note" style="background:#FAEEDA;color:#854F0B;margin-top:10px"><i class="ti ti-alert-triangle"></i> <strong>No PM assigned</strong> — this project starts within 30 days. Please assign a PM before activation.</div>' : '') +
     '</div>';
   }).join('');
 
-  var bannerText = D.role === 'pm'
-    ? 'These projects are <strong>scheduled</strong> with a start date assigned.'
-    : 'These projects are <strong>scheduled</strong> with a start date. Activate them when work begins.';
+  var bannerText = 'These projects are <strong>scheduled</strong> with a start date. Activate them when work begins.';
 
   document.getElementById('content').innerHTML =
     '<div class="info-banner info-blue"><i class="ti ti-calendar-event" style="font-size:20px;flex-shrink:0;color:#185FA5"></i><span>' + bannerText + '</span></div>' +
@@ -995,7 +979,7 @@ function pgProjects() {
       '</div>' +
       '<div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:12px;color:#777;margin-bottom:4px"><span>Progress</span><span>' + p.progress + '%</span></div>' +
       '<div class="progress-bar"><div class="progress-fill" style="width:' + p.progress + '%"></div></div></div>' +
-      '<div class="grid-2 mt-12" style="font-size:12px;color:#777"><div>PM: ' + (p.pm||'—') + ' &bull; Due ' + (p.end||'TBD') + '</div><div>' + p.team.length + ' team member' + (p.team.length!==1?'s':'') + '</div></div>' +
+      '<div class="grid-2 mt-12" style="font-size:12px;color:#777"><div>PM: ' + (p.owner||'—') + ' &bull; Due ' + (p.end||'TBD') + '</div><div>' + p.team.length + ' team member' + (p.team.length!==1?'s':'') + '</div></div>' +
       (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
     '</div>';
   }).join('');
@@ -1010,7 +994,7 @@ function pgCompleted() {
   if (!cp.length) { document.getElementById('content').innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No completed projects yet</p></div>'; return; }
   var rows = cp.map(function(p) {
     return '<tr><td class="bold">' + p.name + '</td><td>' + badgeIf('badge-purple', p.value) + '</td>' +
-      '<td>' + bdg(p.priority) + '</td><td class="text-muted">' + (p.pm||'—') + '</td><td class="text-muted">' + (p.end||'—') + '</td>' +
+      '<td>' + bdg(p.priority) + '</td><td class="text-muted">' + (p.owner||'—') + '</td><td class="text-muted">' + (p.end||'—') + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
       (D.role === 'admin' ? ' <button class="btn btn-sm" onclick="reactivateProject(\'' + p.id + '\')"><i class="ti ti-refresh"></i> Re-activate</button>' : '') +
       '</td></tr>';
@@ -1076,7 +1060,7 @@ function pgProjectDetail(pid, tab) {
         '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'') + '</div></div>' +
         '<div class="grid-2 mb-16">' +
         '<div class="form-group"><div class="form-label">Sponsor</div>' + (p.sponsor||'—') + '</div>' +
-        '<div class="form-group"><div class="form-label">PM</div>' + (p.pm||'—') + '</div>' +
+        '<div class="form-group"><div class="form-label">PM</div>' + (p.owner||'—') + '</div>' +
         '</div>' +
         '<div class="form-group"><div class="form-label">Team</div><div style="display:flex;gap:8px;flex-wrap:wrap">' + teamHtml + '</div></div>' +
         (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '') +
@@ -1953,7 +1937,7 @@ function editProject(pid) {
   var phaseOpts  = PHASES.map(function(s){   return '<option' + (p.phase===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var priorOpts  = PRIORITIES.map(function(s){ return '<option' + (p.priority===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var valOpts    = VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  var pmOpts     = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option' + (p.pm===n?' selected':'') + '>' + n + '</option>'; }).join('');
+  var ownerOpts     = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option' + (p.owner===n?' selected':'') + '>' + n + '</option>'; }).join('');
   var catOpts    = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option' + (p.category===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var buOpts     = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var memberOpts = D.people.concat(teamNames()).map(function(n) {
@@ -1980,7 +1964,7 @@ function editProject(pid) {
     '<div class="grid-2">' +
     '<div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="ep-sponsor" value="' + (p.sponsor||'') + '"></div>' +
     '<div class="form-group"><div class="form-label">Sponsor email' + (p.sponsorId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : '') + '</div><input type="email" id="ep-sponsor-email" value="' + (p.sponsorEmail||'') + '"></div>' +
-    '<div class="form-group"><div class="form-label">Project manager</div><select id="ep-pm">' + pmOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Project manager</div><select id="ep-owner">' + ownerOpts + '</select></div>' +
     '</div>' +
     '<div class="form-group"><div class="form-label">Team members</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' + memberOpts + '</div></div>' +
     '<div class="modal-footer">' +
@@ -2009,9 +1993,9 @@ async function saveProject(pid) {
   var buEl = document.getElementById('ep-bu'); if (buEl) newVals.business_unit = buEl.value || null;
   var spEl = document.getElementById('ep-sponsor'); if (spEl) newVals.sponsor = spEl.value || null;
   var spEmailEl = document.getElementById('ep-sponsor-email'); if (spEmailEl) newVals.sponsor_email = spEmailEl.value.trim() || null;
-  var pmEl = document.getElementById('ep-pm');
-  var pmProfile = pmEl ? resolveAssignee(pmEl.value) : null;
-  if (pmEl) { newVals.pm_id = pmProfile ? pmProfile.id : null; newVals.pm_name = pmEl.value || null; }
+  var pmEl = document.getElementById('ep-owner');
+  var ownerProfile = pmEl ? resolveAssignee(pmEl.value) : null;
+  if (pmEl) { newVals.owner_id = ownerProfile ? ownerProfile.id : null; newVals.owner_name = pmEl.value || null; }
 
   var saveBtn = document.querySelector('.modal-footer .btn-primary'); if (saveBtn) saveBtn.disabled = true;
   var result = await sb.from('projects').update(newVals).eq('id', pid).select().single();
@@ -2024,7 +2008,7 @@ async function saveProject(pid) {
   if (buEl) p.businessUnit = newVals.business_unit;
   if (spEl) p.sponsor = newVals.sponsor;
   if (spEmailEl) { p.sponsorEmail = newVals.sponsor_email; p.sponsorId = result.data.sponsor_id; }
-  if (pmEl) { p.pm = pmEl.value; p.pmId = newVals.pm_id; }
+  if (pmEl) { p.owner = pmEl.value; p.ownerId = newVals.owner_id; }
 
   // Team membership: diff against real linked accounts only (teams/groups aren't
   // linkable to a real row yet — that's part of the Resources migration, still to come)
@@ -2055,7 +2039,7 @@ async function deleteProject(pid) {
 function openNewProjectModal() {
   var valOpts = VALUE_AREAS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var priorOpts = PRIORITIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
-  var pmOpts = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option>' + n + '</option>'; }).join('');
+  var ownerOpts = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var catOpts = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var buOpts = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   showModal('<div class="modal-title">Create new project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
@@ -2067,20 +2051,20 @@ function openNewProjectModal() {
     '<div class="form-group"><div class="form-label">Description</div><textarea id="np-desc" placeholder="What is this project about?"></textarea></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="np-sponsor" placeholder="Sponsor name"></div>' +
     '<div class="form-group"><div class="form-label">Sponsor email</div><input type="email" id="np-sponsor-email" placeholder="name@yourcompany.com"></div>' +
-    '<div class="form-group"><div class="form-label">Project manager</div><select id="np-pm">' + pmOpts + '</select></div></div>' +
+    '<div class="form-group"><div class="form-label">Project manager</div><select id="np-owner">' + ownerOpts + '</select></div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="np-save"><i class="ti ti-plus"></i> Create project</button></div>', true);
   document.getElementById('np-save').onclick = async function() {
     var name = document.getElementById('np-name').value.trim();
     if (!name){ showToast('Project name required'); return; }
-    var pmName = document.getElementById('np-pm').value;
-    var pmProfile = resolveAssignee(pmName);
+    var ownerName = document.getElementById('np-owner').value;
+    var ownerProfile = resolveAssignee(ownerName);
     var sponsorName = document.getElementById('np-sponsor').value.trim();
     var sponsorEmail = document.getElementById('np-sponsor-email').value.trim();
     var btn = document.getElementById('np-save'); btn.disabled = true;
 
     var record = {
-      name: name, pm_id: pmProfile ? pmProfile.id : null, pm_name: pmName || null,
+      name: name, owner_id: ownerProfile ? ownerProfile.id : null, owner_name: ownerName || null,
       sponsor: sponsorName || null, sponsor_email: sponsorEmail || null,
       category: document.getElementById('np-category').value || null, business_unit: document.getElementById('np-bu').value || null,
       status: 'Not Started', phase: 'Not Started', progress: 0,
@@ -2091,7 +2075,7 @@ function openNewProjectModal() {
     if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
 
     D.projects.push({
-      id: result.data.id, name:name, pm:pmName, pmId: pmProfile?pmProfile.id:null,
+      id: result.data.id, name:name, owner:ownerName, ownerId: ownerProfile?ownerProfile.id:null,
       sponsor:sponsorName, sponsorEmail:sponsorEmail, sponsorId: result.data.sponsor_id,
       category:record.category, businessUnit:record.business_unit, team:[], teamIds:[],
       status:'Not Started', phase:'Not Started', progress:0, start:'', end:'',
@@ -2338,8 +2322,8 @@ function validateImportRow(row, profilesByEmail) {
   if (isNaN(progress)) progress = 0;
   progress = Math.max(0, Math.min(100, progress));
 
-  var pmEmail = String(row['PM Email'] || '').trim().toLowerCase();
-  var pmProfile = pmEmail ? profilesByEmail[pmEmail] : null;
+  var ownerEmail = String(row['PM Email'] || '').trim().toLowerCase();
+  var ownerProfile = ownerEmail ? profilesByEmail[ownerEmail] : null;
 
   return {
     valid: errors.length === 0,
@@ -2347,8 +2331,8 @@ function validateImportRow(row, profilesByEmail) {
     record: {
       name: name,
       sponsor: row['Sponsor'] || null,
-      pm_id: pmProfile ? pmProfile.id : null,
-      pm_name: pmProfile ? pmProfile.display_name : (pmEmail || null),
+      owner_id: ownerProfile ? ownerProfile.id : null,
+      owner_name: ownerProfile ? ownerProfile.display_name : (ownerEmail || null),
       category: category || null,
       business_unit: row['Business Unit'] || null,
       stage: (stage || 'Backlog').toLowerCase(),
@@ -2376,7 +2360,7 @@ function renderImportPreview() {
       '<td>' + (v.valid ? '<i class="ti ti-circle-check" style="color:#1D9E75"></i>' : '<i class="ti ti-alert-circle" style="color:#A32D2D"></i>') + '</td>' +
       '<td>' + (v.record.name || '<span class="text-muted">(missing)</span>') + '</td>' +
       '<td>' + (v.record.stage || '') + '</td>' +
-      '<td>' + (v.record.pm_name || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (v.record.owner_name || '<span class="text-muted">—</span>') + '</td>' +
       '<td style="color:#A32D2D;font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
       '</tr>';
   }).join('');
@@ -2501,7 +2485,7 @@ function openEditUserModal(userId) {
     '<div class="grid-2"><div class="form-group"><div class="form-label">First name</div><input type="text" id="eu-first" value="' + (u.first_name||'') + '"></div>' +
     '<div class="form-group"><div class="form-label">Last name</div><input type="text" id="eu-last" value="' + (u.last_name||'') + '"></div></div>' +
     '<div class="form-group"><div class="form-label">Role</div><select id="eu-role">' +
-      ['admin','pm','exec'].map(function(r){ return '<option value="' + r + '"' + (u.role===r?' selected':'') + '>' + roleLabel(r) + '</option>'; }).join('') +
+      ['admin','member'].map(function(r){ return '<option value="' + r + '"' + (u.role===r?' selected':'') + '>' + roleLabel(r) + '</option>'; }).join('') +
     '</select></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="eu-save"><i class="ti ti-check"></i> Save changes</button></div>');
@@ -2558,7 +2542,7 @@ function openAddUserModal() {
       '<p class="text-muted" style="font-size:12px;margin-top:6px">Share this with them directly — no email is sent. They can change it once logged in.</p>' +
     '</div>' +
     '<div class="form-group"><div class="form-label">Role</div><select id="au-role">' +
-      '<option value="exec" selected>Business Partner</option><option value="pm">Project Manager</option><option value="admin">PMO Admin</option>' +
+      '<option value="member" selected>Member</option><option value="admin">PMO Admin</option>' +
     '</select></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="au-save"><i class="ti ti-user-plus"></i> Add user</button></div>');
@@ -2615,7 +2599,7 @@ function pgResources() {
     var ini = r.name.split(' ').map(function(x){ return x[0]; }).join('');
     var projs = r.projects.map(function(pid){ var p=D.projects.find(function(x){ return x.id===pid; }); return p?p.name:pid; }).join(', ');
     // capacity bar: show project allocation + non-project separately (exec sees both)
-    var showNonProject = D.role === 'exec' || D.role === 'admin';
+    var showNonProject = true; // additive info, safe to show everyone
     var barHtml = '<div style="height:10px;background:#f0ede8;border-radius:5px;overflow:hidden;display:flex">' +
       '<div style="height:100%;background:' + c + ';width:' + Math.min(pct,100) + '%;border-radius:5px 0 0 5px;flex-shrink:0"></div>' +
       (showNonProject && nonPct > 0 && (pct+nonPct)<=100 ? '<div style="height:100%;background:#b0abe0;width:' + nonPct + '%;flex-shrink:0"></div>' : '') +
@@ -2853,7 +2837,7 @@ function pgMyProjectsResource() {
         '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
       '</div>' +
       '<div class="grid-2 mt-12" style="font-size:12px;color:#777">' +
-        '<div>PM: ' + (p.pm||'—') + '</div><div>Due: ' + (p.end||'TBD') + '</div>' +
+        '<div>PM: ' + (p.owner||'—') + '</div><div>Due: ' + (p.end||'TBD') + '</div>' +
         '<div>My tasks: ' + doneTasks + '/' + myTasks.length + ' done</div>' +
       '</div>' +
       (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
