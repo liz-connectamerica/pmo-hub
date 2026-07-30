@@ -2106,15 +2106,125 @@ async function handleImportFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
-function pgAdminUsers() {
-  tb('Manage Users');
+async function callAdminUsersApi(payload) {
+  var sessionResult = await sb.auth.getSession();
+  var token = sessionResult.data && sessionResult.data.session ? sessionResult.data.session.access_token : null;
+  if (!token) { showToast('Your session has expired — please log in again'); return null; }
+  payload.accessToken = token;
+  var res, json;
+  try {
+    res = await fetch('/api/admin-users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    json = await res.json();
+  } catch (e) { showToast('Could not reach the server: ' + e.message); return null; }
+  if (!res.ok) { showToast(json.error || 'Request failed'); return null; }
+  return json;
+}
+
+async function pgAdminUsers() {
+  tb('Manage Users', D.role === 'admin' ? '<button class="btn btn-primary" onclick="openInviteUserModal()"><i class="ti ti-user-plus"></i> Invite user</button>' : '');
   if (D.role !== 'admin') {
     document.getElementById('content').innerHTML =
       '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can manage users.</p></div>';
     return;
   }
+  document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading users…</p></div>';
+  var result = await sb.from('profiles').select('id, email, first_name, last_name, display_name, role, is_active');
+  if (result.error) {
+    document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:40px"><p>Could not load users: ' + result.error.message + '</p></div>';
+    return;
+  }
+  D.allUsers = result.data.sort(function(a,b){ return (a.display_name||'').localeCompare(b.display_name||''); });
+  renderUsersTable();
+}
+
+function renderUsersTable() {
+  var rows = D.allUsers.map(function(u) {
+    var isMe = D.currentProfile.id === u.id;
+    var active = u.is_active !== false;
+    return '<tr>' +
+      '<td>' + (u.display_name||u.email) + (isMe ? ' <span class="text-muted">(you)</span>' : '') + '</td>' +
+      '<td class="text-muted">' + u.email + '</td>' +
+      '<td>' + bdg(roleLabel(u.role)) + '</td>' +
+      '<td>' + (active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Deactivated</span>') + '</td>' +
+      '<td><div style="display:flex;gap:4px">' +
+        '<button class="btn btn-sm" title="Edit" onclick="openEditUserModal(\'' + u.id + '\')"><i class="ti ti-edit"></i></button>' +
+        '<button class="btn btn-sm" title="Send password reset" onclick="sendPasswordReset(\'' + u.email + '\')"><i class="ti ti-key"></i></button>' +
+        (!isMe ? (active
+          ? '<button class="btn btn-sm btn-danger" title="Deactivate" onclick="toggleUserActive(\'' + u.id + '\',\'deactivate\')"><i class="ti ti-user-off"></i></button>'
+          : '<button class="btn btn-sm btn-success" title="Reactivate" onclick="toggleUserActive(\'' + u.id + '\',\'reactivate\')"><i class="ti ti-user-check"></i></button>')
+          : '') +
+      '</div></td>' +
+    '</tr>';
+  }).join('');
   document.getElementById('content').innerHTML =
-    '<div class="empty-state" style="padding:60px"><i class="ti ti-tools"></i><p>User management is coming soon.</p></div>';
+    '<div class="card"><div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
+function openEditUserModal(userId) {
+  var u = D.allUsers.find(function(x){ return x.id === userId; });
+  showModal('<div class="modal-title">Edit user <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">First name</div><input type="text" id="eu-first" value="' + (u.first_name||'') + '"></div>' +
+    '<div class="form-group"><div class="form-label">Last name</div><input type="text" id="eu-last" value="' + (u.last_name||'') + '"></div></div>' +
+    '<div class="form-group"><div class="form-label">Role</div><select id="eu-role">' +
+      ['admin','pm','exec'].map(function(r){ return '<option value="' + r + '"' + (u.role===r?' selected':'') + '>' + roleLabel(r) + '</option>'; }).join('') +
+    '</select></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="eu-save"><i class="ti ti-check"></i> Save changes</button></div>');
+  document.getElementById('eu-save').onclick = async function() {
+    var first = document.getElementById('eu-first').value.trim();
+    var last = document.getElementById('eu-last').value.trim();
+    var role = document.getElementById('eu-role').value;
+    var displayName = (first + ' ' + last).trim() || u.email;
+    var btn = document.getElementById('eu-save'); btn.disabled = true;
+    var result = await sb.from('profiles').update({ first_name: first, last_name: last, display_name: displayName, role: role }).eq('id', userId);
+    if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+    u.first_name = first; u.last_name = last; u.display_name = displayName; u.role = role;
+    showToast('User updated');
+    closeModal(); renderUsersTable();
+  };
+}
+
+window.sendPasswordReset = async function(email) {
+  var result = await sb.auth.resetPasswordForEmail(email);
+  if (result.error) { showToast('Could not send reset email: ' + result.error.message); return; }
+  showToast('Password reset email sent to ' + email);
+};
+
+window.toggleUserActive = async function(userId, action) {
+  if (!confirm(action === 'deactivate' ? 'Deactivate this account? They will not be able to log in until reactivated.' : 'Reactivate this account?')) return;
+  var result = await callAdminUsersApi({ action: action, userId: userId });
+  if (!result) return;
+  var u = D.allUsers.find(function(x){ return x.id === userId; });
+  u.is_active = action === 'reactivate';
+  showToast(action === 'deactivate' ? 'Account deactivated' : 'Account reactivated');
+  renderUsersTable();
+};
+
+function openInviteUserModal() {
+  showModal('<div class="modal-title">Invite user <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">First name</div><input type="text" id="iu-first"></div>' +
+    '<div class="form-group"><div class="form-label">Last name</div><input type="text" id="iu-last"></div></div>' +
+    '<div class="form-group"><div class="form-label">Email *</div><input type="email" id="iu-email" placeholder="name@yourcompany.com"></div>' +
+    '<div class="form-group"><div class="form-label">Role</div><select id="iu-role">' +
+      '<option value="exec" selected>Business Partner</option><option value="pm">Project Manager</option><option value="admin">PMO Admin</option>' +
+    '</select></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="iu-save"><i class="ti ti-send"></i> Send invite</button></div>');
+  document.getElementById('iu-save').onclick = async function() {
+    var email = document.getElementById('iu-email').value.trim();
+    if (!email) { showToast('Email required'); return; }
+    var btn = document.getElementById('iu-save'); btn.disabled = true; btn.innerHTML = 'Sending…';
+    var result = await callAdminUsersApi({
+      action: 'invite', email: email,
+      firstName: document.getElementById('iu-first').value.trim(),
+      lastName: document.getElementById('iu-last').value.trim(),
+      role: document.getElementById('iu-role').value
+    });
+    if (!result) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Send invite'; return; }
+    showToast('Invite sent to ' + email);
+    closeModal();
+    pgAdminUsers();
+  };
 }
 
 function pgImportProjects() {

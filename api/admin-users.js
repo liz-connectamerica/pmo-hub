@@ -73,6 +73,7 @@ module.exports = async (req, res) => {
     var banDuration = action === 'deactivate' ? '876000h' : 'none';
     var updateResult = await adminClient.auth.admin.updateUserById(userId, { ban_duration: banDuration });
     if (updateResult.error) { res.status(400).json({ error: updateResult.error.message }); return; }
+    await adminClient.from('profiles').update({ is_active: action === 'reactivate' }).eq('id', userId);
     res.status(200).json({ success: true });
     return;
   }
