@@ -1,10 +1,15 @@
 // Vercel serverless function — handles actions that require Supabase's admin
-// API (inviting new users, deactivating/reactivating accounts). These can
-// never be done safely from the browser, since they require the service role
-// key, which must never be shipped to client-side code. This function holds
-// that key server-side only, and independently re-checks that the caller is
-// really a logged-in Admin before doing anything, regardless of what the
-// app's UI already checked on its end.
+// API (creating new users with a password set directly, admin-forced password
+// changes, deactivating/reactivating accounts). These can never be done safely
+// from the browser, since they require the service role key, which must never
+// be shipped to client-side code. This function holds that key server-side
+// only, and independently re-checks that the caller is really a logged-in
+// Admin before doing anything, regardless of what the app's UI already
+// checked on its end.
+//
+// None of these actions send any email — accounts are created with a password
+// set directly by the admin, and password resets work the same way, entirely
+// sidestepping Supabase's very limited default email sending.
 
 const { createClient } = require('@supabase/supabase-js');
 
@@ -46,22 +51,37 @@ module.exports = async (req, res) => {
     return;
   }
 
-  if (action === 'invite') {
+  if (action === 'create') {
     var email = body.email;
     var firstName = body.firstName || '';
     var lastName = body.lastName || '';
     var role = body.role;
+    var password = body.password;
     if (!email) { res.status(400).json({ error: 'Missing email' }); return; }
+    if (!password || password.length < 8) { res.status(400).json({ error: 'Password must be at least 8 characters' }); return; }
 
-    var inviteResult = await adminClient.auth.admin.inviteUserByEmail(email, {
-      data: { first_name: firstName, last_name: lastName }
+    var createResult = await adminClient.auth.admin.createUser({
+      email: email, password: password, email_confirm: true,
+      user_metadata: { first_name: firstName, last_name: lastName }
     });
-    if (inviteResult.error) { res.status(400).json({ error: inviteResult.error.message }); return; }
+    if (createResult.error) { res.status(400).json({ error: createResult.error.message }); return; }
 
-    if (role && inviteResult.data && inviteResult.data.user) {
-      await adminClient.from('profiles').update({ role: role }).eq('id', inviteResult.data.user.id);
+    if (role && createResult.data && createResult.data.user) {
+      await adminClient.from('profiles').update({ role: role }).eq('id', createResult.data.user.id);
     }
-    res.status(200).json({ success: true, userId: inviteResult.data.user ? inviteResult.data.user.id : null });
+    res.status(200).json({ success: true, userId: createResult.data.user ? createResult.data.user.id : null });
+    return;
+  }
+
+  if (action === 'set-password') {
+    var targetUserId = body.userId;
+    var newPassword = body.newPassword;
+    if (!targetUserId || !newPassword) { res.status(400).json({ error: 'Missing userId or newPassword' }); return; }
+    if (newPassword.length < 8) { res.status(400).json({ error: 'Password must be at least 8 characters' }); return; }
+
+    var pwResult = await adminClient.auth.admin.updateUserById(targetUserId, { password: newPassword });
+    if (pwResult.error) { res.status(400).json({ error: pwResult.error.message }); return; }
+    res.status(200).json({ success: true });
     return;
   }
 

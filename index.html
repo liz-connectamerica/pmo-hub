@@ -14,68 +14,19 @@
 <div class="auth-screen" id="auth-screen" style="display:none">
   <div class="auth-card">
     <div class="sidebar-logo" style="margin-bottom:24px"><i class="ti ti-layout-dashboard"></i> PMO Hub</div>
-
-    <div id="auth-login-mode">
-      <div class="form-group">
-        <div class="form-label">Email</div>
-        <input type="email" id="auth-email" placeholder="you@yourcompany.com">
-      </div>
-      <div class="form-group">
-        <div class="form-label">Password</div>
-        <input type="password" id="auth-password" placeholder="••••••••">
-      </div>
-      <div id="auth-error" class="auth-error" style="display:none"></div>
-      <button class="btn btn-primary" id="auth-submit" style="width:100%;justify-content:center">
-        <i class="ti ti-login"></i> Sign in
-      </button>
-      <div style="text-align:center;margin-top:14px">
-        <a href="#" id="forgot-password-link" style="font-size:12px;color:#534AB7;text-decoration:none">Forgot your password?</a>
-      </div>
-    </div>
-
-    <div id="auth-forgot-mode" style="display:none">
-      <p class="text-muted" style="font-size:13px;margin-bottom:16px">Enter your email and we'll send you a link to reset your password.</p>
-      <div class="form-group">
-        <div class="form-label">Email</div>
-        <input type="email" id="forgot-email" placeholder="you@yourcompany.com">
-      </div>
-      <div id="forgot-error" class="auth-error" style="display:none"></div>
-      <button class="btn btn-primary" id="forgot-submit" style="width:100%;justify-content:center">
-        <i class="ti ti-send"></i> Send reset link
-      </button>
-      <div style="text-align:center;margin-top:14px">
-        <a href="#" id="back-to-login-link" style="font-size:12px;color:#534AB7;text-decoration:none">Back to sign in</a>
-      </div>
-    </div>
-
-    <div id="auth-forgot-sent-mode" style="display:none">
-      <div class="empty-state" style="padding:20px 0">
-        <i class="ti ti-mail-check"></i>
-        <p>Check your email for a link to reset your password.</p>
-      </div>
-      <div style="text-align:center">
-        <a href="#" id="back-to-login-link-2" style="font-size:12px;color:#534AB7;text-decoration:none">Back to sign in</a>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="auth-screen" id="reset-password-screen" style="display:none">
-  <div class="auth-card">
-    <div class="sidebar-logo" style="margin-bottom:24px"><i class="ti ti-layout-dashboard"></i> PMO Hub</div>
-    <p class="text-muted" style="font-size:13px;margin-bottom:16px">Set a new password for your account.</p>
     <div class="form-group">
-      <div class="form-label">New password</div>
-      <input type="password" id="newpw-1" placeholder="••••••••">
+      <div class="form-label">Email</div>
+      <input type="email" id="auth-email" placeholder="you@yourcompany.com">
     </div>
     <div class="form-group">
-      <div class="form-label">Confirm new password</div>
-      <input type="password" id="newpw-2" placeholder="••••••••">
+      <div class="form-label">Password</div>
+      <input type="password" id="auth-password" placeholder="••••••••">
     </div>
-    <div id="newpw-error" class="auth-error" style="display:none"></div>
-    <button class="btn btn-primary" id="newpw-submit" style="width:100%;justify-content:center">
-      <i class="ti ti-check"></i> Set password
+    <div id="auth-error" class="auth-error" style="display:none"></div>
+    <button class="btn btn-primary" id="auth-submit" style="width:100%;justify-content:center">
+      <i class="ti ti-login"></i> Sign in
     </button>
+    <p class="text-muted" style="font-size:12px;text-align:center;margin-top:14px">Forgot your password? Ask your PMO Admin to set a new one for you.</p>
   </div>
 </div>
 
@@ -95,6 +46,9 @@
           <option value="exec">Business Partner</option>
         </select>
       </div>
+      <button class="btn btn-sm" id="change-password-btn" style="width:100%;justify-content:center;margin-bottom:6px">
+        <i class="ti ti-key"></i> Change password
+      </button>
       <button class="btn btn-sm" id="logout-btn" style="width:100%;justify-content:center">
         <i class="ti ti-logout"></i> Log out
       </button>

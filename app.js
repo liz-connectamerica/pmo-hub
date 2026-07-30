@@ -2121,7 +2121,7 @@ async function callAdminUsersApi(payload) {
 }
 
 async function pgAdminUsers() {
-  tb('Manage Users', D.role === 'admin' ? '<button class="btn btn-primary" onclick="openInviteUserModal()"><i class="ti ti-user-plus"></i> Invite user</button>' : '');
+  tb('Manage Users', D.role === 'admin' ? '<button class="btn btn-primary" onclick="openAddUserModal()"><i class="ti ti-user-plus"></i> Add user</button>' : '');
   if (D.role !== 'admin') {
     document.getElementById('content').innerHTML =
       '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can manage users.</p></div>';
@@ -2148,7 +2148,7 @@ function renderUsersTable() {
       '<td>' + (active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Deactivated</span>') + '</td>' +
       '<td><div style="display:flex;gap:4px">' +
         '<button class="btn btn-sm" title="Edit" onclick="openEditUserModal(\'' + u.id + '\')"><i class="ti ti-edit"></i></button>' +
-        '<button class="btn btn-sm" title="Send password reset" onclick="sendPasswordReset(\'' + u.email + '\')"><i class="ti ti-key"></i></button>' +
+        '<button class="btn btn-sm" title="Set new password" onclick="openSetPasswordModal(\'' + u.id + '\',\'' + u.email + '\')"><i class="ti ti-key"></i></button>' +
         (!isMe ? (active
           ? '<button class="btn btn-sm btn-danger" title="Deactivate" onclick="toggleUserActive(\'' + u.id + '\',\'deactivate\')"><i class="ti ti-user-off"></i></button>'
           : '<button class="btn btn-sm btn-success" title="Reactivate" onclick="toggleUserActive(\'' + u.id + '\',\'reactivate\')"><i class="ti ti-user-check"></i></button>')
@@ -2184,11 +2184,24 @@ function openEditUserModal(userId) {
   };
 }
 
-window.sendPasswordReset = async function(email) {
-  var result = await sb.auth.resetPasswordForEmail(email);
-  if (result.error) { showToast('Could not send reset email: ' + result.error.message); return; }
-  showToast('Password reset email sent to ' + email);
-};
+function openSetPasswordModal(userId, email) {
+  showModal('<div class="modal-title">Set new password <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<p class="text-muted" style="font-size:13px;margin-bottom:14px">For ' + email + '. Share this new password with them directly — no email is sent.</p>' +
+    '<div class="form-group"><div class="form-label">New password *</div>' +
+      '<div style="display:flex;gap:8px"><input type="text" id="sp-password" placeholder="At least 8 characters"><button class="btn btn-sm" onclick="document.getElementById(\'sp-password\').value=generatePassword()" title="Generate a password"><i class="ti ti-refresh"></i></button></div>' +
+    '</div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="sp-save"><i class="ti ti-key"></i> Set password</button></div>');
+  document.getElementById('sp-save').onclick = async function() {
+    var pw = document.getElementById('sp-password').value;
+    if (!pw || pw.length < 8) { showToast('Password must be at least 8 characters'); return; }
+    var btn = document.getElementById('sp-save'); btn.disabled = true;
+    var result = await callAdminUsersApi({ action: 'set-password', userId: userId, newPassword: pw });
+    if (!result) { btn.disabled = false; return; }
+    showToast('Password updated — share it with ' + email + ' directly');
+    closeModal();
+  };
+}
 
 window.toggleUserActive = async function(userId, action) {
   if (!confirm(action === 'deactivate' ? 'Deactivate this account? They will not be able to log in until reactivated.' : 'Reactivate this account?')) return;
@@ -2200,28 +2213,34 @@ window.toggleUserActive = async function(userId, action) {
   renderUsersTable();
 };
 
-function openInviteUserModal() {
-  showModal('<div class="modal-title">Invite user <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div class="grid-2"><div class="form-group"><div class="form-label">First name</div><input type="text" id="iu-first"></div>' +
-    '<div class="form-group"><div class="form-label">Last name</div><input type="text" id="iu-last"></div></div>' +
-    '<div class="form-group"><div class="form-label">Email *</div><input type="email" id="iu-email" placeholder="name@yourcompany.com"></div>' +
-    '<div class="form-group"><div class="form-label">Role</div><select id="iu-role">' +
+function openAddUserModal() {
+  showModal('<div class="modal-title">Add user <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">First name</div><input type="text" id="au-first"></div>' +
+    '<div class="form-group"><div class="form-label">Last name</div><input type="text" id="au-last"></div></div>' +
+    '<div class="form-group"><div class="form-label">Email *</div><input type="email" id="au-email" placeholder="name@yourcompany.com"></div>' +
+    '<div class="form-group"><div class="form-label">Temporary password *</div>' +
+      '<div style="display:flex;gap:8px"><input type="text" id="au-password" value="' + generatePassword() + '"><button class="btn btn-sm" onclick="document.getElementById(\'au-password\').value=generatePassword()" title="Generate a new one"><i class="ti ti-refresh"></i></button></div>' +
+      '<p class="text-muted" style="font-size:12px;margin-top:6px">Share this with them directly — no email is sent. They can change it once logged in.</p>' +
+    '</div>' +
+    '<div class="form-group"><div class="form-label">Role</div><select id="au-role">' +
       '<option value="exec" selected>Business Partner</option><option value="pm">Project Manager</option><option value="admin">PMO Admin</option>' +
     '</select></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
-    '<button class="btn btn-primary" id="iu-save"><i class="ti ti-send"></i> Send invite</button></div>');
-  document.getElementById('iu-save').onclick = async function() {
-    var email = document.getElementById('iu-email').value.trim();
+    '<button class="btn btn-primary" id="au-save"><i class="ti ti-user-plus"></i> Add user</button></div>');
+  document.getElementById('au-save').onclick = async function() {
+    var email = document.getElementById('au-email').value.trim();
+    var password = document.getElementById('au-password').value;
     if (!email) { showToast('Email required'); return; }
-    var btn = document.getElementById('iu-save'); btn.disabled = true; btn.innerHTML = 'Sending…';
+    if (!password || password.length < 8) { showToast('Temporary password must be at least 8 characters'); return; }
+    var btn = document.getElementById('au-save'); btn.disabled = true; btn.innerHTML = 'Adding…';
     var result = await callAdminUsersApi({
-      action: 'invite', email: email,
-      firstName: document.getElementById('iu-first').value.trim(),
-      lastName: document.getElementById('iu-last').value.trim(),
-      role: document.getElementById('iu-role').value
+      action: 'create', email: email, password: password,
+      firstName: document.getElementById('au-first').value.trim(),
+      lastName: document.getElementById('au-last').value.trim(),
+      role: document.getElementById('au-role').value
     });
-    if (!result) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Send invite'; return; }
-    showToast('Invite sent to ' + email);
+    if (!result) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-user-plus"></i> Add user'; return; }
+    showToast('User added — share the temporary password with them directly');
     closeModal();
     pgAdminUsers();
   };
@@ -2580,79 +2599,53 @@ async function handleLogout() {
   document.getElementById('auth-email').value = '';
   document.getElementById('auth-password').value = '';
   document.getElementById('auth-error').style.display = 'none';
-  document.getElementById('forgot-email').value = '';
-  document.getElementById('forgot-error').style.display = 'none';
-  showAuthMode('login');
 }
 
-function showAuthMode(mode) {
-  document.getElementById('auth-login-mode').style.display = mode === 'login' ? 'block' : 'none';
-  document.getElementById('auth-forgot-mode').style.display = mode === 'forgot' ? 'block' : 'none';
-  document.getElementById('auth-forgot-sent-mode').style.display = mode === 'sent' ? 'block' : 'none';
+function generatePassword() {
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+  var out = '';
+  for (var i = 0; i < 12; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
 }
 
-async function handleForgotPasswordSubmit() {
-  var email = document.getElementById('forgot-email').value.trim();
-  var errEl = document.getElementById('forgot-error');
-  errEl.style.display = 'none';
-  if (!email) { errEl.textContent = 'Enter your email.'; errEl.style.display = 'block'; return; }
-  var btn = document.getElementById('forgot-submit'); btn.disabled = true;
-  var result = await sb.auth.resetPasswordForEmail(email);
-  btn.disabled = false;
-  if (result.error) { errEl.textContent = result.error.message; errEl.style.display = 'block'; return; }
-  showAuthMode('sent');
-}
+function openChangePasswordModal() {
+  showModal('<div class="modal-title">Change password <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Current password</div><input type="password" id="cp-current"></div>' +
+    '<div class="form-group"><div class="form-label">New password</div><input type="password" id="cp-new"></div>' +
+    '<div class="form-group"><div class="form-label">Confirm new password</div><input type="password" id="cp-confirm"></div>' +
+    '<div id="cp-error" class="auth-error" style="display:none"></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="cp-save"><i class="ti ti-check"></i> Update password</button></div>');
+  document.getElementById('cp-save').onclick = async function() {
+    var current = document.getElementById('cp-current').value;
+    var next = document.getElementById('cp-new').value;
+    var confirmVal = document.getElementById('cp-confirm').value;
+    var errEl = document.getElementById('cp-error');
+    errEl.style.display = 'none';
+    if (!current) { errEl.textContent = 'Enter your current password.'; errEl.style.display = 'block'; return; }
+    if (!next || next.length < 8) { errEl.textContent = 'New password must be at least 8 characters.'; errEl.style.display = 'block'; return; }
+    if (next !== confirmVal) { errEl.textContent = 'New passwords do not match.'; errEl.style.display = 'block'; return; }
 
-async function handleSetNewPasswordSubmit() {
-  var pw1 = document.getElementById('newpw-1').value;
-  var pw2 = document.getElementById('newpw-2').value;
-  var errEl = document.getElementById('newpw-error');
-  errEl.style.display = 'none';
-  if (!pw1 || pw1.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; errEl.style.display = 'block'; return; }
-  if (pw1 !== pw2) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = 'block'; return; }
+    var btn = document.getElementById('cp-save'); btn.disabled = true;
+    var verifyResult = await sb.auth.signInWithPassword({ email: D.currentProfile.email, password: current });
+    if (verifyResult.error) { errEl.textContent = 'Current password is incorrect.'; errEl.style.display = 'block'; btn.disabled = false; return; }
 
-  var btn = document.getElementById('newpw-submit'); btn.disabled = true;
-  var result = await sb.auth.updateUser({ password: pw1 });
-  btn.disabled = false;
-  if (result.error) { errEl.textContent = result.error.message; errEl.style.display = 'block'; return; }
+    var updateResult = await sb.auth.updateUser({ password: next });
+    btn.disabled = false;
+    if (updateResult.error) { errEl.textContent = updateResult.error.message; errEl.style.display = 'block'; return; }
 
-  showToast('Password set — welcome!');
-  var sessionResult = await sb.auth.getSession();
-  var session = sessionResult.data && sessionResult.data.session;
-  if (!session) { document.getElementById('reset-password-screen').style.display = 'none'; document.getElementById('auth-screen').style.display = 'flex'; return; }
-  var profile = await fetchProfile(session.user.id);
-  if (!profile) { document.getElementById('reset-password-screen').style.display = 'none'; document.getElementById('auth-screen').style.display = 'flex'; return; }
-  D.currentProfile = profile;
-  document.getElementById('reset-password-screen').style.display = 'none';
-  await bootAppForUser();
+    showToast('Password updated');
+    closeModal();
+  };
 }
 
 async function initApp() {
-  // Registered up front so a recovery/invite link is caught the moment
-  // Supabase processes the token in the URL, regardless of the normal
-  // session check below.
-  sb.auth.onAuthStateChange(function(event) {
-    if (event === 'PASSWORD_RECOVERY') {
-      document.getElementById('auth-screen').style.display = 'none';
-      document.getElementById('app-root').style.display = 'none';
-      document.getElementById('reset-password-screen').style.display = 'flex';
-    }
-  });
-
   document.getElementById('auth-submit').onclick = handleLoginSubmit;
   document.getElementById('auth-password').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') handleLoginSubmit();
   });
   document.getElementById('logout-btn').onclick = handleLogout;
-
-  document.getElementById('forgot-password-link').onclick = function(e) { e.preventDefault(); showAuthMode('forgot'); };
-  document.getElementById('back-to-login-link').onclick = function(e) { e.preventDefault(); showAuthMode('login'); };
-  document.getElementById('back-to-login-link-2').onclick = function(e) { e.preventDefault(); showAuthMode('login'); };
-  document.getElementById('forgot-submit').onclick = handleForgotPasswordSubmit;
-  document.getElementById('newpw-submit').onclick = handleSetNewPasswordSubmit;
-  document.getElementById('newpw-2').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') handleSetNewPasswordSubmit();
-  });
+  document.getElementById('change-password-btn').onclick = openChangePasswordModal;
 
   var sessionResult = await sb.auth.getSession();
   var session = sessionResult.data && sessionResult.data.session;
