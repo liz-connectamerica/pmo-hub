@@ -5,7 +5,6 @@ function daysAgo(n) {
 }
 
 var ALL_PEOPLE = ['Alex Turner','Mia Nguyen','Jordan Lee','Sam Park','Casey Morgan','Robin Chen','Dana Wu','Chris Bell'];
-var ALL_TEAMS  = ['Platform Team','Design Guild','QA Team','Data Team'];
 var VALUE_AREAS = ['Revenue Growth','Customer Experience','Operational Efficiency','Employee Experience','Compliance & Risk'];
 var PHASES = ['Not Started','Discovery','Design','Build','Testing','Deployment'];
 var STATUSES = ['Not Started','On Track','At Risk','Planning','Blocked','Complete'];

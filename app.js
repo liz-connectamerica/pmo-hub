@@ -197,7 +197,8 @@ async function loadAllProjects() {
     return {
       id: pr.id, name: pr.name,
       pm: pr.pm_name || (pr.pm_id ? nameById[pr.pm_id] : ''), pmId: pr.pm_id,
-      sponsor: pr.sponsor, category: pr.category, businessUnit: pr.business_unit,
+      sponsor: pr.sponsor, sponsorEmail: pr.sponsor_email, sponsorId: pr.sponsor_id,
+      category: pr.category, businessUnit: pr.business_unit,
       team: teamNames, teamIds: teamIds,
       status: pr.status, phase: pr.phase, progress: pr.progress,
       start: pr.start_date, end: pr.end_date, plannedStart: pr.planned_start,
@@ -244,6 +245,10 @@ function canEdit(p) {
   if (D.role === 'admin') return true;
   if (D.role === 'pm')    return !!(p.pmId && D.currentProfile && p.pmId === D.currentProfile.id);
   return false;
+}
+
+function teamNames() {
+  return (D.resources || []).filter(function(r){ return r.type === 'team'; }).map(function(r){ return r.name; });
 }
 
 function resolveAssignee(name) {
@@ -777,8 +782,8 @@ function pgBacklog() {
 function openScheduleModal(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   var pmOpts = '<option value="">— None (assign later) —</option>' + D.people.map(function(n){ return '<option value="' + n + '"' + (p.pm === n ? ' selected' : '') + '>' + n + '</option>'; }).join('');
-  var memberOpts = D.people.concat(ALL_TEAMS).map(function(n) {
-    var isTeam = ALL_TEAMS.indexOf(n) >= 0;
+  var memberOpts = D.people.concat(teamNames()).map(function(n) {
+    var isTeam = teamNames().indexOf(n) >= 0;
     var chk = p.team.indexOf(n) >= 0 ? ' checked' : '';
     return '<label class="member-check"><input type="checkbox" id="schm-' + n.replace(/ /g,'_') + '"' + chk + '> ' + n + (isTeam ? ' <span class="badge badge-blue" style="font-size:10px">Team</span>' : '') + '</label>';
   }).join('');
@@ -798,7 +803,7 @@ async function scheduleProject(pid) {
   var start = document.getElementById('sch-start').value;
   var end   = document.getElementById('sch-end').value;
   if (!start || !end) { showToast('Please set a start and end date'); return; }
-  var allNames = D.people.concat(ALL_TEAMS);
+  var allNames = D.people.concat(teamNames());
   var newTeamNames = allNames.filter(function(n){ var el = document.getElementById('schm-' + n.replace(/ /g,'_')); return el && el.checked; });
   var pmName = document.getElementById('sch-pm').value;
   var pmProfile = resolveAssignee(pmName);
@@ -965,7 +970,7 @@ function pgProjectDetail(pid, tab) {
   function tabC(t) {
     if (t === 'overview') {
       var teamHtml = p.team.length
-        ? p.team.map(function(m,i){ var isTeam = ALL_TEAMS.indexOf(m) >= 0; var ini = m.split(' ').map(function(x){ return x[0]; }).join(''); return '<div class="team-chip">' + (isTeam ? '<i class="ti ti-users" style="font-size:13px;color:#185FA5"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:12px">' + m + '</span></div>'; }).join('')
+        ? p.team.map(function(m,i){ var isTeam = teamNames().indexOf(m) >= 0; var ini = m.split(' ').map(function(x){ return x[0]; }).join(''); return '<div class="team-chip">' + (isTeam ? '<i class="ti ti-users" style="font-size:13px;color:#185FA5"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:12px">' + m + '</span></div>'; }).join('')
         : '<span class="text-muted">No team assigned</span>';
       return '<div class="grid-2 mb-16">' +
         '<div><div class="form-label">Stage</div>' + stagePill(p.stage) + '</div>' +
@@ -1514,7 +1519,7 @@ function openTaskModal(pid, idx) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   var task = idx != null ? p.tasks[idx] : null;
   // only project members + all people for admin/pm
-  var pool = canEdit(p) ? D.people.concat(ALL_TEAMS) : p.team;
+  var pool = canEdit(p) ? D.people.concat(teamNames()) : p.team;
   var assigneeOpts = pool.map(function(n){ return '<option' + (task && task.assignee===n ? ' selected' : '') + '>' + n + '</option>'; }).join('');
   showModal('<div class="modal-title">' + (task?'Edit task':'Add task') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Task title *</div><input type="text" id="tm-title" value="' + (task?task.title:'') + '" placeholder="Task name"></div>' +
@@ -1832,11 +1837,10 @@ function editProject(pid) {
   var priorOpts  = PRIORITIES.map(function(s){ return '<option' + (p.priority===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var valOpts    = VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var pmOpts     = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option' + (p.pm===n?' selected':'') + '>' + n + '</option>'; }).join('');
-  var sponsorOpts = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option' + (p.sponsor===n?' selected':'') + '>' + n + '</option>'; }).join('');
   var catOpts    = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option' + (p.category===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var buOpts     = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  var memberOpts = D.people.concat(ALL_TEAMS).map(function(n) {
-    var isTeam = ALL_TEAMS.indexOf(n) >= 0;
+  var memberOpts = D.people.concat(teamNames()).map(function(n) {
+    var isTeam = teamNames().indexOf(n) >= 0;
     return '<label class="member-check"><input type="checkbox" id="ep-tm-' + n.replace(/ /g,'_') + '"' + (p.team.indexOf(n)>=0?' checked':'') + '> ' + n + (isTeam?' <span class="badge badge-blue" style="font-size:10px">Team</span>':'') + '</label>';
   }).join('');
   showModal('<div class="modal-title">Edit project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
@@ -1857,7 +1861,8 @@ function editProject(pid) {
     '<div class="form-group"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="ep-blocker" value="' + p.blockers + '"></div>' +
     '<div class="divider"></div>' +
     '<div class="grid-2">' +
-    '<div class="form-group"><div class="form-label">Sponsor</div><select id="ep-sponsor">' + sponsorOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="ep-sponsor" value="' + (p.sponsor||'') + '"></div>' +
+    '<div class="form-group"><div class="form-label">Sponsor email' + (p.sponsorId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : '') + '</div><input type="email" id="ep-sponsor-email" value="' + (p.sponsorEmail||'') + '"></div>' +
     '<div class="form-group"><div class="form-label">Project manager</div><select id="ep-pm">' + pmOpts + '</select></div>' +
     '</div>' +
     '<div class="form-group"><div class="form-label">Team members</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' + memberOpts + '</div></div>' +
@@ -1886,12 +1891,13 @@ async function saveProject(pid) {
   var catEl = document.getElementById('ep-category'); if (catEl) newVals.category = catEl.value || null;
   var buEl = document.getElementById('ep-bu'); if (buEl) newVals.business_unit = buEl.value || null;
   var spEl = document.getElementById('ep-sponsor'); if (spEl) newVals.sponsor = spEl.value || null;
+  var spEmailEl = document.getElementById('ep-sponsor-email'); if (spEmailEl) newVals.sponsor_email = spEmailEl.value.trim() || null;
   var pmEl = document.getElementById('ep-pm');
   var pmProfile = pmEl ? resolveAssignee(pmEl.value) : null;
   if (pmEl) { newVals.pm_id = pmProfile ? pmProfile.id : null; newVals.pm_name = pmEl.value || null; }
 
   var saveBtn = document.querySelector('.modal-footer .btn-primary'); if (saveBtn) saveBtn.disabled = true;
-  var result = await sb.from('projects').update(newVals).eq('id', pid);
+  var result = await sb.from('projects').update(newVals).eq('id', pid).select().single();
   if (result.error) { showToast('Could not save: ' + result.error.message); if (saveBtn) saveBtn.disabled = false; return; }
 
   p.name = newVals.name; p.status = newVals.status; p.phase = newVals.phase; p.priority = newVals.priority;
@@ -1900,11 +1906,12 @@ async function saveProject(pid) {
   if (catEl) p.category = newVals.category;
   if (buEl) p.businessUnit = newVals.business_unit;
   if (spEl) p.sponsor = newVals.sponsor;
+  if (spEmailEl) { p.sponsorEmail = newVals.sponsor_email; p.sponsorId = result.data.sponsor_id; }
   if (pmEl) { p.pm = pmEl.value; p.pmId = newVals.pm_id; }
 
   // Team membership: diff against real linked accounts only (teams/groups aren't
   // linkable to a real row yet — that's part of the Resources migration, still to come)
-  var allNames = D.people.concat(ALL_TEAMS);
+  var allNames = D.people.concat(teamNames());
   var newTeamNames = allNames.filter(function(n){ var el = document.getElementById('ep-tm-' + n.replace(/ /g,'_')); return el && el.checked; });
   var newRealIds = newTeamNames.map(function(n){ return resolveAssignee(n); }).filter(Boolean).map(function(pr){ return pr.id; });
   var oldIds = p.teamIds || [];
@@ -1932,7 +1939,6 @@ function openNewProjectModal() {
   var valOpts = VALUE_AREAS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var priorOpts = PRIORITIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var pmOpts = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option>' + n + '</option>'; }).join('');
-  var sponsorOpts = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var catOpts = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var buOpts = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   showModal('<div class="modal-title">Create new project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
@@ -1942,7 +1948,8 @@ function openNewProjectModal() {
     '<div class="form-group"><div class="form-label">Category</div><select id="np-category">' + catOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Business unit</div><select id="np-bu">' + buOpts + '</select></div></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="np-desc" placeholder="What is this project about?"></textarea></div>' +
-    '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor</div><select id="np-sponsor">' + sponsorOpts + '</select></div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="np-sponsor" placeholder="Sponsor name"></div>' +
+    '<div class="form-group"><div class="form-label">Sponsor email</div><input type="email" id="np-sponsor-email" placeholder="name@yourcompany.com"></div>' +
     '<div class="form-group"><div class="form-label">Project manager</div><select id="np-pm">' + pmOpts + '</select></div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="np-save"><i class="ti ti-plus"></i> Create project</button></div>', true);
@@ -1951,11 +1958,13 @@ function openNewProjectModal() {
     if (!name){ showToast('Project name required'); return; }
     var pmName = document.getElementById('np-pm').value;
     var pmProfile = resolveAssignee(pmName);
-    var sponsorName = document.getElementById('np-sponsor').value;
+    var sponsorName = document.getElementById('np-sponsor').value.trim();
+    var sponsorEmail = document.getElementById('np-sponsor-email').value.trim();
     var btn = document.getElementById('np-save'); btn.disabled = true;
 
     var record = {
-      name: name, pm_id: pmProfile ? pmProfile.id : null, pm_name: pmName || null, sponsor: sponsorName || null,
+      name: name, pm_id: pmProfile ? pmProfile.id : null, pm_name: pmName || null,
+      sponsor: sponsorName || null, sponsor_email: sponsorEmail || null,
       category: document.getElementById('np-category').value || null, business_unit: document.getElementById('np-bu').value || null,
       status: 'Not Started', phase: 'Not Started', progress: 0,
       value_area: document.getElementById('np-value').value, priority: document.getElementById('np-priority').value,
@@ -1965,7 +1974,8 @@ function openNewProjectModal() {
     if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
 
     D.projects.push({
-      id: result.data.id, name:name, pm:pmName, pmId: pmProfile?pmProfile.id:null, sponsor:sponsorName,
+      id: result.data.id, name:name, pm:pmName, pmId: pmProfile?pmProfile.id:null,
+      sponsor:sponsorName, sponsorEmail:sponsorEmail, sponsorId: result.data.sponsor_id,
       category:record.category, businessUnit:record.business_unit, team:[], teamIds:[],
       status:'Not Started', phase:'Not Started', progress:0, start:'', end:'',
       value:record.value_area, priority:record.priority, description:record.description,
