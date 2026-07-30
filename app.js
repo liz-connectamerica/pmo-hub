@@ -281,6 +281,8 @@ var taskCommentsOpen = {};
 var raidSearchState = {};
 var docFolderState = {};
 var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fStatus:[], openFilter:null };
+var roadmapCategoryFilter = 'All';
+var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#534AB7', 'Build':'#1D9E75', 'Testing':'#EF9F27', 'Deployment':'#D85A30' };
 var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3 };
 var rejectedFilterState = { range:'30' };
@@ -2126,9 +2128,25 @@ function pgRoadmap() {
     return yearDiff * 12 + monthDiff + dayFrac;
   }
 
-  var barColors = ['#534AB7', '#1D9E75', '#EF9F27', '#D85A30', '#185FA5', '#993C1D'];
   var all = D.projects.filter(function(p){ return p.stage==='active'||p.stage==='planned'; });
-  var bars = all.map(function(p, i) {
+
+  // Category tabs — built from whichever categories actually appear, plus an
+  // Uncategorized bucket only if something would actually land there.
+  var categoriesPresent = [];
+  var hasUncategorized = false;
+  all.forEach(function(p){
+    if (p.category) { if (categoriesPresent.indexOf(p.category) < 0) categoriesPresent.push(p.category); }
+    else hasUncategorized = true;
+  });
+  var tabList = ['All'].concat(categoriesPresent).concat(hasUncategorized ? ['Uncategorized'] : []);
+  if (tabList.indexOf(roadmapCategoryFilter) < 0) roadmapCategoryFilter = 'All';
+  var categoryTabsHtml = '<div class="tab-bar" style="margin-bottom:16px">' + tabList.map(function(c) {
+    return '<div class="tab' + (roadmapCategoryFilter === c ? ' active' : '') + '" onclick="setRoadmapCategory(\'' + c.replace(/'/g,"\\'") + '\')">' + c + '</div>';
+  }).join('') + '</div>';
+
+  var visibleProjects = roadmapCategoryFilter === 'All' ? all : all.filter(function(p){ return (p.category || 'Uncategorized') === roadmapCategoryFilter; });
+
+  function projectBarRow(p) {
     var startOffset = monthsFromWindowStart(p.start);
     var endOffset = monthsFromWindowStart(p.end);
     var hasBar = startOffset !== null && endOffset !== null && endOffset > 0 && startOffset < windowMonths;
@@ -2138,20 +2156,43 @@ function pgRoadmap() {
       var clampedEnd = Math.min(windowMonths, endOffset);
       var widthPct = Math.max(1, clampedEnd - clampedStart) / windowMonths * 100;
       var leftPct = clampedStart / windowMonths * 100;
-      barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColors[i % barColors.length] + '">' + (p.phase||'') + '</div></div>';
+      var barColor = PHASE_COLORS[p.phase] || '#534AB7';
+      barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + '">' + (p.phase||'') + '</div></div>';
     } else {
       barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">No schedule set</span></div>';
     }
     return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' +
       '<button class="btn btn-sm" style="padding:2px 6px;margin-right:6px" title="View project" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button>' +
       p.name + '</div>' + barHtml + '</div>';
-  }).join('');
+  }
+
+  var phaseLegend = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px">' + PHASES.map(function(ph){
+    return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#666"><span style="width:10px;height:10px;border-radius:3px;background:' + (PHASE_COLORS[ph]||'#534AB7') + ';display:inline-block"></span>' + ph + '</div>';
+  }).join('') + '</div>';
+
+  var timelineBody;
+  if (!visibleProjects.length) {
+    timelineBody = '<div class="text-muted">No projects in this view</div>';
+  } else if (roadmapCategoryFilter === 'All') {
+    var groups = {};
+    visibleProjects.forEach(function(p){ var key = p.category || 'Uncategorized'; (groups[key] = groups[key] || []).push(p); });
+    var groupOrder = categoriesPresent.concat(hasUncategorized ? ['Uncategorized'] : []);
+    timelineBody = groupOrder.filter(function(g){ return groups[g] && groups[g].length; }).map(function(g) {
+      return '<div class="bold" style="margin:14px 0 8px;font-size:13px">' + g + '</div>' + groups[g].map(projectBarRow).join('');
+    }).join('');
+  } else {
+    timelineBody = visibleProjects.map(projectBarRow).join('');
+  }
+
   var msItems = [];
   D.projects.filter(function(p){ return p.stage==='active'; }).forEach(function(p) {
     p.milestones.filter(function(m){ return !m.done; }).forEach(function(m) {
-      msItems.push({ project:p.name, milestone:m.name, due:m.date, status:'Upcoming' });
+      msItems.push({ project:p.name, milestone:m.name, due:m.date, status:'Upcoming', category: p.category || 'Uncategorized' });
     });
   });
+  if (roadmapCategoryFilter !== 'All') {
+    msItems = msItems.filter(function(it){ return it.category === roadmapCategoryFilter; });
+  }
 
   var st = roadmapMsState;
   function msArrow(col) {
@@ -2202,15 +2243,18 @@ function pgRoadmap() {
     '<th class="sortable-th" style="position:relative"><span onclick="setMsSort(\'status\')">Status ' + msArrow('status') + '</span>' + msFilterIcon('fStatus', st.fStatus.length>0) + msFilterPanel('fStatus', statusChoices, st.fStatus) + '</th>' +
     '</tr>';
   document.getElementById('content').innerHTML =
+    categoryTabsHtml +
     '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">12-month view — ' + rangeLabel + '</div>' +
+    phaseLegend +
     '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + m + '</div>'; }).join('') + '</div>' +
-    (all.length ? bars : '<div class="text-muted">No active or planned projects</div>') + '</div>' +
+    timelineBody + '</div>' +
     '<div class="card"><div class="section-title">Upcoming milestones</div>' + msSearchBar +
     (msItems.length
       ? (msList.length ? '<div class="table-wrap"><table><thead>' + msHeader + '</thead><tbody>' + msRows + '</tbody></table></div>' : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No milestones match your filters</p></div>')
       : '<div class="empty-state" style="padding:24px"><i class="ti ti-flag"></i><p>No upcoming milestones</p></div>') +
     '</div>';
 
+  window.setRoadmapCategory = function(cat) { roadmapCategoryFilter = cat; pgRoadmap(); };
   window.setMsSort = function(col) {
     if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; }
     pgRoadmap();
