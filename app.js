@@ -25,6 +25,38 @@ function groupBy(rows, key) {
   return out;
 }
 
+async function loadResources() {
+  var results = await Promise.all([
+    sb.from('resources').select('*'),
+    sb.from('resource_projects').select('*'),
+    sb.from('resource_team_members').select('*')
+  ]);
+  for (var i = 0; i < results.length; i++) {
+    if (results[i].error) { console.error('loadResources query failed:', results[i].error); return []; }
+  }
+  var resourceRows = results[0].data || [];
+  var rpRows = results[1].data || [];
+  var rtmRows = results[2].data || [];
+
+  var nameById = {};
+  resourceRows.forEach(function(r){ nameById[r.id] = r.name; });
+  var projectsByResource = groupBy(rpRows, 'resource_id');
+  var membersByTeam = groupBy(rtmRows, 'team_resource_id');
+
+  return resourceRows.map(function(r) {
+    var projectIds = (projectsByResource[r.id] || []).map(function(x){ return x.project_id; });
+    var out = {
+      id: r.id, name: r.name, role: r.title, type: r.type,
+      allocated: r.allocated_pct, nonProjectCapacity: r.non_project_capacity,
+      projects: projectIds, email: r.email, userId: r.user_id
+    };
+    if (r.type === 'team') {
+      out.members = (membersByTeam[r.id] || []).map(function(x){ return nameById[x.member_resource_id]; }).filter(Boolean);
+    }
+    return out;
+  });
+}
+
 async function loadAllProjects() {
   var results = await Promise.all([
     sb.from('projects').select('*'),
@@ -397,7 +429,9 @@ async function bootAppForUser(skipReload) {
 
   if (!skipReload) {
     document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading your projects…</p></div>';
-    D.projects = await loadAllProjects();
+    var loaded = await Promise.all([loadAllProjects(), loadResources()]);
+    D.projects = loaded[0];
+    D.resources = loaded[1];
   }
 
   if (location.hash.indexOf('#/project/') === 0) {
@@ -409,6 +443,10 @@ async function bootAppForUser(skipReload) {
 
 async function refreshProjects() {
   D.projects = await loadAllProjects();
+}
+
+async function refreshResources() {
+  D.resources = await loadResources();
 }
 
 function setPreviewRole(role) {
@@ -2291,7 +2329,7 @@ function pgResources() {
       (showNonProject && nonPct>0 ? '<span style="color:#534AB7">' + nonPct + '% BAU</span>' : '') + '</span></div>';
     return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
       (r.type==='team' ? '<div style="width:30px;height:30px;border-radius:8px;background:#E6F1FB;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-users" style="font-size:15px;color:#185FA5"></i></div>' : '<div class="avatar av-purple" style="flex-shrink:0">' + ini + '</div>') +
-      '<div style="width:175px;min-width:175px"><div style="font-size:13px;font-weight:600">' + r.name + '</div><div class="text-muted">' + r.role + ' &bull; ' + (r.type==='team'?'Team':'Individual') + '</div></div>' +
+      '<div style="width:175px;min-width:175px"><div style="font-size:13px;font-weight:600">' + r.name + (r.type!=='team' ? (r.userId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : ' <i class="ti ti-link-off" title="Not linked to an account yet" style="color:#ccc;font-size:12px"></i>') : '') + '</div><div class="text-muted">' + r.role + ' &bull; ' + (r.type==='team'?'Team':'Individual') + '</div></div>' +
       '<div style="flex:1">' + labels + barHtml + '</div>' +
     '</div>';
   }).join('');
@@ -2314,9 +2352,10 @@ function pgResources() {
 function openManageResources() {
   var listHtml = D.resources.map(function(r) {
     var memberList = r.type==='team' && r.members ? r.members.join(', ') : '';
+    var linkBadge = r.type !== 'team' ? (r.userId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : ' <i class="ti ti-link-off" title="Not linked to an account yet" style="color:#ccc;font-size:12px"></i>') : '';
     return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0ede8;gap:8px">' +
-      '<div><div style="font-size:13px;font-weight:600">' + r.name + '</div>' +
-      '<div class="text-muted">' + r.role + ' &bull; ' + (r.type==='team'?'Team':'Individual') + (memberList?' &bull; Members: '+memberList:'') + '</div></div>' +
+      '<div><div style="font-size:13px;font-weight:600">' + r.name + linkBadge + '</div>' +
+      '<div class="text-muted">' + r.role + ' &bull; ' + (r.type==='team'?'Team':'Individual') + (memberList?' &bull; Members: '+memberList:'') + (r.email?' &bull; '+r.email:'') + '</div></div>' +
       '<div style="display:flex;gap:6px">' +
         '<button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button>' +
         '<button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button>' +
@@ -2331,45 +2370,82 @@ function openManageResources() {
       '<div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="nr-role" placeholder="e.g. Backend Dev"></div>' +
     '</div>' +
     '<div class="grid-2">' +
-      '<div class="form-group"><div class="form-label">Type</div><select id="nr-type"><option value="individual">Individual</option><option value="team">Team</option></select></div>' +
+      '<div class="form-group"><div class="form-label">Type</div><select id="nr-type" onchange="document.getElementById(\'nr-email-row\').style.display=this.value===\'individual\'?\'block\':\'none\'"><option value="individual">Individual</option><option value="team">Team</option></select></div>' +
       '<div class="form-group"><div class="form-label">Capacity (%)</div><input type="number" id="nr-alloc" value="0" min="0" max="100"></div>' +
     '</div>' +
+    '<div class="form-group" id="nr-email-row"><div class="form-label">Email</div><input type="email" id="nr-email" placeholder="name@yourcompany.com">' +
+      '<p class="text-muted" style="font-size:12px;margin-top:4px">If this matches an existing account, it\'ll link automatically — now or whenever that account is created.</p></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button>' +
     '<button class="btn btn-primary" id="nr-save"><i class="ti ti-plus"></i> Add resource</button></div>', true);
-  document.getElementById('nr-save').onclick = function() {
+  document.getElementById('nr-save').onclick = async function() {
     var name = document.getElementById('nr-name').value.trim();
     if (!name){ showToast('Name required'); return; }
-    D.resources.push({id:'res'+Date.now(),name:name,role:document.getElementById('nr-role').value,type:document.getElementById('nr-type').value,allocated:parseInt(document.getElementById('nr-alloc').value)||0,projects:[],nonProjectCapacity:0});
-    if (ALL_PEOPLE.indexOf(name)<0 && document.getElementById('nr-type').value==='individual') ALL_PEOPLE.push(name);
-    if (ALL_TEAMS.indexOf(name)<0 && document.getElementById('nr-type').value==='team') ALL_TEAMS.push(name);
-    showToast('Resource added'); closeModal(); pgResources();
+    var btn = document.getElementById('nr-save'); btn.disabled = true;
+    var record = {
+      name: name, title: document.getElementById('nr-role').value || null,
+      type: document.getElementById('nr-type').value,
+      allocated_pct: parseInt(document.getElementById('nr-alloc').value) || 0,
+      non_project_capacity: 0,
+      email: document.getElementById('nr-email').value.trim() || null
+    };
+    var result = await sb.from('resources').insert(record).select().single();
+    if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+    D.resources.push({ id: result.data.id, name: name, role: record.title, type: record.type, allocated: record.allocated_pct, nonProjectCapacity: 0, projects: [], email: record.email, userId: result.data.user_id });
+    showToast('Resource added' + (result.data.user_id ? ' — linked to an existing account' : '')); closeModal(); pgResources();
   };
-  window.deleteResource = function(rid) {
+  window.deleteResource = async function(rid) {
     if (!confirm('Remove this resource?')) return;
+    var result = await sb.from('resources').delete().eq('id', rid);
+    if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
     D.resources = D.resources.filter(function(x){ return x.id!==rid; });
     showToast('Resource removed'); closeModal(); pgResources();
   };
   window.editResource = function(rid) {
     var res = D.resources.find(function(x){ return x.id===rid; });
     closeModal();
-    var peopleOpts = ALL_PEOPLE.map(function(n){ return '<option' + (res.members&&res.members.indexOf(n)>=0?' selected':'') + '>' + n + '</option>'; }).join('');
+    var peopleOpts = D.people.map(function(n){ return '<option' + (res.members&&res.members.indexOf(n)>=0?' selected':'') + '>' + n + '</option>'; }).join('');
     showModal('<div class="modal-title">Edit resource <button class="btn btn-sm" onclick="closeModal();openManageResources()"><i class="ti ti-x"></i></button></div>' +
       '<div class="form-group"><div class="form-label">Name</div><input type="text" id="er-name" value="' + res.name + '"></div>' +
-      '<div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="er-role" value="' + res.role + '"></div>' +
+      '<div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="er-role" value="' + (res.role||'') + '"></div>' +
       '<div class="form-group"><div class="form-label">Type</div><select id="er-type"><option value="individual"' + (res.type==='individual'?' selected':'') + '>Individual</option><option value="team"' + (res.type==='team'?' selected':'') + '>Team</option></select></div>' +
       '<div class="form-group"><div class="form-label">Project allocation (%)</div><input type="number" id="er-alloc" value="' + res.allocated + '" min="0" max="100"></div>' +
+      (res.type!=='team' ? '<div class="form-group"><div class="form-label">Email</div><input type="email" id="er-email" value="' + (res.email||'') + '">' + (res.userId ? '<p class="text-muted" style="font-size:12px;margin-top:4px"><i class="ti ti-link" style="color:#1D9E75"></i> Linked to a real account</p>' : '') + '</div>' : '') +
       (res.type==='team' ? '<div class="form-group"><div class="form-label">Team members</div><select multiple id="er-members" style="height:120px">' + peopleOpts + '</select></div>' : '') +
       '<div class="modal-footer"><button class="btn" onclick="closeModal();openManageResources()">Cancel</button>' +
-      '<button class="btn btn-primary" onclick="saveResource(\'' + rid + '\')"><i class="ti ti-check"></i> Save changes</button></div>');
+      '<button class="btn btn-primary" id="er-save"><i class="ti ti-check"></i> Save changes</button></div>');
+    document.getElementById('er-save').onclick = function(){ return saveResource(rid); };
   };
-  window.saveResource = function(rid) {
+  window.saveResource = async function(rid) {
     var res = D.resources.find(function(x){ return x.id===rid; });
-    res.name = document.getElementById('er-name').value;
-    res.role = document.getElementById('er-role').value;
-    res.type = document.getElementById('er-type').value;
-    res.allocated = parseInt(document.getElementById('er-alloc').value)||0;
+    var name = document.getElementById('er-name').value;
+    var role = document.getElementById('er-role').value;
+    var type = document.getElementById('er-type').value;
+    var alloc = parseInt(document.getElementById('er-alloc').value) || 0;
+    var emailEl = document.getElementById('er-email');
+    var email = emailEl ? emailEl.value.trim() || null : res.email;
+
+    var btn = document.getElementById('er-save'); if (btn) btn.disabled = true;
+    var result = await sb.from('resources').update({ name: name, title: role, type: type, allocated_pct: alloc, email: email }).eq('id', rid).select().single();
+    if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
+    res.name = name; res.role = role; res.type = type; res.allocated = alloc; res.email = email; res.userId = result.data.user_id;
+
     var mEl = document.getElementById('er-members');
-    if (mEl) res.members = Array.from(mEl.selectedOptions).map(function(o){ return o.value; });
+    if (mEl) {
+      var newNames = Array.from(mEl.selectedOptions).map(function(o){ return o.value; });
+      var newIds = newNames.map(function(n){ return resolveAssignee(n); }).filter(Boolean);
+      var newResourceIdByName = {};
+      newIds.forEach(function(profile){
+        var match = D.resources.find(function(r){ return r.userId === profile.id; });
+        if (match) newResourceIdByName[profile.id] = match.id;
+      });
+      var oldMemberResourceIds = (D.resources.filter(function(r){ return res.members && res.members.indexOf(r.name) >= 0; })).map(function(r){ return r.id; });
+      var newMemberResourceIds = Object.values(newResourceIdByName);
+      var toAdd = newMemberResourceIds.filter(function(id){ return oldMemberResourceIds.indexOf(id) < 0; });
+      var toRemove = oldMemberResourceIds.filter(function(id){ return newMemberResourceIds.indexOf(id) < 0; });
+      if (toAdd.length) await sb.from('resource_team_members').insert(toAdd.map(function(id){ return { team_resource_id: rid, member_resource_id: id }; }));
+      for (var i = 0; i < toRemove.length; i++) { await sb.from('resource_team_members').delete().eq('team_resource_id', rid).eq('member_resource_id', toRemove[i]); }
+      res.members = newNames;
+    }
     showToast('Resource updated'); closeModal(); pgResources();
   };
 }
