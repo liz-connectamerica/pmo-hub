@@ -358,7 +358,7 @@ var NAV_DEF = {
 
 function renderNav() {
   var defs = (NAV_DEF[D.role] || []).slice();
-  if (D.role === 'exec' && hasAssignedWork()) {
+  if (hasAssignedWork()) {
     defs = defs.concat([{ s:'My Work', items:[
       {id:'my-projects', icon:'ti-briefcase',   label:'My projects'},
       {id:'my-tasks',    icon:'ti-check',       label:'My tasks'},
