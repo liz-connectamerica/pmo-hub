@@ -285,12 +285,15 @@ var NAV_DEF = {
       {id:'roadmap',  icon:'ti-road',           label:'Roadmap'},
       {id:'resources',icon:'ti-users',          label:'Resources'}
     ]},
-    { s:'Data Tools', items:[
-      {id:'import-projects', icon:'ti-file-upload', label:'Import Projects'}
-    ]},
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a request'},
       {id:'my-requests',  icon:'ti-clock', label:'My requests'}
+    ]},
+    { s:'Data Tools', items:[
+      {id:'import-projects', icon:'ti-file-upload', label:'Import Projects'}
+    ]},
+    { s:'Administration', items:[
+      {id:'admin-users', icon:'ti-users-group', label:'Manage Users'}
     ]}
   ],
   pm: [
@@ -352,7 +355,7 @@ function nav(page) {
     completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
     submit:pgSubmit, 'my-requests':pgMyRequests,
     'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
-    'import-projects':pgImportProjects
+    'import-projects':pgImportProjects, 'admin-users':pgAdminUsers
   };
   if (map[page]) map[page]();
 }
@@ -2101,6 +2104,17 @@ async function handleImportFile(file) {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+function pgAdminUsers() {
+  tb('Manage Users');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can manage users.</p></div>';
+    return;
+  }
+  document.getElementById('content').innerHTML =
+    '<div class="empty-state" style="padding:60px"><i class="ti ti-tools"></i><p>User management is coming soon.</p></div>';
 }
 
 function pgImportProjects() {
