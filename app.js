@@ -288,6 +288,7 @@ function fmtCost(n) {
 }
 
 function bdg(s) {
+  if (!s) return '';
   var map = {
     'On Track':'badge-teal','At Risk':'badge-amber','Planning':'badge-blue','Blocked':'badge-red','Complete':'badge-green','Completed':'badge-green','Not Started':'badge-gray',
     'Pending':'badge-amber','Approved':'badge-teal','Rejected':'badge-red','Backlog':'badge-amber','Active':'badge-teal','Planned':'badge-blue','Revoked':'badge-gray',
@@ -296,6 +297,10 @@ function bdg(s) {
     'Critical':'badge-red','High':'badge-coral','Medium':'badge-amber','Low':'badge-blue'
   };
   return '<span class="badge ' + (map[s] || 'badge-gray') + '">' + s + '</span>';
+}
+
+function badgeIf(cls, s) {
+  return s ? '<span class="badge ' + cls + '">' + s + '</span>' : '';
 }
 
 function hdot(h) {
@@ -537,7 +542,7 @@ function pgDashboard() {
   var projRows = active.map(function(p) {
     return '<tr>' +
       '<td class="bold">' + p.name + '</td><td>' + bdg(p.status) + '</td><td>' + bdg(p.priority) + '</td>' +
-      '<td><span class="badge badge-gray">' + p.phase + '</span></td>' +
+      '<td>' + badgeIf('badge-gray', p.phase) + '</td>' +
       '<td><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></td>' +
       '<td class="text-muted">' + (p.pm || '—') + '</td>' +
       '<td>' + (p.blockers ? '<span style="color:#993C1D;font-size:12px"><i class="ti ti-alert-triangle"></i> Yes</span>' : '<span class="text-muted">—</span>') + '</td>' +
@@ -619,7 +624,7 @@ function pgPortfolio() {
     var cards = byVal[v].map(function(p) {
       return '<div class="card card-sm" style="cursor:pointer;border:1px solid #e8e8e5;border-radius:10px" onclick="goToProject(\'' + p.id + '\')">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px"><span class="bold" style="font-size:13px">' + p.name + '</span>' + stagePill(p.stage) + '</div>' +
-        '<div class="text-muted mb-12" style="line-height:1.5">' + p.description + '</div>' +
+        '<div class="text-muted mb-12" style="line-height:1.5">' + (p.description||'') + '</div>' +
         '<div class="progress-bar mb-12"><div class="progress-fill" style="width:' + p.progress + '%"></div></div>' +
         '<div style="display:flex;justify-content:space-between"><span class="text-muted">' + (p.pm || 'No PM') + '</span><span class="text-muted">' + (p.end || 'TBD') + '</span></div></div>';
     }).join('');
@@ -765,10 +770,10 @@ function pgBacklog() {
     return '<div class="project-card">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
         '<div><div class="bold mb-12">' + p.name + '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.priority) + ' <span class="badge badge-purple">' + p.value + '</span> ' + stagePill('backlog') + '</div></div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.priority) + ' ' + badgeIf('badge-purple', p.value) + ' ' + stagePill('backlog') + '</div></div>' +
         (D.role === 'admin' ? '<button class="btn btn-primary" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule</button>' : '') +
       '</div>' +
-      '<div class="text-muted mt-12">' + p.description + '</div>' +
+      '<div class="text-muted mt-12">' + (p.description||'') + '</div>' +
     '</div>';
   }).join('');
   document.getElementById('content').innerHTML =
@@ -847,7 +852,7 @@ function pgPlanned() {
     return '<div class="project-card">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
         '<div><div class="bold mb-12">' + p.name + '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.priority) + ' <span class="badge badge-purple">' + p.value + '</span> ' + stagePill('planned') + '</div></div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.priority) + ' ' + badgeIf('badge-purple', p.value) + ' ' + stagePill('planned') + '</div></div>' +
         (D.role === 'admin'
           ? '<div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">' +
               '<button class="btn btn-success" onclick="activateProject(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Activate</button>' +
@@ -898,7 +903,7 @@ function pgProjects() {
     return '<div class="project-card">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
         '<div style="flex:1"><div class="bold mb-12">' + hdot(p.health) + p.name + '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.status) + ' ' + bdg(p.priority) + ' <span class="badge badge-gray">' + p.phase + '</span> <span class="badge badge-purple">' + p.value + '</span></div></div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + badgeIf('badge-gray', p.phase) + ' ' + badgeIf('badge-purple', p.value) + '</div></div>' +
         '<div style="display:flex;gap:8px;flex-shrink:0">' +
           '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
           (canEdit(p) ? '<button class="btn btn-sm" onclick="editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
@@ -920,7 +925,7 @@ function pgCompleted() {
   var cp = D.projects.filter(function(p){ return p.stage === 'complete'; });
   if (!cp.length) { document.getElementById('content').innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No completed projects yet</p></div>'; return; }
   var rows = cp.map(function(p) {
-    return '<tr><td class="bold">' + p.name + '</td><td><span class="badge badge-purple">' + p.value + '</span></td>' +
+    return '<tr><td class="bold">' + p.name + '</td><td>' + badgeIf('badge-purple', p.value) + '</td>' +
       '<td>' + bdg(p.priority) + '</td><td class="text-muted">' + (p.pm||'—') + '</td><td class="text-muted">' + (p.end||'—') + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
       (D.role === 'admin' ? ' <button class="btn btn-sm" onclick="reactivateProject(\'' + p.id + '\')"><i class="ti ti-refresh"></i> Re-activate</button>' : '') +
@@ -975,16 +980,16 @@ function pgProjectDetail(pid, tab) {
       return '<div class="grid-2 mb-16">' +
         '<div><div class="form-label">Stage</div>' + stagePill(p.stage) + '</div>' +
         '<div><div class="form-label">Status</div>' + bdg(p.status) + '</div>' +
-        '<div><div class="form-label">Phase</div><span class="badge badge-gray">' + p.phase + '</span></div>' +
+        '<div><div class="form-label">Phase</div>' + badgeIf('badge-gray', p.phase) + '</div>' +
         '<div><div class="form-label">Priority</div>' + bdg(p.priority) + '</div>' +
-        '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + p.value + '</span></div>' +
+        '<div><div class="form-label">Value area</div>' + badgeIf('badge-purple', p.value) + '</div>' +
         '<div><div class="form-label">Progress</div><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></div>' +
         '<div><div class="form-label">Start</div>' + (p.start||'—') + '</div>' +
         '<div><div class="form-label">Target end</div>' + (p.end||'—') + '</div>' +
         '<div><div class="form-label">Category</div>' + (p.category ? '<span class="badge badge-blue">' + p.category + '</span>' : '<span class="text-muted">—</span>') + '</div>' +
         '<div><div class="form-label">Business unit</div>' + (p.businessUnit || '—') + '</div>' +
         '</div>' +
-        '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + p.description + '</div></div>' +
+        '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'') + '</div></div>' +
         '<div class="grid-2 mb-16">' +
         '<div class="form-group"><div class="form-label">Sponsor</div>' + (p.sponsor||'—') + '</div>' +
         '<div class="form-group"><div class="form-label">PM</div>' + (p.pm||'—') + '</div>' +
@@ -1857,8 +1862,8 @@ function editProject(pid) {
       '<div class="form-group"><div class="form-label">Category</div><select id="ep-category">' + catOpts + '</select></div>' +
       '<div class="form-group"><div class="form-label">Business unit</div><select id="ep-bu">' + buOpts + '</select></div>' +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Description</div><textarea id="ep-desc">' + p.description + '</textarea></div>' +
-    '<div class="form-group"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="ep-blocker" value="' + p.blockers + '"></div>' +
+    '<div class="form-group"><div class="form-label">Description</div><textarea id="ep-desc">' + (p.description||'') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="ep-blocker" value="' + (p.blockers||'') + '"></div>' +
     '<div class="divider"></div>' +
     '<div class="grid-2">' +
     '<div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="ep-sponsor" value="' + (p.sponsor||'') + '"></div>' +
@@ -2131,6 +2136,14 @@ function validateImportRow(row, profilesByEmail) {
   var category = categoryRaw ? matchOneOf(categoryRaw, CATEGORIES) : null;
   if (category === undefined) errors.push('Category "' + categoryRaw + '" is not a recognized category');
 
+  var statusRaw = row['Status'];
+  var status = statusRaw ? matchOneOf(statusRaw, STATUSES) : null;
+  if (status === undefined) errors.push('Status "' + statusRaw + '" is not a recognized status');
+
+  var phaseRaw = row['Phase'];
+  var phase = phaseRaw ? matchOneOf(phaseRaw, PHASES) : null;
+  if (phase === undefined) errors.push('Phase "' + phaseRaw + '" is not a recognized phase');
+
   var startDate = formatDateCell(row['Start Date']);
   if (row['Start Date'] && !startDate) errors.push('Start Date "' + row['Start Date'] + '" could not be read');
   var endDate = formatDateCell(row['Target End Date']);
@@ -2154,7 +2167,8 @@ function validateImportRow(row, profilesByEmail) {
       category: category || null,
       business_unit: row['Business Unit'] || null,
       stage: (stage || 'Backlog').toLowerCase(),
-      status: row['Status'] || null,
+      status: status || null,
+      phase: phase || null,
       priority: priority || null,
       value_area: row['Value Area'] || null,
       start_date: startDate,
@@ -2650,7 +2664,7 @@ function pgMyProjectsResource() {
     return '<div class="project-card">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
         '<div><div class="bold mb-12">' + hdot(p.health) + p.name + '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.status) + ' ' + stagePill(p.stage) + ' <span class="badge badge-purple">' + p.value + '</span></div></div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.status) + ' ' + stagePill(p.stage) + ' ' + badgeIf('badge-purple', p.value) + '</div></div>' +
         '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
       '</div>' +
       '<div class="grid-2 mt-12" style="font-size:12px;color:#777">' +
