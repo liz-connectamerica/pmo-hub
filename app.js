@@ -88,7 +88,7 @@ async function loadResources() {
 async function loadAllProjects() {
   var results = await Promise.all([
     sb.from('projects').select('*'),
-    sb.from('profiles').select('id, display_name'),
+    sb.from('profiles').select('id, display_name, is_active'),
     sb.from('project_team').select('*'),
     sb.from('milestones').select('*'),
     sb.from('milestone_log').select('*'),
@@ -120,9 +120,10 @@ async function loadAllProjects() {
 
   var nameById = {};
   profilesRows.forEach(function(p){ nameById[p.id] = p.display_name; });
-  D.people = profilesRows.map(function(p){ return p.display_name; });
+  var activeProfilesRows = profilesRows.filter(function(p){ return p.is_active !== false; });
+  D.people = activeProfilesRows.map(function(p){ return p.display_name; });
   D.peopleByName = {};
-  profilesRows.forEach(function(p){ D.peopleByName[p.display_name] = p; });
+  activeProfilesRows.forEach(function(p){ D.peopleByName[p.display_name] = p; });
 
   var teamByProject      = groupBy(teamRows, 'project_id');
   var milestonesByProj   = groupBy(milestoneRows, 'project_id');
@@ -223,7 +224,10 @@ function myProjects() {
 function myAssignedProjects() {
   var myId = D.currentProfile ? D.currentProfile.id : null;
   if (!myId) return [];
-  return D.projects.filter(function(p){ return (p.teamIds||[]).indexOf(myId) >= 0 || p.ownerId === myId; });
+  return D.projects.filter(function(p){
+    return (p.teamIds||[]).indexOf(myId) >= 0 || p.ownerId === myId ||
+      p.tasks.some(function(t){ return t.assigneeId === myId; });
+  });
 }
 
 function hasAssignedWork() {
@@ -241,6 +245,16 @@ function currentUser() {
 function canEdit(p) {
   if (D.role === 'admin') return true;
   return !!(p.ownerId && D.currentProfile && p.ownerId === D.currentProfile.id);
+}
+
+async function ensureOnTeam(p, profile) {
+  if (!profile) return;
+  if ((p.teamIds || []).indexOf(profile.id) >= 0) return;
+  var result = await sb.from('project_team').insert({ project_id: p.id, user_id: profile.id });
+  if (result.error) { console.error('Could not add to team:', result.error); return; }
+  p.team = p.team || []; p.teamIds = p.teamIds || [];
+  p.team.push(profile.display_name);
+  p.teamIds.push(profile.id);
 }
 
 function teamNames() {
@@ -279,6 +293,7 @@ var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fStatus:[]
 var roadmapCategoryFilter = 'All';
 var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#534AB7', 'Build':'#1D9E75', 'Testing':'#EF9F27', 'Deployment':'#D85A30' };
 var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null };
+var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3 };
 var rejectedFilterState = { range:'30' };
 
@@ -856,7 +871,11 @@ function pgBacklog() {
 
 function openScheduleModal(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  var ownerOpts = '<option value="">— None (assign later) —</option>' + D.people.map(function(n){ return '<option value="' + n + '"' + (p.owner === n ? ' selected' : '') + '>' + n + '</option>'; }).join('');
+  var ownerPoolSch = p.owner && D.people.indexOf(p.owner) < 0 ? D.people.concat([p.owner]) : D.people;
+  var ownerOpts = '<option value="">— None (assign later) —</option>' + ownerPoolSch.map(function(n){
+    var isInactiveCurrent = p.owner === n && D.people.indexOf(n) < 0;
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner === n ? ' selected' : '') + '>' + n + (isInactiveCurrent ? ' (deactivated)' : '') + '</option>';
+  }).join('');
   var memberOpts = D.people.concat(teamNames()).map(function(n) {
     var isTeam = teamNames().indexOf(n) >= 0;
     var chk = p.team.indexOf(n) >= 0 ? ' checked' : '';
@@ -1386,7 +1405,9 @@ function pgProjectDetail(pid, tab) {
         tk.comments.push({ id: commentResult.data.id, text: commentText, author: D.currentProfile.display_name, date: ymd(commentResult.data.created_at) });
       }
     }
-    document.getElementById('ptab-content').innerHTML=tabC('tasks'); showToast('Task marked complete');
+    if (document.getElementById('ptab-content')) { document.getElementById('ptab-content').innerHTML=tabC('tasks'); }
+    else if (currentPage === 'my-tasks') { pgMyTasks(); }
+    showToast('Task marked complete');
   };
   window.openAddMilestone = function(pid2){ openMilestoneModal(pid2); };
   window.openAddTask      = function(pid2){ openTaskModal(pid2, null); };
@@ -1644,7 +1665,11 @@ function openTaskModal(pid, idx) {
   var task = idx != null ? p.tasks[idx] : null;
   // only project members + all people for admin/pm
   var pool = canEdit(p) ? D.people.concat(teamNames()) : p.team;
-  var assigneeOpts = pool.map(function(n){ return '<option' + (task && task.assignee===n ? ' selected' : '') + '>' + n + '</option>'; }).join('');
+  if (task && task.assignee && pool.indexOf(task.assignee) < 0) pool = pool.concat([task.assignee]);
+  var assigneeOpts = pool.map(function(n){
+    var isInactiveCurrent = task && task.assignee === n && D.people.indexOf(n) < 0 && teamNames().indexOf(n) < 0;
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (task && task.assignee===n ? ' selected' : '') + '>' + n + (isInactiveCurrent ? ' (deactivated)' : '') + '</option>';
+  }).join('');
   showModal('<div class="modal-title">' + (task?'Edit task':'Add task') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Task title *</div><input type="text" id="tm-title" value="' + (task?task.title:'') + '" placeholder="Task name"></div>' +
     '<div class="form-group"><div class="form-label">Assignee</div><select id="tm-assignee">' + assigneeOpts + '</select></div>' +
@@ -1677,6 +1702,7 @@ function openTaskModal(pid, idx) {
       task.status = newVals.status; task.due = newVals.due;
       task.log = task.log || [];
       if (changes.length) task.log.push(await writeLog('task_log', 'task_id', task.id, 'Updated', changes.join('; ')));
+      await ensureOnTeam(p, assigneeProfile);
     } else {
       var insertResult = await sb.from('tasks').insert({
         project_id: pid, title: newVals.title, assignee_id: assigneeProfile ? assigneeProfile.id : null,
@@ -1686,6 +1712,7 @@ function openTaskModal(pid, idx) {
       var t2 = {id:insertResult.data.id,title:newVals.title,assignee:newVals.assignee,assigneeId:assigneeProfile?assigneeProfile.id:null,status:newVals.status,due:newVals.due,log:[],comments:[]};
       t2.log.push(await writeLog('task_log', 'task_id', t2.id, 'Created', ''));
       p.tasks.push(t2);
+      await ensureOnTeam(p, assigneeProfile);
     }
     showToast(idx!=null?'Task updated':'Task added'); closeModal(); if (window.switchPTab) window.switchPTab('tasks');
   };
@@ -1698,7 +1725,11 @@ function openRaidModal(pid, type, idx) {
   var label = {risks:'Risk',assumptions:'Assumption',issues:'Issue',dependencies:'Dependency'}[type];
   // owner: project members; with option to add
   var ownerPool = p.team.filter(function(m){ return D.people.indexOf(m) >= 0; });
-  var ownerOpts = '<option value="">— Select —</option>' + ownerPool.map(function(n){ return '<option' + (item && item.owner===n?' selected':'') + '>' + n + '</option>'; }).join('') +
+  if (item && item.owner && ownerPool.indexOf(item.owner) < 0) ownerPool = ownerPool.concat([item.owner]);
+  var ownerOpts = '<option value="">— Select —</option>' + ownerPool.map(function(n){
+    var isInactiveCurrent = item && item.owner === n && D.people.indexOf(n) < 0;
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (item && item.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (deactivated)' : '') + '</option>';
+  }).join('') +
     '<option value="__add__">+ Add member to project…</option>';
   var extra = '';
   if (type === 'risks') {
@@ -1960,7 +1991,11 @@ function editProject(pid) {
   var phaseOpts  = PHASES.map(function(s){   return '<option' + (p.phase===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var priorOpts  = PRIORITIES.map(function(s){ return '<option' + (p.priority===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var valOpts    = VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  var ownerOpts     = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option' + (p.owner===n?' selected':'') + '>' + n + '</option>'; }).join('');
+  var ownerPoolEdit = p.owner && D.people.indexOf(p.owner) < 0 ? D.people.concat([p.owner]) : D.people;
+  var ownerOpts     = '<option value="">— None —</option>' + ownerPoolEdit.map(function(n){
+    var isInactiveCurrent = p.owner===n && D.people.indexOf(n) < 0;
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (deactivated)' : '') + '</option>';
+  }).join('');
   var catOpts    = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option' + (p.category===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var buOpts     = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var memberOpts = D.people.concat(teamNames()).map(function(n) {
@@ -2871,26 +2906,107 @@ function pgMyProjectsResource() {
 
 function pgMyTasks() {
   tb('My tasks');
-  var me = currentUser();
+  var me = D.currentProfile ? D.currentProfile.id : null;
   var allTasks = [];
   D.projects.forEach(function(p) {
-    p.tasks.filter(function(t){ return t.assignee===me; }).forEach(function(t,idx) {
-      allTasks.push({task:t, project:p, idx:idx});
+    p.tasks.forEach(function(t, idx) {
+      if (t.assigneeId === me) allTasks.push({ task: t, project: p, idx: idx });
     });
   });
-  if (!allTasks.length) { document.getElementById('content').innerHTML = '<div class="empty-state"><i class="ti ti-check"></i><p>No tasks assigned to you</p></div>'; return; }
-  var rows = allTasks.map(function(item) {
-    return '<tr><td class="bold">' + item.task.title + '</td><td class="text-muted">' + item.project.name + '</td><td>' + bdg(item.task.status) + '</td><td class="text-muted">' + item.task.due + '</td>' +
-      '<td>' + (item.task.status!=='Done' ? '<button class="btn btn-sm btn-success" onclick="markTaskDone(\'' + item.project.id + '\',' + item.idx + ')"><i class="ti ti-check"></i> Mark done</button>' : '') + '</td></tr>';
+
+  var st = myTasksState;
+  var openTasksList = allTasks.filter(function(it){ return it.task.status !== 'Done'; });
+  var doneTasksList = allTasks.filter(function(it){ return it.task.status === 'Done'; });
+  var currentList = st.tab === 'open' ? openTasksList : doneTasksList;
+
+  var projectChoices = []; allTasks.forEach(function(it){ if (projectChoices.indexOf(it.project.name) < 0) projectChoices.push(it.project.name); });
+  var statusChoices = []; allTasks.forEach(function(it){ if (statusChoices.indexOf(it.task.status) < 0) statusChoices.push(it.task.status); });
+
+  var displayed = currentList.slice();
+  if (st.search) {
+    var q = st.search.toLowerCase();
+    displayed = displayed.filter(function(it){ return it.task.title.toLowerCase().indexOf(q) >= 0 || it.project.name.toLowerCase().indexOf(q) >= 0; });
+  }
+  if (st.fProject.length) displayed = displayed.filter(function(it){ return st.fProject.indexOf(it.project.name) >= 0; });
+  if (st.fStatus.length) displayed = displayed.filter(function(it){ return st.fStatus.indexOf(it.task.status) >= 0; });
+  if (st.sort) {
+    displayed.sort(function(a, b) {
+      var av, bv;
+      if (st.sort === 'task') { av = a.task.title.toLowerCase(); bv = b.task.title.toLowerCase(); }
+      else if (st.sort === 'project') { av = a.project.name.toLowerCase(); bv = b.project.name.toLowerCase(); }
+      else if (st.sort === 'status') { av = a.task.status || ''; bv = b.task.status || ''; }
+      else { av = a.task.due || ''; bv = b.task.due || ''; }
+      if (av < bv) return st.dir === 'asc' ? -1 : 1;
+      if (av > bv) return st.dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+  function filterIcon(col, choices) {
+    if (!choices.length) return '';
+    var isActive = (st[col]||[]).length > 0;
+    return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMyTasksFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (isActive?' th-filter-active':'') + '"></i></button>';
+  }
+  function filterPanel(col, choices) {
+    if (st.openFilter !== col) return '';
+    var selected = st[col] || [];
+    return '<div class="th-filter-panel" onclick="event.stopPropagation()">' +
+      choices.map(function(c){
+        var esc = c.replace(/'/g,"\\'");
+        return '<label class="th-filter-opt"><input type="checkbox"' + (selected.indexOf(c)>=0?' checked':'') + ' onchange="toggleMyTasksFilterValue(\'' + col + '\',\'' + esc + '\')"> ' + c + '</label>';
+      }).join('') +
+      '<div class="th-filter-actions"><button class="btn btn-sm" onclick="clearMyTasksFilter(\'' + col + '\')">Clear</button><button class="btn btn-sm btn-primary" onclick="closeMyTasksFilterPanel()">Done</button></div></div>';
+  }
+
+  var rows = displayed.map(function(item) {
+    return '<tr><td class="bold">' + item.task.title + '</td>' +
+      '<td><a href="#" onclick="goToProject(\'' + item.project.id + '\');return false;">' + item.project.name + '</a> ' +
+        '<button class="btn btn-sm" title="View this project\'s task list" onclick="goToProject(\'' + item.project.id + '\',\'tasks\')"><i class="ti ti-list"></i></button></td>' +
+      '<td>' + bdg(item.task.status) + '</td><td class="text-muted">' + (item.task.due || '—') + '</td>' +
+      '<td>' + (item.task.status!=='Done' ? '<button class="btn btn-sm btn-success" onclick="openCompleteTaskPrompt(\'' + item.project.id + '\',' + item.idx + ')"><i class="ti ti-check"></i> Mark done</button>' : '') + '</td></tr>';
   }).join('');
+
+  var searchBar = '<div class="task-filter-bar"><input type="text" id="my-tasks-search" placeholder="Search your tasks…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onMyTasksSearch(this.value)"></div>';
+
   document.getElementById('content').innerHTML =
-    '<div class="card"><div class="section-title">Tasks assigned to me</div><div class="table-wrap"><table>' +
-    '<thead><tr><th>Task</th><th>Project</th><th>Status</th><th>Due</th><th></th></tr></thead>' +
-    '<tbody>' + rows + '</tbody></table></div></div>';
-  window.markTaskDone = function(pid, idx) {
-    var p = D.projects.find(function(x){ return x.id===pid; });
-    p.tasks[idx].status = 'Done'; showToast('Task marked complete'); pgMyTasks();
+    '<div class="tab-bar" style="margin-bottom:16px">' +
+      '<div class="tab' + (st.tab==='open'?' active':'') + '" onclick="setMyTasksTab(\'open\')">Open tasks <span class="badge badge-gray">' + openTasksList.length + '</span></div>' +
+      '<div class="tab' + (st.tab==='done'?' active':'') + '" onclick="setMyTasksTab(\'done\')">Completed tasks <span class="badge badge-gray">' + doneTasksList.length + '</span></div>' +
+    '</div>' +
+    '<div class="card"><div class="section-title">' + (st.tab==='open'?'Open tasks':'Completed tasks') + '</div>' + searchBar +
+    (currentList.length
+      ? (displayed.length
+        ? '<div class="table-wrap"><table><thead><tr>' +
+          '<th class="sortable-th" onclick="setMyTasksSort(\'task\')">Task ' + arrow('task') + '</th>' +
+          '<th class="sortable-th" style="position:relative"><span onclick="setMyTasksSort(\'project\')">Project ' + arrow('project') + '</span>' + filterIcon('fProject', projectChoices) + filterPanel('fProject', projectChoices) + '</th>' +
+          '<th class="sortable-th" style="position:relative"><span onclick="setMyTasksSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('fStatus', statusChoices) + filterPanel('fStatus', statusChoices) + '</th>' +
+          '<th class="sortable-th" onclick="setMyTasksSort(\'due\')">Due ' + arrow('due') + '</th><th></th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table></div>'
+        : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No tasks match your search/filters</p></div>')
+      : '<div class="empty-state" style="padding:24px"><i class="ti ti-check"></i><p>' + (st.tab==='open' ? 'No open tasks — nice work!' : 'No completed tasks yet') + '</p></div>') +
+    '</div>';
+
+  window.setMyTasksTab = function(t) { myTasksState.tab = t; pgMyTasks(); };
+  window.setMyTasksSort = function(col) {
+    if (myTasksState.sort === col) myTasksState.dir = myTasksState.dir === 'asc' ? 'desc' : 'asc'; else { myTasksState.sort = col; myTasksState.dir = 'asc'; }
+    pgMyTasks();
   };
+  window.onMyTasksSearch = function(val) {
+    myTasksState.search = val;
+    pgMyTasks();
+    var el = document.getElementById('my-tasks-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.toggleMyTasksFilterPanel = function(col) { myTasksState.openFilter = myTasksState.openFilter === col ? null : col; pgMyTasks(); };
+  window.closeMyTasksFilterPanel = function() { myTasksState.openFilter = null; pgMyTasks(); };
+  window.toggleMyTasksFilterValue = function(col, val) {
+    var arr = myTasksState[col];
+    var i = arr.indexOf(val);
+    if (i >= 0) arr.splice(i,1); else arr.push(val);
+    pgMyTasks();
+  };
+  window.clearMyTasksFilter = function(col) { myTasksState[col] = []; pgMyTasks(); };
 }
 
 function pgMyCapacity() {
