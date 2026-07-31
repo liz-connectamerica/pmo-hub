@@ -70,16 +70,26 @@ async function loadResources() {
   resourceRows.forEach(function(r){ nameById[r.id] = r.name; });
   var projectsByResource = groupBy(rpRows, 'resource_id');
   var membersByTeam = groupBy(rtmRows, 'team_resource_id');
+  var teamByMember = {};
+  rtmRows.forEach(function(x){ teamByMember[x.member_resource_id] = x.team_resource_id; });
 
   return resourceRows.map(function(r) {
     var projectIds = (projectsByResource[r.id] || []).map(function(x){ return x.project_id; });
     var out = {
       id: r.id, name: r.name, role: r.title, type: r.type,
+      firstName: r.first_name, lastName: r.last_name,
       allocated: r.allocated_pct, nonProjectCapacity: r.non_project_capacity,
       projects: projectIds, email: r.email, userId: r.user_id
     };
     if (r.type === 'team') {
       out.members = (membersByTeam[r.id] || []).map(function(x){ return nameById[x.member_resource_id]; }).filter(Boolean);
+      out.memberIds = (membersByTeam[r.id] || []).map(function(x){ return x.member_resource_id; });
+      out.managerResourceId = r.manager_resource_id;
+      out.managerName = r.manager_resource_id ? nameById[r.manager_resource_id] : null;
+    } else {
+      var teamId = teamByMember[r.id];
+      out.teamId = teamId || null;
+      out.teamName = teamId ? nameById[teamId] : null;
     }
     return out;
   });
@@ -2693,9 +2703,12 @@ function openManageResources() {
   var listHtml = D.resources.map(function(r) {
     var memberList = r.type==='team' && r.members ? r.members.join(', ') : '';
     var linkBadge = r.type !== 'team' ? (r.userId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : ' <i class="ti ti-link-off" title="Not linked to an account yet" style="color:#ccc;font-size:12px"></i>') : '';
+    var subline = r.type==='team'
+      ? (r.managerName ? 'Manager: ' + r.managerName : 'No manager set') + (memberList?' &bull; Members: '+memberList:'')
+      : (r.role||'') + (r.teamName ? ' &bull; ' + r.teamName : '') + (r.email?' &bull; '+r.email:'');
     return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0ede8;gap:8px">' +
       '<div><div style="font-size:13px;font-weight:600">' + r.name + linkBadge + '</div>' +
-      '<div class="text-muted">' + r.role + ' &bull; ' + (r.type==='team'?'Team':'Individual') + (memberList?' &bull; Members: '+memberList:'') + (r.email?' &bull; '+r.email:'') + '</div></div>' +
+      '<div class="text-muted">' + subline + '</div></div>' +
       '<div style="display:flex;gap:6px">' +
         '<button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button>' +
         '<button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button>' +
@@ -2703,36 +2716,8 @@ function openManageResources() {
   }).join('');
   showModal('<div class="modal-title">Manage resources <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div style="margin-bottom:16px">' + listHtml + '</div>' +
-    '<div class="divider"></div>' +
-    '<div class="bold mb-12">Add new resource</div>' +
-    '<div class="grid-2">' +
-      '<div class="form-group"><div class="form-label">Name *</div><input type="text" id="nr-name" placeholder="Full name or team name"></div>' +
-      '<div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="nr-role" placeholder="e.g. Backend Dev"></div>' +
-    '</div>' +
-    '<div class="grid-2">' +
-      '<div class="form-group"><div class="form-label">Type</div><select id="nr-type" onchange="document.getElementById(\'nr-email-row\').style.display=this.value===\'individual\'?\'block\':\'none\'"><option value="individual">Individual</option><option value="team">Team</option></select></div>' +
-      '<div class="form-group"><div class="form-label">Capacity (%)</div><input type="number" id="nr-alloc" value="0" min="0" max="100"></div>' +
-    '</div>' +
-    '<div class="form-group" id="nr-email-row"><div class="form-label">Email</div><input type="email" id="nr-email" placeholder="name@yourcompany.com">' +
-      '<p class="text-muted" style="font-size:12px;margin-top:4px">If this matches an existing account, it\'ll link automatically — now or whenever that account is created.</p></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button>' +
-    '<button class="btn btn-primary" id="nr-save"><i class="ti ti-plus"></i> Add resource</button></div>', true);
-  document.getElementById('nr-save').onclick = async function() {
-    var name = document.getElementById('nr-name').value.trim();
-    if (!name){ showToast('Name required'); return; }
-    var btn = document.getElementById('nr-save'); btn.disabled = true;
-    var record = {
-      name: name, title: document.getElementById('nr-role').value || null,
-      type: document.getElementById('nr-type').value,
-      allocated_pct: parseInt(document.getElementById('nr-alloc').value) || 0,
-      non_project_capacity: 0,
-      email: document.getElementById('nr-email').value.trim() || null
-    };
-    var result = await sb.from('resources').insert(record).select().single();
-    if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
-    D.resources.push({ id: result.data.id, name: name, role: record.title, type: record.type, allocated: record.allocated_pct, nonProjectCapacity: 0, projects: [], email: record.email, userId: result.data.user_id });
-    showToast('Resource added' + (result.data.user_id ? ' — linked to an existing account' : '')); closeModal(); pgResources();
-  };
+    '<button class="btn btn-primary" onclick="closeModal();openAddResource()"><i class="ti ti-plus"></i> Add resource</button></div>', true);
   window.deleteResource = async function(rid) {
     if (!confirm('Remove this resource?')) return;
     var result = await sb.from('resources').delete().eq('id', rid);
@@ -2740,34 +2725,163 @@ function openManageResources() {
     D.resources = D.resources.filter(function(x){ return x.id!==rid; });
     showToast('Resource removed'); closeModal(); pgResources();
   };
-  window.editResource = function(rid) {
-    var res = D.resources.find(function(x){ return x.id===rid; });
-    closeModal();
-    var peopleOpts = D.people.map(function(n){ return '<option' + (res.members&&res.members.indexOf(n)>=0?' selected':'') + '>' + n + '</option>'; }).join('');
-    showModal('<div class="modal-title">Edit resource <button class="btn btn-sm" onclick="closeModal();openManageResources()"><i class="ti ti-x"></i></button></div>' +
-      '<div class="form-group"><div class="form-label">Name</div><input type="text" id="er-name" value="' + res.name + '"></div>' +
-      '<div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="er-role" value="' + (res.role||'') + '"></div>' +
-      '<div class="form-group"><div class="form-label">Type</div><select id="er-type"><option value="individual"' + (res.type==='individual'?' selected':'') + '>Individual</option><option value="team"' + (res.type==='team'?' selected':'') + '>Team</option></select></div>' +
-      '<div class="form-group"><div class="form-label">Project allocation (%)</div><input type="number" id="er-alloc" value="' + res.allocated + '" min="0" max="100"></div>' +
-      (res.type!=='team' ? '<div class="form-group"><div class="form-label">Email</div><input type="email" id="er-email" value="' + (res.email||'') + '">' + (res.userId ? '<p class="text-muted" style="font-size:12px;margin-top:4px"><i class="ti ti-link" style="color:#1D9E75"></i> Linked to a real account</p>' : '') + '</div>' : '') +
-      (res.type==='team' ? '<div class="form-group"><div class="form-label">Team members</div><select multiple id="er-members" style="height:120px">' + peopleOpts + '</select></div>' : '') +
-      '<div class="modal-footer"><button class="btn" onclick="closeModal();openManageResources()">Cancel</button>' +
-      '<button class="btn btn-primary" id="er-save"><i class="ti ti-check"></i> Save changes</button></div>');
-    document.getElementById('er-save').onclick = function(){ return saveResource(rid); };
-  };
-  window.saveResource = async function(rid) {
-    var res = D.resources.find(function(x){ return x.id===rid; });
-    var name = document.getElementById('er-name').value;
-    var role = document.getElementById('er-role').value;
-    var type = document.getElementById('er-type').value;
-    var alloc = parseInt(document.getElementById('er-alloc').value) || 0;
-    var emailEl = document.getElementById('er-email');
-    var email = emailEl ? emailEl.value.trim() || null : res.email;
+}
 
-    var btn = document.getElementById('er-save'); if (btn) btn.disabled = true;
-    var result = await sb.from('resources').update({ name: name, title: role, type: type, allocated_pct: alloc, email: email }).eq('id', rid).select().single();
+function openAddResource() {
+  var teamOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'team'; }).map(function(r){ return '<option value="' + r.id + '">' + r.name + '</option>'; }).join('');
+  var managerOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'individual'; }).map(function(r){ return '<option value="' + r.id + '">' + r.name + '</option>'; }).join('');
+  showModal('<div class="modal-title">Add resource <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Type</div><select id="nr-type" onchange="toggleAddResourceType()"><option value="individual">Individual</option><option value="team">Team</option></select></div>' +
+    '<div id="nr-individual-fields">' +
+      '<div class="grid-2">' +
+        '<div class="form-group"><div class="form-label">First name *</div><input type="text" id="nr-first"></div>' +
+        '<div class="form-group"><div class="form-label">Last name *</div><input type="text" id="nr-last"></div>' +
+      '</div>' +
+      '<div class="grid-2">' +
+        '<div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="nr-role" placeholder="e.g. Backend Dev"></div>' +
+        '<div class="form-group"><div class="form-label">Team</div><select id="nr-team">' + teamOpts + '</select></div>' +
+      '</div>' +
+      '<div class="grid-2">' +
+        '<div class="form-group"><div class="form-label">Email</div><input type="email" id="nr-email" placeholder="name@yourcompany.com"><p class="text-muted" style="font-size:12px;margin-top:4px">Auto-links if it matches an existing account.</p></div>' +
+        '<div class="form-group"><div class="form-label">Capacity (%)</div><input type="number" id="nr-alloc" value="0" min="0" max="100"></div>' +
+      '</div>' +
+    '</div>' +
+    '<div id="nr-team-fields" style="display:none">' +
+      '<div class="form-group"><div class="form-label">Team name *</div><input type="text" id="nr-name" placeholder="e.g. Platform Team"></div>' +
+      '<div class="form-group"><div class="form-label">Manager</div><select id="nr-manager">' + managerOpts + '</select></div>' +
+    '</div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="nr-save"><i class="ti ti-plus"></i> Add resource</button></div>', true);
+
+  window.toggleAddResourceType = function() {
+    var isTeam = document.getElementById('nr-type').value === 'team';
+    document.getElementById('nr-individual-fields').style.display = isTeam ? 'none' : 'block';
+    document.getElementById('nr-team-fields').style.display = isTeam ? 'block' : 'none';
+  };
+
+  document.getElementById('nr-save').onclick = async function() {
+    var isTeam = document.getElementById('nr-type').value === 'team';
+    var btn = document.getElementById('nr-save'); btn.disabled = true;
+    var record, linkedTeamId = null;
+
+    if (isTeam) {
+      var tname = document.getElementById('nr-name').value.trim();
+      if (!tname) { showToast('Team name required'); btn.disabled = false; return; }
+      record = { name: tname, type: 'team', title: null, manager_resource_id: document.getElementById('nr-manager').value || null, allocated_pct: 0, non_project_capacity: 0 };
+    } else {
+      var first = document.getElementById('nr-first').value.trim();
+      var last = document.getElementById('nr-last').value.trim();
+      if (!first || !last) { showToast('First and last name required'); btn.disabled = false; return; }
+      linkedTeamId = document.getElementById('nr-team').value || null;
+      record = {
+        name: first + ' ' + last, first_name: first, last_name: last, type: 'individual',
+        title: document.getElementById('nr-role').value || null,
+        allocated_pct: parseInt(document.getElementById('nr-alloc').value) || 0, non_project_capacity: 0,
+        email: document.getElementById('nr-email').value.trim() || null
+      };
+    }
+
+    var result = await sb.from('resources').insert(record).select().single();
+    if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+
+    var newRes = {
+      id: result.data.id, name: record.name, role: record.title, type: record.type,
+      firstName: record.first_name || null, lastName: record.last_name || null,
+      allocated: record.allocated_pct, nonProjectCapacity: 0, projects: [],
+      email: record.email || null, userId: result.data.user_id
+    };
+    if (isTeam) {
+      newRes.members = []; newRes.memberIds = [];
+      newRes.managerResourceId = record.manager_resource_id;
+      var mgr = D.resources.find(function(x){ return x.id === record.manager_resource_id; });
+      newRes.managerName = mgr ? mgr.name : null;
+    } else {
+      newRes.teamId = linkedTeamId;
+      var tm = D.resources.find(function(x){ return x.id === linkedTeamId; });
+      newRes.teamName = tm ? tm.name : null;
+    }
+    D.resources.push(newRes);
+
+    if (!isTeam && linkedTeamId) {
+      var linkResult = await sb.from('resource_team_members').insert({ team_resource_id: linkedTeamId, member_resource_id: result.data.id });
+      if (!linkResult.error) {
+        var teamRes = D.resources.find(function(x){ return x.id === linkedTeamId; });
+        if (teamRes) { teamRes.members = (teamRes.members||[]).concat([record.name]); teamRes.memberIds = (teamRes.memberIds||[]).concat([result.data.id]); }
+      }
+    }
+
+    showToast('Resource added' + (result.data.user_id ? ' — linked to an existing account' : ''));
+    closeModal(); pgResources();
+  };
+}
+function editResource(rid) {
+  var res = D.resources.find(function(x){ return x.id===rid; });
+  closeModal();
+  var peopleOpts = D.people.map(function(n){ return '<option' + (res.members&&res.members.indexOf(n)>=0?' selected':'') + '>' + n + '</option>'; }).join('');
+  var teamOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'team'; }).map(function(r){ return '<option value="' + r.id + '"' + (res.teamId===r.id?' selected':'') + '>' + r.name + '</option>'; }).join('');
+  var managerOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'individual'; }).map(function(r){ return '<option value="' + r.id + '"' + (res.managerResourceId===r.id?' selected':'') + '>' + r.name + '</option>'; }).join('');
+  showModal('<div class="modal-title">Edit resource <button class="btn btn-sm" onclick="closeModal();openManageResources()"><i class="ti ti-x"></i></button></div>' +
+    (res.type === 'individual'
+      ? '<div class="grid-2"><div class="form-group"><div class="form-label">First name</div><input type="text" id="er-first" value="' + (res.firstName||'') + '"></div>' +
+        '<div class="form-group"><div class="form-label">Last name</div><input type="text" id="er-last" value="' + (res.lastName||'') + '"></div></div>' +
+        '<div class="grid-2"><div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="er-role" value="' + (res.role||'') + '"></div>' +
+        '<div class="form-group"><div class="form-label">Team</div><select id="er-team">' + teamOpts + '</select></div></div>' +
+        '<div class="grid-2"><div class="form-group"><div class="form-label">Email</div><input type="email" id="er-email" value="' + (res.email||'') + '">' + (res.userId ? '<p class="text-muted" style="font-size:12px;margin-top:4px"><i class="ti ti-link" style="color:#1D9E75"></i> Linked to a real account</p>' : '') + '</div>' +
+        '<div class="form-group"><div class="form-label">Project allocation (%)</div><input type="number" id="er-alloc" value="' + res.allocated + '" min="0" max="100"></div></div>'
+      : '<div class="form-group"><div class="form-label">Team name</div><input type="text" id="er-name" value="' + res.name + '"></div>' +
+        '<div class="form-group"><div class="form-label">Manager</div><select id="er-manager">' + managerOpts + '</select></div>' +
+        '<div class="form-group"><div class="form-label">Team members</div><select multiple id="er-members" style="height:120px">' + peopleOpts + '</select></div>'
+    ) +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal();openManageResources()">Cancel</button>' +
+    '<button class="btn btn-primary" id="er-save"><i class="ti ti-check"></i> Save changes</button></div>');
+  document.getElementById('er-save').onclick = function(){ return saveResource(rid); };
+}
+
+async function saveResource(rid) {
+  var res = D.resources.find(function(x){ return x.id===rid; });
+  var btn = document.getElementById('er-save'); if (btn) btn.disabled = true;
+
+  if (res.type === 'individual') {
+    var first = document.getElementById('er-first').value.trim();
+    var last = document.getElementById('er-last').value.trim();
+    var role = document.getElementById('er-role').value;
+    var alloc = parseInt(document.getElementById('er-alloc').value) || 0;
+    var email = document.getElementById('er-email').value.trim() || null;
+    var newTeamId = document.getElementById('er-team').value || null;
+    var name = (first + ' ' + last).trim() || res.name;
+
+    var result = await sb.from('resources').update({ name: name, first_name: first, last_name: last, title: role, allocated_pct: alloc, email: email }).eq('id', rid).select().single();
     if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
-    res.name = name; res.role = role; res.type = type; res.allocated = alloc; res.email = email; res.userId = result.data.user_id;
+    res.name = name; res.firstName = first; res.lastName = last; res.role = role; res.allocated = alloc; res.email = email; res.userId = result.data.user_id;
+
+    var oldTeamId = res.teamId;
+    if (oldTeamId !== newTeamId) {
+      if (oldTeamId) {
+        await sb.from('resource_team_members').delete().eq('team_resource_id', oldTeamId).eq('member_resource_id', rid);
+        var oldTeam = D.resources.find(function(x){ return x.id === oldTeamId; });
+        if (oldTeam) { oldTeam.members = (oldTeam.members||[]).filter(function(n){ return n !== res.name; }); oldTeam.memberIds = (oldTeam.memberIds||[]).filter(function(id){ return id !== rid; }); }
+      }
+      if (newTeamId) {
+        await sb.from('resource_team_members').insert({ team_resource_id: newTeamId, member_resource_id: rid });
+        var newTeam = D.resources.find(function(x){ return x.id === newTeamId; });
+        if (newTeam) { newTeam.members = (newTeam.members||[]).concat([res.name]); newTeam.memberIds = (newTeam.memberIds||[]).concat([rid]); }
+      }
+      res.teamId = newTeamId;
+      var tm = D.resources.find(function(x){ return x.id === newTeamId; });
+      res.teamName = tm ? tm.name : null;
+    } else if (oldTeamId) {
+      var sameTeam = D.resources.find(function(x){ return x.id === oldTeamId; });
+      if (sameTeam) { var idx = sameTeam.memberIds.indexOf(rid); if (idx >= 0) sameTeam.members[idx] = res.name; }
+    }
+  } else {
+    var tname = document.getElementById('er-name').value.trim();
+    var managerId = document.getElementById('er-manager').value || null;
+    var result2 = await sb.from('resources').update({ name: tname, manager_resource_id: managerId }).eq('id', rid);
+    if (result2.error) { showToast('Could not save: ' + result2.error.message); if (btn) btn.disabled = false; return; }
+    res.name = tname;
+    res.managerResourceId = managerId;
+    var mgr = D.resources.find(function(x){ return x.id === managerId; });
+    res.managerName = mgr ? mgr.name : null;
 
     var mEl = document.getElementById('er-members');
     if (mEl) {
@@ -2778,16 +2892,19 @@ function openManageResources() {
         var match = D.resources.find(function(r){ return r.userId === profile.id; });
         if (match) newResourceIdByName[profile.id] = match.id;
       });
-      var oldMemberResourceIds = (D.resources.filter(function(r){ return res.members && res.members.indexOf(r.name) >= 0; })).map(function(r){ return r.id; });
+      var oldMemberResourceIds = res.memberIds || [];
       var newMemberResourceIds = Object.values(newResourceIdByName);
       var toAdd = newMemberResourceIds.filter(function(id){ return oldMemberResourceIds.indexOf(id) < 0; });
       var toRemove = oldMemberResourceIds.filter(function(id){ return newMemberResourceIds.indexOf(id) < 0; });
       if (toAdd.length) await sb.from('resource_team_members').insert(toAdd.map(function(id){ return { team_resource_id: rid, member_resource_id: id }; }));
       for (var i = 0; i < toRemove.length; i++) { await sb.from('resource_team_members').delete().eq('team_resource_id', rid).eq('member_resource_id', toRemove[i]); }
       res.members = newNames;
+      res.memberIds = newMemberResourceIds;
+      toAdd.forEach(function(id){ var ind = D.resources.find(function(x){ return x.id===id; }); if (ind) { ind.teamId = rid; ind.teamName = tname; } });
+      toRemove.forEach(function(id){ var ind = D.resources.find(function(x){ return x.id===id; }); if (ind && ind.teamId === rid) { ind.teamId = null; ind.teamName = null; } });
     }
-    showToast('Resource updated'); closeModal(); pgResources();
-  };
+  }
+  showToast('Resource updated'); closeModal(); pgResources();
 }
 
 // ── Stakeholder: Submit ────────────────────────────────────────────────────────
