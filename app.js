@@ -216,6 +216,13 @@ async function loadAllProjects() {
 
 function pendingCount() { return D.requests.filter(function(r){ return r.status === 'Pending'; }).length; }
 function backlogCount()  { return D.projects.filter(function(p){ return p.stage  === 'backlog'; }).length; }
+function myOpenTasksCount() {
+  var myId = D.currentProfile ? D.currentProfile.id : null;
+  if (!myId) return 0;
+  var count = 0;
+  D.projects.forEach(function(p){ p.tasks.forEach(function(t){ if (t.assigneeId === myId && t.status !== 'Done') count++; }); });
+  return count;
+}
 
 function myProjects() {
   return D.projects;
@@ -255,6 +262,21 @@ async function ensureOnTeam(p, profile) {
   p.team = p.team || []; p.teamIds = p.teamIds || [];
   p.team.push(profile.display_name);
   p.teamIds.push(profile.id);
+}
+
+function positionOpenFilterPanel() {
+  var btn = document.querySelector('.th-filter-btn.th-filter-open-trigger');
+  var panel = document.querySelector('.th-filter-panel');
+  if (!btn || !panel) return;
+  var rect = btn.getBoundingClientRect();
+  var top = rect.bottom + 4;
+  var left = rect.left;
+  var panelWidth = panel.offsetWidth || 170;
+  if (left + panelWidth > window.innerWidth - 10) left = window.innerWidth - panelWidth - 10;
+  var panelHeight = panel.offsetHeight || 0;
+  if (top + panelHeight > window.innerHeight - 10) top = rect.top - panelHeight - 4;
+  panel.style.top = top + 'px';
+  panel.style.left = left + 'px';
 }
 
 function refreshTaskView() {
@@ -496,7 +518,7 @@ function renderNav() {
   if (hasAssignedWork()) {
     defs = defs.concat([{ s:'My Work', items:[
       {id:'my-projects', icon:'ti-briefcase',   label:'My projects'},
-      {id:'my-tasks',    icon:'ti-check',       label:'My tasks'},
+      {id:'my-tasks',    icon:'ti-check',       label:'My tasks', badge:'my-tasks'},
       {id:'my-capacity', icon:'ti-adjustments', label:'My capacity'}
     ]}]);
   }
@@ -504,7 +526,7 @@ function renderNav() {
   defs.forEach(function(sec) {
     h += '<div class="sidebar-section">' + sec.s + '</div>';
     sec.items.forEach(function(item) {
-      var cnt = item.badge === 'pending' ? pendingCount() : item.badge === 'backlog' ? backlogCount() : 0;
+      var cnt = item.badge === 'pending' ? pendingCount() : item.badge === 'backlog' ? backlogCount() : item.badge === 'my-tasks' ? myOpenTasksCount() : 0;
       var badge = cnt > 0 ? '<span class="nav-badge">' + cnt + '</span>' : '';
       h += '<div class="nav-item' + (currentPage === item.id ? ' active' : '') + '" onclick="nav(\'' + item.id + '\')">' +
            '<i class="ti ' + item.icon + '"></i>' + item.label + badge + '</div>';
@@ -660,7 +682,8 @@ function pgDashboard() {
   function dFilterIcon(col, choices) {
     if (!choices.length) return '';
     var active2 = (dst[col]||[]).length > 0;
-    return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleDashFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active2 ? ' th-filter-active' : '') + '"></i></button>';
+    var isOpen = dst.openFilter === col;
+    return '<button class="th-filter-btn' + (isOpen ? ' th-filter-open-trigger' : '') + '" onclick="event.stopPropagation();toggleDashFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active2 ? ' th-filter-active' : '') + '"></i></button>';
   }
   function dFilterPanel(col, choices) {
     if (dst.openFilter !== col) return '';
@@ -774,6 +797,7 @@ function pgDashboard() {
     pgDashboard();
   };
   window.clearDashFilter = function(col) { dst[col] = []; pgDashboard(); };
+  positionOpenFilterPanel();
 }
 
 // ── Portfolio ───────────────────────────────────────────────────────────────
@@ -1237,7 +1261,8 @@ function pgProjectDetail(pid, tab) {
       }
 
       function filterIcon(col, active) {
-        return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleTaskFilterPanel(\'' + p.id + '\',\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
+        var isOpen = st.openFilter === col;
+        return '<button class="th-filter-btn' + (isOpen ? ' th-filter-open-trigger' : '') + '" onclick="event.stopPropagation();toggleTaskFilterPanel(\'' + p.id + '\',\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
       }
 
       var searchBar = '<div class="task-filter-bar">' +
@@ -1425,6 +1450,7 @@ function pgProjectDetail(pid, tab) {
     document.getElementById('ptab-content').innerHTML = tabC(t);
     var h = '#/project/' + pid + '/' + t;
     if (location.hash !== h) location.hash = h;
+    positionOpenFilterPanel();
   };
   window.toggleMS   = async function(pid2,idx){
     var pr=D.projects.find(function(x){return x.id===pid2;});
@@ -1557,6 +1583,7 @@ function pgProjectDetail(pid, tab) {
     var d = pr.documents[idx];
     if (d && d.url) window.open(d.url, '_blank'); else showToast('No file or link attached');
   };
+  positionOpenFilterPanel();
 }
 
 async function putOnHold(pid) {
@@ -2270,7 +2297,8 @@ function pgRoadmap() {
       '</div>';
   }
   function msFilterIcon(col, active) {
-    return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMsFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
+    var isOpen = st.openFilter === col;
+    return '<button class="th-filter-btn' + (isOpen ? ' th-filter-open-trigger' : '') + '" onclick="event.stopPropagation();toggleMsFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
   }
 
   var msSearchBar = '<div class="task-filter-bar"><input type="text" id="ms-search" placeholder="Search milestones…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onMsSearch(this.value)"></div>';
@@ -2333,6 +2361,7 @@ function pgRoadmap() {
     pgRoadmap();
   };
   window.clearMsFilter = function(col) { st[col] = []; pgRoadmap(); };
+  positionOpenFilterPanel();
 }
 
 // ── Resources ──────────────────────────────────────────────────────────────────
@@ -2960,7 +2989,8 @@ function pgMyTasks() {
   function filterIcon(col, choices) {
     if (!choices.length) return '';
     var isActive = (st[col]||[]).length > 0;
-    return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMyTasksFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (isActive?' th-filter-active':'') + '"></i></button>';
+    var isOpen = st.openFilter === col;
+    return '<button class="th-filter-btn' + (isOpen ? ' th-filter-open-trigger' : '') + '" onclick="event.stopPropagation();toggleMyTasksFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (isActive?' th-filter-active':'') + '"></i></button>';
   }
   function filterPanel(col, choices) {
     if (st.openFilter !== col) return '';
@@ -3045,7 +3075,7 @@ function pgMyTasks() {
     pgMyTasks();
   };
   window.clearMyTasksFilter = function(col) { myTasksState[col] = []; pgMyTasks(); };
-  document.getElementById('content').style.paddingBottom = myTasksState.openFilter ? '220px' : '';
+  positionOpenFilterPanel();
 }
 
 function pgMyCapacity() {
