@@ -264,19 +264,20 @@ async function ensureOnTeam(p, profile) {
   p.teamIds.push(profile.id);
 }
 
-function positionOpenFilterPanel() {
-  var btn = document.querySelector('.th-filter-btn.th-filter-open-trigger');
-  var panel = document.querySelector('.th-filter-panel');
-  if (!btn || !panel) return;
-  var rect = btn.getBoundingClientRect();
-  var top = rect.bottom + 4;
-  var left = rect.left;
-  var panelWidth = panel.offsetWidth || 170;
-  if (left + panelWidth > window.innerWidth - 10) left = window.innerWidth - panelWidth - 10;
-  var panelHeight = panel.offsetHeight || 0;
-  if (top + panelHeight > window.innerHeight - 10) top = rect.top - panelHeight - 4;
-  panel.style.top = top + 'px';
-  panel.style.left = left + 'px';
+function openFilterModal(label, choices, getSelected, toggleValue, clearAll, rerenderPage) {
+  function render() {
+    var selected = getSelected();
+    var optsHtml = choices.map(function(c){
+      var esc = c.replace(/'/g,"\\'");
+      return '<label style="display:block;padding:7px 0;font-size:13px;cursor:pointer"><input type="checkbox" style="margin-right:8px"' + (selected.indexOf(c)>=0?' checked':'') + ' onchange="window.__filterModalToggle(\'' + esc + '\')"> ' + c + '</label>';
+    }).join('');
+    showModal('<div class="modal-title">Filter by ' + label + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+      '<div style="max-height:300px;overflow-y:auto">' + optsHtml + '</div>' +
+      '<div class="modal-footer"><button class="btn" onclick="window.__filterModalClear()">Clear</button><button class="btn btn-primary" onclick="closeModal()">Done</button></div>');
+  }
+  window.__filterModalToggle = function(val) { toggleValue(val); rerenderPage(); render(); };
+  window.__filterModalClear = function() { clearAll(); rerenderPage(); render(); };
+  render();
 }
 
 function refreshTaskView() {
@@ -682,19 +683,7 @@ function pgDashboard() {
   function dFilterIcon(col, choices) {
     if (!choices.length) return '';
     var active2 = (dst[col]||[]).length > 0;
-    var isOpen = dst.openFilter === col;
-    return '<button class="th-filter-btn' + (isOpen ? ' th-filter-open-trigger' : '') + '" onclick="event.stopPropagation();toggleDashFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active2 ? ' th-filter-active' : '') + '"></i></button>';
-  }
-  function dFilterPanel(col, choices) {
-    if (dst.openFilter !== col) return '';
-    var selected = dst[col] || [];
-    return '<div class="th-filter-panel" onclick="event.stopPropagation()">' +
-      choices.map(function(c){
-        var esc = c.replace(/'/g,"\\'");
-        return '<label class="th-filter-opt"><input type="checkbox"' + (selected.indexOf(c)>=0?' checked':'') + ' onchange="toggleDashFilterValue(\'' + col + '\',\'' + esc + '\')"> ' + c + '</label>';
-      }).join('') +
-      '<div class="th-filter-actions"><button class="btn btn-sm" onclick="clearDashFilter(\'' + col + '\')">Clear</button><button class="btn btn-sm btn-primary" onclick="closeDashFilterPanel()">Done</button></div>' +
-      '</div>';
+    return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleDashFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active2 ? ' th-filter-active' : '') + '"></i></button>';
   }
 
   var projRows = displayed.map(function(p) {
@@ -750,9 +739,9 @@ function pgDashboard() {
       (displayed.length ? '<div class="table-wrap"><table>' +
       '<thead><tr>' +
         '<th class="sortable-th" onclick="setDashProjSort(\'name\')">Project ' + dArrow('name') + '</th>' +
-        '<th class="sortable-th" style="position:relative"><span onclick="setDashProjSort(\'status\')">Status ' + dArrow('status') + '</span>' + dFilterIcon('fStatus', statusChoicesD) + dFilterPanel('fStatus', statusChoicesD) + '</th>' +
+        '<th class="sortable-th" style="position:relative"><span onclick="setDashProjSort(\'status\')">Status ' + dArrow('status') + '</span>' + dFilterIcon('fStatus', statusChoicesD) + '</th>' +
         '<th class="sortable-th" onclick="setDashProjSort(\'priority\')">Priority ' + dArrow('priority') + '</th>' +
-        '<th class="sortable-th" style="position:relative"><span onclick="setDashProjSort(\'phase\')">Phase ' + dArrow('phase') + '</span>' + dFilterIcon('fPhase', phaseChoicesD) + dFilterPanel('fPhase', phaseChoicesD) + '</th>' +
+        '<th class="sortable-th" style="position:relative"><span onclick="setDashProjSort(\'phase\')">Phase ' + dArrow('phase') + '</span>' + dFilterIcon('fPhase', phaseChoicesD) + '</th>' +
         '<th class="sortable-th" style="min-width:160px" onclick="setDashProjSort(\'progress\')">Progress ' + dArrow('progress') + '</th>' +
         '<th>PM</th><th>Blockers</th><th></th></tr></thead>' +
       '<tbody>' + projRows + '</tbody></table></div>'
@@ -788,16 +777,16 @@ function pgDashboard() {
     var el = document.getElementById('dash-proj-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
-  window.toggleDashFilterPanel = function(col) { dst.openFilter = dst.openFilter === col ? null : col; pgDashboard(); };
-  window.closeDashFilterPanel = function() { dst.openFilter = null; pgDashboard(); };
-  window.toggleDashFilterValue = function(col, val) {
-    var arr = dst[col];
-    var i = arr.indexOf(val);
-    if (i >= 0) arr.splice(i,1); else arr.push(val);
-    pgDashboard();
+  window.toggleDashFilterPanel = function(col) {
+    var label = col === 'fStatus' ? 'Status' : 'Phase';
+    var choices = col === 'fStatus' ? statusChoicesD : phaseChoicesD;
+    openFilterModal(label, choices,
+      function() { return dst[col] || []; },
+      function(val) { var arr = dst[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { dst[col] = []; },
+      pgDashboard
+    );
   };
-  window.clearDashFilter = function(col) { dst[col] = []; pgDashboard(); };
-  positionOpenFilterPanel();
 }
 
 // ── Portfolio ───────────────────────────────────────────────────────────────
@@ -1249,20 +1238,8 @@ function pgProjectDetail(pid, tab) {
       p.tasks.forEach(function(tk){ if (assigneeChoices.indexOf(tk.assignee) < 0) assigneeChoices.push(tk.assignee); });
       var statusChoices = ['To Do','In Progress','Done'];
 
-      function filterPanel(col, choices, selected) {
-        if (st.openFilter !== col) return '';
-        return '<div class="th-filter-panel" onclick="event.stopPropagation()">' +
-          choices.map(function(c){
-            var esc = c.replace(/'/g,"\\'");
-            return '<label class="th-filter-opt"><input type="checkbox"' + (selected.indexOf(c)>=0?' checked':'') + ' onchange="toggleTaskFilterValue(\'' + p.id + '\',\'' + col + '\',\'' + esc + '\')"> ' + c + '</label>';
-          }).join('') +
-          '<div class="th-filter-actions"><button class="btn btn-sm" onclick="clearTaskFilter(\'' + p.id + '\',\'' + col + '\')">Clear</button><button class="btn btn-sm btn-primary" onclick="closeTaskFilterPanel(\'' + p.id + '\')">Done</button></div>' +
-          '</div>';
-      }
-
       function filterIcon(col, active) {
-        var isOpen = st.openFilter === col;
-        return '<button class="th-filter-btn' + (isOpen ? ' th-filter-open-trigger' : '') + '" onclick="event.stopPropagation();toggleTaskFilterPanel(\'' + p.id + '\',\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
+        return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleTaskFilterPanel(\'' + p.id + '\',\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
       }
 
       var searchBar = '<div class="task-filter-bar">' +
@@ -1322,8 +1299,8 @@ function pgProjectDetail(pid, tab) {
       }).join('');
 
       var header = '<tr><th>Task</th>' +
-        '<th class="sortable-th" style="position:relative"><span onclick="setTaskSort(\'' + p.id + '\',\'assignee\')">Assignee ' + arrow('assignee') + '</span>' + filterIcon('assignee', st.fAssignee.length>0) + filterPanel('assignee', assigneeChoices, st.fAssignee) + '</th>' +
-        '<th class="sortable-th" style="position:relative"><span onclick="setTaskSort(\'' + p.id + '\',\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.fStatus.length>0) + filterPanel('status', statusChoices, st.fStatus) + '</th>' +
+        '<th class="sortable-th" style="position:relative"><span onclick="setTaskSort(\'' + p.id + '\',\'assignee\')">Assignee ' + arrow('assignee') + '</span>' + filterIcon('assignee', st.fAssignee.length>0) + '</th>' +
+        '<th class="sortable-th" style="position:relative"><span onclick="setTaskSort(\'' + p.id + '\',\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.fStatus.length>0) + '</th>' +
         '<th class="sortable-th" onclick="setTaskSort(\'' + p.id + '\',\'due\')">Due ' + arrow('due') + '</th><th></th></tr>';
 
       return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddTask(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add task</button>' : '') +
@@ -1450,8 +1427,7 @@ function pgProjectDetail(pid, tab) {
     document.getElementById('ptab-content').innerHTML = tabC(t);
     var h = '#/project/' + pid + '/' + t;
     if (location.hash !== h) location.hash = h;
-    positionOpenFilterPanel();
-  };
+    };
   window.toggleMS   = async function(pid2,idx){
     var pr=D.projects.find(function(x){return x.id===pid2;});
     var m = pr.milestones[idx];
@@ -1510,24 +1486,21 @@ function pgProjectDetail(pid, tab) {
   };
   window.toggleTaskFilterPanel = function(pid2, col) {
     var s = getTaskState(pid2);
-    s.openFilter = s.openFilter === col ? null : col;
-    refreshTaskView();
-  };
-  window.closeTaskFilterPanel = function(pid2) {
-    getTaskState(pid2).openFilter = null;
-    refreshTaskView();
-  };
-  window.toggleTaskFilterValue = function(pid2, col, val) {
-    var s = getTaskState(pid2);
-    var arr = col === 'assignee' ? s.fAssignee : s.fStatus;
-    var i = arr.indexOf(val);
-    if (i >= 0) arr.splice(i,1); else arr.push(val);
-    refreshTaskView();
-  };
-  window.clearTaskFilter = function(pid2, col) {
-    var s = getTaskState(pid2);
-    if (col === 'assignee') s.fAssignee = []; else s.fStatus = [];
-    refreshTaskView();
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var label = col === 'assignee' ? 'Assignee' : 'Status';
+    var choices;
+    if (col === 'assignee') {
+      choices = [];
+      pr.tasks.forEach(function(tk){ if (choices.indexOf(tk.assignee) < 0) choices.push(tk.assignee); });
+    } else {
+      choices = ['To Do','In Progress','Done'];
+    }
+    openFilterModal(label, choices,
+      function() { return col === 'assignee' ? s.fAssignee : s.fStatus; },
+      function(val) { var arr = col === 'assignee' ? s.fAssignee : s.fStatus; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { if (col === 'assignee') s.fAssignee = []; else s.fStatus = []; },
+      refreshTaskView
+    );
   };
   window.toggleTaskLog = function(pid2, taskId) {
     var key = pid2 + '|' + taskId;
@@ -1583,7 +1556,6 @@ function pgProjectDetail(pid, tab) {
     var d = pr.documents[idx];
     if (d && d.url) window.open(d.url, '_blank'); else showToast('No file or link attached');
   };
-  positionOpenFilterPanel();
 }
 
 async function putOnHold(pid) {
@@ -2286,19 +2258,8 @@ function pgRoadmap() {
   msItems.forEach(function(it){ if (projectChoices.indexOf(it.project) < 0) projectChoices.push(it.project); });
   var statusChoices = ['Upcoming'];
 
-  function msFilterPanel(col, choices, selected) {
-    if (st.openFilter !== col) return '';
-    return '<div class="th-filter-panel" onclick="event.stopPropagation()">' +
-      choices.map(function(c){
-        var esc = c.replace(/'/g,"\\'");
-        return '<label class="th-filter-opt"><input type="checkbox"' + (selected.indexOf(c)>=0?' checked':'') + ' onchange="toggleMsFilterValue(\'' + col + '\',\'' + esc + '\')"> ' + c + '</label>';
-      }).join('') +
-      '<div class="th-filter-actions"><button class="btn btn-sm" onclick="clearMsFilter(\'' + col + '\')">Clear</button><button class="btn btn-sm btn-primary" onclick="closeMsFilterPanel()">Done</button></div>' +
-      '</div>';
-  }
   function msFilterIcon(col, active) {
-    var isOpen = st.openFilter === col;
-    return '<button class="th-filter-btn' + (isOpen ? ' th-filter-open-trigger' : '') + '" onclick="event.stopPropagation();toggleMsFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
+    return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMsFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
   }
 
   var msSearchBar = '<div class="task-filter-bar"><input type="text" id="ms-search" placeholder="Search milestones…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onMsSearch(this.value)"></div>';
@@ -2321,10 +2282,10 @@ function pgRoadmap() {
   }).join('');
 
   var msHeader = '<tr>' +
-    '<th class="sortable-th" style="position:relative"><span onclick="setMsSort(\'project\')">Project ' + msArrow('project') + '</span>' + msFilterIcon('fProject', st.fProject.length>0) + msFilterPanel('fProject', projectChoices, st.fProject) + '</th>' +
+    '<th class="sortable-th" style="position:relative"><span onclick="setMsSort(\'project\')">Project ' + msArrow('project') + '</span>' + msFilterIcon('fProject', st.fProject.length>0) + '</th>' +
     '<th class="sortable-th" onclick="setMsSort(\'milestone\')">Milestone ' + msArrow('milestone') + '</th>' +
     '<th class="sortable-th" onclick="setMsSort(\'due\')">Due ' + msArrow('due') + '</th>' +
-    '<th class="sortable-th" style="position:relative"><span onclick="setMsSort(\'status\')">Status ' + msArrow('status') + '</span>' + msFilterIcon('fStatus', st.fStatus.length>0) + msFilterPanel('fStatus', statusChoices, st.fStatus) + '</th>' +
+    '<th class="sortable-th" style="position:relative"><span onclick="setMsSort(\'status\')">Status ' + msArrow('status') + '</span>' + msFilterIcon('fStatus', st.fStatus.length>0) + '</th>' +
     '</tr>';
   document.getElementById('content').innerHTML =
     categoryTabsHtml +
@@ -2350,18 +2311,15 @@ function pgRoadmap() {
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
   window.toggleMsFilterPanel = function(col) {
-    st.openFilter = st.openFilter === col ? null : col;
-    pgRoadmap();
+    var label = col === 'fProject' ? 'Project' : 'Status';
+    var choices = col === 'fProject' ? projectChoices : statusChoices;
+    openFilterModal(label, choices,
+      function() { return st[col] || []; },
+      function(val) { var arr = st[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { st[col] = []; },
+      pgRoadmap
+    );
   };
-  window.closeMsFilterPanel = function() { st.openFilter = null; pgRoadmap(); };
-  window.toggleMsFilterValue = function(col, val) {
-    var arr = st[col];
-    var i = arr.indexOf(val);
-    if (i >= 0) arr.splice(i,1); else arr.push(val);
-    pgRoadmap();
-  };
-  window.clearMsFilter = function(col) { st[col] = []; pgRoadmap(); };
-  positionOpenFilterPanel();
 }
 
 // ── Resources ──────────────────────────────────────────────────────────────────
@@ -2989,18 +2947,7 @@ function pgMyTasks() {
   function filterIcon(col, choices) {
     if (!choices.length) return '';
     var isActive = (st[col]||[]).length > 0;
-    var isOpen = st.openFilter === col;
-    return '<button class="th-filter-btn' + (isOpen ? ' th-filter-open-trigger' : '') + '" onclick="event.stopPropagation();toggleMyTasksFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (isActive?' th-filter-active':'') + '"></i></button>';
-  }
-  function filterPanel(col, choices) {
-    if (st.openFilter !== col) return '';
-    var selected = st[col] || [];
-    return '<div class="th-filter-panel" onclick="event.stopPropagation()">' +
-      choices.map(function(c){
-        var esc = c.replace(/'/g,"\\'");
-        return '<label class="th-filter-opt"><input type="checkbox"' + (selected.indexOf(c)>=0?' checked':'') + ' onchange="toggleMyTasksFilterValue(\'' + col + '\',\'' + esc + '\')"> ' + c + '</label>';
-      }).join('') +
-      '<div class="th-filter-actions"><button class="btn btn-sm" onclick="clearMyTasksFilter(\'' + col + '\')">Clear</button><button class="btn btn-sm btn-primary" onclick="closeMyTasksFilterPanel()">Done</button></div></div>';
+    return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMyTasksFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (isActive?' th-filter-active':'') + '"></i></button>';
   }
 
   var rows = displayed.map(function(item) {
@@ -3047,8 +2994,8 @@ function pgMyTasks() {
       ? (displayed.length
         ? '<div class="table-wrap"><table><thead><tr>' +
           '<th class="sortable-th" onclick="setMyTasksSort(\'task\')">Task ' + arrow('task') + '</th>' +
-          '<th class="sortable-th" style="position:relative"><span onclick="setMyTasksSort(\'project\')">Project ' + arrow('project') + '</span>' + filterIcon('fProject', projectChoices) + filterPanel('fProject', projectChoices) + '</th>' +
-          '<th class="sortable-th" style="position:relative"><span onclick="setMyTasksSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('fStatus', statusChoices) + filterPanel('fStatus', statusChoices) + '</th>' +
+          '<th class="sortable-th" style="position:relative"><span onclick="setMyTasksSort(\'project\')">Project ' + arrow('project') + '</span>' + filterIcon('fProject', projectChoices) + '</th>' +
+          '<th class="sortable-th" style="position:relative"><span onclick="setMyTasksSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('fStatus', statusChoices) + '</th>' +
           '<th class="sortable-th" onclick="setMyTasksSort(\'due\')">Due ' + arrow('due') + '</th><th></th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table></div>'
         : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No tasks match your search/filters</p></div>')
@@ -3066,16 +3013,16 @@ function pgMyTasks() {
     var el = document.getElementById('my-tasks-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
-  window.toggleMyTasksFilterPanel = function(col) { myTasksState.openFilter = myTasksState.openFilter === col ? null : col; pgMyTasks(); };
-  window.closeMyTasksFilterPanel = function() { myTasksState.openFilter = null; pgMyTasks(); };
-  window.toggleMyTasksFilterValue = function(col, val) {
-    var arr = myTasksState[col];
-    var i = arr.indexOf(val);
-    if (i >= 0) arr.splice(i,1); else arr.push(val);
-    pgMyTasks();
+  window.toggleMyTasksFilterPanel = function(col) {
+    var label = col === 'fProject' ? 'Project' : 'Status';
+    var choices = col === 'fProject' ? projectChoices : statusChoices;
+    openFilterModal(label, choices,
+      function() { return myTasksState[col] || []; },
+      function(val) { var arr = myTasksState[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { myTasksState[col] = []; },
+      pgMyTasks
+    );
   };
-  window.clearMyTasksFilter = function(col) { myTasksState[col] = []; pgMyTasks(); };
-  positionOpenFilterPanel();
 }
 
 function pgMyCapacity() {
