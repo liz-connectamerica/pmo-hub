@@ -417,6 +417,7 @@ var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fStatus:[]
 var roadmapCategoryFilter = 'All';
 var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#534AB7', 'Build':'#1D9E75', 'Testing':'#EF9F27', 'Deployment':'#D85A30' };
 var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null };
+var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
 var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3 };
 var rejectedFilterState = { range:'30' };
@@ -2656,47 +2657,127 @@ function pgImportProjects() {
   });
 }
 
-function pgResources() {
-  tb('Resources & capacity', D.role==='admin' ? '<button class="btn" onclick="openManageResources()"><i class="ti ti-settings"></i> Manage resources</button> <button class="btn btn-primary" onclick="openAddResource()"><i class="ti ti-plus"></i> Add resource</button>' : '');
-  var over = D.resources.filter(function(r){ return r.allocated>=100; }).length;
-  var warn = D.resources.filter(function(r){ return r.allocated>=80&&r.allocated<100; }).length;
+function resourceOpenTaskCount(r) {
+  if (!r.userId) return null;
+  var count = 0;
+  D.projects.forEach(function(p){ p.tasks.forEach(function(t){ if (t.assigneeId === r.userId && t.status !== 'Done') count++; }); });
+  return count;
+}
 
-  var rows = D.resources.map(function(r) {
-    var pct = r.allocated;
-    var nonPct = r.nonProjectCapacity || 0;
-    var c = pct>=100?'#E24B4A':pct>=80?'#EF9F27':'#1D9E75';
-    var ini = r.name.split(' ').map(function(x){ return x[0]; }).join('');
-    var projs = r.projects.map(function(pid){ var p=D.projects.find(function(x){ return x.id===pid; }); return p?p.name:pid; }).join(', ');
-    // capacity bar: show project allocation + non-project separately (exec sees both)
-    var showNonProject = true; // additive info, safe to show everyone
-    var barHtml = '<div style="height:10px;background:#f0ede8;border-radius:5px;overflow:hidden;display:flex">' +
-      '<div style="height:100%;background:' + c + ';width:' + Math.min(pct,100) + '%;border-radius:5px 0 0 5px;flex-shrink:0"></div>' +
-      (showNonProject && nonPct > 0 && (pct+nonPct)<=100 ? '<div style="height:100%;background:#b0abe0;width:' + nonPct + '%;flex-shrink:0"></div>' : '') +
-      '</div>';
-    var labels = '<div style="display:flex;justify-content:space-between;font-size:12px;color:#777;margin-bottom:4px">' +
-      '<span>' + (projs||'Unassigned') + '</span>' +
-      '<span style="display:flex;gap:8px"><span style="font-weight:600;color:' + c + '">' + pct + '% project</span>' +
-      (showNonProject && nonPct>0 ? '<span style="color:#534AB7">' + nonPct + '% BAU</span>' : '') + '</span></div>';
-    return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' +
-      (r.type==='team' ? '<div style="width:30px;height:30px;border-radius:8px;background:#E6F1FB;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-users" style="font-size:15px;color:#185FA5"></i></div>' : '<div class="avatar av-purple" style="flex-shrink:0">' + ini + '</div>') +
-      '<div style="width:175px;min-width:175px"><div style="font-size:13px;font-weight:600">' + r.name + (r.type!=='team' ? (r.userId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : ' <i class="ti ti-link-off" title="Not linked to an account yet" style="color:#ccc;font-size:12px"></i>') : '') + '</div><div class="text-muted">' + r.role + ' &bull; ' + (r.type==='team'?'Team':'Individual') + '</div></div>' +
-      '<div style="flex:1">' + labels + barHtml + '</div>' +
-    '</div>';
-  }).join('');
+function pgResources() {
+  tb('Resources', D.role==='admin' ? '<button class="btn" onclick="openManageResources()"><i class="ti ti-settings"></i> Manage resources</button> <button class="btn btn-primary" onclick="openAddResource()"><i class="ti ti-plus"></i> Add resource</button>' : '');
+  var st = resourcesPageState;
+  var individuals = D.resources.filter(function(r){ return r.type === 'individual'; });
+  var teams = D.resources.filter(function(r){ return r.type === 'team'; });
+  var over = individuals.filter(function(r){ return r.allocated>=100; }).length;
+  var warn = individuals.filter(function(r){ return r.allocated>=80 && r.allocated<100; }).length;
+
+  var list = st.tab === 'individual' ? individuals : teams;
+  if (st.search) {
+    var q = st.search.toLowerCase();
+    list = list.filter(function(r){
+      return r.name.toLowerCase().indexOf(q) >= 0 ||
+        (r.role||'').toLowerCase().indexOf(q) >= 0 ||
+        (r.teamName||'').toLowerCase().indexOf(q) >= 0 ||
+        (r.managerName||'').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  list = list.slice().sort(function(a, b) {
+    var av, bv;
+    if (st.sort === 'projects') { av = a.projects.length; bv = b.projects.length; }
+    else if (st.sort === 'tasks') { av = resourceOpenTaskCount(a) || 0; bv = resourceOpenTaskCount(b) || 0; }
+    else if (st.sort === 'capacity') { av = a.allocated||0; bv = b.allocated||0; }
+    else if (st.sort === 'members') { av = (a.members||[]).length; bv = (b.members||[]).length; }
+    else { av = (a[st.sort]||'').toString().toLowerCase(); bv = (b[st.sort]||'').toString().toLowerCase(); }
+    if (av < bv) return st.dir === 'asc' ? -1 : 1;
+    if (av > bv) return st.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+  function projectExpandRow(r, colspan) {
+    if (st.expandedId !== r.id) return '';
+    var names = r.projects.map(function(pid){ var p = D.projects.find(function(x){ return x.id===pid; }); return p ? { id:p.id, name:p.name } : null; }).filter(Boolean);
+    var body = names.length
+      ? names.map(function(p){ return '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0"><span>' + p.name + '</span><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button></div>'; }).join('')
+      : '<span class="text-muted">No projects assigned</span>';
+    return '<tr><td colspan="' + colspan + '" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
+  }
+  window.toggleResourceExpand = function(rid) { resourcesPageState.expandedId = resourcesPageState.expandedId === rid ? null : rid; pgResources(); };
+
+  var tableHtml;
+  if (st.tab === 'individual') {
+    var rows = list.map(function(r) {
+      var pct = r.allocated || 0;
+      var c = pct>=100?'#E24B4A':pct>=80?'#EF9F27':'#1D9E75';
+      var taskCount = resourceOpenTaskCount(r);
+      var linkIcon = r.userId ? '<i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75"></i>' : '<i class="ti ti-link-off" title="Not linked yet" style="color:#ccc"></i>';
+      return '<tr>' +
+        '<td class="bold">' + (r.firstName||'') + '</td>' +
+        '<td class="bold">' + (r.lastName||'') + '</td>' +
+        '<td class="text-muted">' + (r.role||'—') + '</td>' +
+        '<td style="text-align:center">' + linkIcon + '</td>' +
+        '<td class="text-muted">' + (r.teamName||'—') + '</td>' +
+        '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + r.projects.length + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
+        '<td class="text-muted">' + (taskCount === null ? '—' : taskCount) + '</td>' +
+        '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:#f0ede8;border-radius:3px;overflow:hidden"><div style="height:100%;width:' + Math.min(pct,100) + '%;background:' + c + '"></div></div><span class="text-muted" style="font-size:11px;min-width:30px">' + pct + '%</span></div></td>' +
+        '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button></td>' +
+        '</tr>' + projectExpandRow(r, 9);
+    }).join('');
+    tableHtml = '<table><thead><tr>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'firstName\')">First name ' + arrow('firstName') + '</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'lastName\')">Last name ' + arrow('lastName') + '</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'role\')">Role ' + arrow('role') + '</th>' +
+      '<th style="text-align:center">Linked</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'teamName\')">Team ' + arrow('teamName') + '</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'projects\')">Projects ' + arrow('projects') + '</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'tasks\')">Open tasks ' + arrow('tasks') + '</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'capacity\')">Capacity ' + arrow('capacity') + '</th>' +
+      '<th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+  } else {
+    var trows = list.map(function(r) {
+      return '<tr>' +
+        '<td class="bold">' + r.name + '</td>' +
+        '<td class="text-muted">' + (r.managerName||'—') + '</td>' +
+        '<td class="text-muted">' + (r.members||[]).length + '</td>' +
+        '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + r.projects.length + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
+        '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button></td>' +
+        '</tr>' + projectExpandRow(r, 5);
+    }).join('');
+    tableHtml = '<table><thead><tr>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'name\')">Team ' + arrow('name') + '</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'managerName\')">Manager ' + arrow('managerName') + '</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'members\')">Members ' + arrow('members') + '</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'projects\')">Projects ' + arrow('projects') + '</th>' +
+      '<th></th></tr></thead><tbody>' + trows + '</tbody></table>';
+  }
 
   document.getElementById('content').innerHTML =
     '<div class="grid-3 mb-16">' +
-      '<div class="metric"><div class="metric-label">Total resources</div><div class="metric-value">' + D.resources.length + '</div><div class="metric-sub">' + D.resources.filter(function(r){ return r.type==='team'; }).length + ' teams, ' + D.resources.filter(function(r){ return r.type==='individual'; }).length + ' individuals</div></div>' +
+      '<div class="metric"><div class="metric-label">Total resources</div><div class="metric-value">' + D.resources.length + '</div><div class="metric-sub">' + teams.length + ' teams, ' + individuals.length + ' individuals</div></div>' +
       '<div class="metric"><div class="metric-label">At capacity</div><div class="metric-value" style="color:#A32D2D">' + over + '</div></div>' +
       '<div class="metric"><div class="metric-label">Near capacity</div><div class="metric-value" style="color:#854F0B">' + warn + '</div></div>' +
     '</div>' +
-    '<div class="card"><div class="section-title">Capacity by resource</div>' + rows +
-    '<div class="divider"></div><div style="display:flex;gap:16px;font-size:12px;color:#777">' +
-      '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#1D9E75;margin-right:4px"></span>Project (available)</span>' +
-      '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#EF9F27;margin-right:4px"></span>Project (near capacity)</span>' +
-      '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#E24B4A;margin-right:4px"></span>Project (over)</span>' +
-      '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#b0abe0;margin-right:4px"></span>BAU / non-project</span>' +
-    '</div></div>';
+    '<div class="tab-bar" style="margin-bottom:16px">' +
+      '<div class="tab' + (st.tab==='individual'?' active':'') + '" onclick="setResourceTab(\'individual\')">Individuals <span class="badge badge-gray">' + individuals.length + '</span></div>' +
+      '<div class="tab' + (st.tab==='team'?' active':'') + '" onclick="setResourceTab(\'team\')">Teams <span class="badge badge-gray">' + teams.length + '</span></div>' +
+    '</div>' +
+    '<div class="card"><div class="task-filter-bar"><input type="text" id="res-search" placeholder="Search resources…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onResourceSearch(this.value)"></div>' +
+    (list.length ? '<div class="table-wrap">' + tableHtml + '</div>' : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No resources match your search</p></div>') +
+    '</div>';
+
+  window.setResourceTab = function(t) { resourcesPageState.tab = t; resourcesPageState.sort = t === 'individual' ? 'firstName' : 'name'; resourcesPageState.dir = 'asc'; resourcesPageState.expandedId = null; pgResources(); };
+  window.setResourceSort = function(col) {
+    if (resourcesPageState.sort === col) resourcesPageState.dir = resourcesPageState.dir === 'asc' ? 'desc' : 'asc';
+    else { resourcesPageState.sort = col; resourcesPageState.dir = 'asc'; }
+    pgResources();
+  };
+  window.onResourceSearch = function(val) {
+    resourcesPageState.search = val;
+    pgResources();
+    var el = document.getElementById('res-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
 }
 
 function openManageResources() {
