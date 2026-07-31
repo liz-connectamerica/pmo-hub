@@ -2657,7 +2657,7 @@ function pgImportProjects() {
 }
 
 function pgResources() {
-  tb('Resources & capacity', D.role==='admin' ? '<button class="btn btn-primary" onclick="openManageResources()"><i class="ti ti-settings"></i> Manage resources</button>' : '');
+  tb('Resources & capacity', D.role==='admin' ? '<button class="btn" onclick="openManageResources()"><i class="ti ti-settings"></i> Manage resources</button> <button class="btn btn-primary" onclick="openAddResource()"><i class="ti ti-plus"></i> Add resource</button>' : '');
   var over = D.resources.filter(function(r){ return r.allocated>=100; }).length;
   var warn = D.resources.filter(function(r){ return r.allocated>=80&&r.allocated<100; }).length;
 
@@ -2700,14 +2700,19 @@ function pgResources() {
 }
 
 function openManageResources() {
-  var listHtml = D.resources.map(function(r) {
+  var sorted = D.resources.slice().sort(function(a,b){
+    if (a.type !== b.type) return a.type === 'team' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  var listHtml = sorted.map(function(r) {
     var memberList = r.type==='team' && r.members ? r.members.join(', ') : '';
     var linkBadge = r.type !== 'team' ? (r.userId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : ' <i class="ti ti-link-off" title="Not linked to an account yet" style="color:#ccc;font-size:12px"></i>') : '';
+    var typeBadge = r.type === 'team' ? '<span class="badge badge-purple" style="margin-left:8px">Team</span>' : '<span class="badge badge-blue" style="margin-left:8px">Individual</span>';
     var subline = r.type==='team'
       ? (r.managerName ? 'Manager: ' + r.managerName : 'No manager set') + (memberList?' &bull; Members: '+memberList:'')
       : (r.role||'') + (r.teamName ? ' &bull; ' + r.teamName : '') + (r.email?' &bull; '+r.email:'');
     return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0ede8;gap:8px">' +
-      '<div><div style="font-size:13px;font-weight:600">' + r.name + linkBadge + '</div>' +
+      '<div><div style="font-size:13px;font-weight:600">' + r.name + typeBadge + linkBadge + '</div>' +
       '<div class="text-muted">' + subline + '</div></div>' +
       '<div style="display:flex;gap:6px">' +
         '<button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button>' +
@@ -2728,8 +2733,8 @@ function openManageResources() {
 }
 
 function openAddResource() {
-  var teamOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'team'; }).map(function(r){ return '<option value="' + r.id + '">' + r.name + '</option>'; }).join('');
-  var managerOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'individual'; }).map(function(r){ return '<option value="' + r.id + '">' + r.name + '</option>'; }).join('');
+  var teamOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'team'; }).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(r){ return '<option value="' + r.id + '">' + r.name + '</option>'; }).join('');
+  var managerOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'individual'; }).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(r){ return '<option value="' + r.id + '">' + r.name + '</option>'; }).join('');
   showModal('<div class="modal-title">Add resource <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Type</div><select id="nr-type" onchange="toggleAddResourceType()"><option value="individual">Individual</option><option value="team">Team</option></select></div>' +
     '<div id="nr-individual-fields">' +
@@ -2817,9 +2822,14 @@ function openAddResource() {
 function editResource(rid) {
   var res = D.resources.find(function(x){ return x.id===rid; });
   closeModal();
-  var peopleOpts = D.people.map(function(n){ return '<option' + (res.members&&res.members.indexOf(n)>=0?' selected':'') + '>' + n + '</option>'; }).join('');
-  var teamOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'team'; }).map(function(r){ return '<option value="' + r.id + '"' + (res.teamId===r.id?' selected':'') + '>' + r.name + '</option>'; }).join('');
-  var managerOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'individual'; }).map(function(r){ return '<option value="' + r.id + '"' + (res.managerResourceId===r.id?' selected':'') + '>' + r.name + '</option>'; }).join('');
+  var teamOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'team'; }).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(r){ return '<option value="' + r.id + '"' + (res.teamId===r.id?' selected':'') + '>' + r.name + '</option>'; }).join('');
+  var managerOpts = '<option value="">— None —</option>' + D.resources.filter(function(r){ return r.type === 'individual'; }).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(r){ return '<option value="' + r.id + '"' + (res.managerResourceId===r.id?' selected':'') + '>' + r.name + '</option>'; }).join('');
+  var memberIds = res.memberIds || [];
+  var candidateResources = D.resources.filter(function(r){ return r.type === 'individual' && r.id !== rid; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+  var memberChecklist = candidateResources.map(function(r){
+    return '<label class="th-filter-opt member-row" data-name="' + r.name.toLowerCase() + '" style="display:block;padding:5px 0;font-size:13px"><input type="checkbox" value="' + r.id + '"' + (memberIds.indexOf(r.id)>=0?' checked':'') + ' style="margin-right:8px"> ' + r.name + (r.teamName ? ' <span class="text-muted" style="font-size:11px">(' + r.teamName + ')</span>' : '') + '</label>';
+  }).join('');
+
   showModal('<div class="modal-title">Edit resource <button class="btn btn-sm" onclick="closeModal();openManageResources()"><i class="ti ti-x"></i></button></div>' +
     (res.type === 'individual'
       ? '<div class="grid-2"><div class="form-group"><div class="form-label">First name</div><input type="text" id="er-first" value="' + (res.firstName||'') + '"></div>' +
@@ -2830,12 +2840,22 @@ function editResource(rid) {
         '<div class="form-group"><div class="form-label">Project allocation (%)</div><input type="number" id="er-alloc" value="' + res.allocated + '" min="0" max="100"></div></div>'
       : '<div class="form-group"><div class="form-label">Team name</div><input type="text" id="er-name" value="' + res.name + '"></div>' +
         '<div class="form-group"><div class="form-label">Manager</div><select id="er-manager">' + managerOpts + '</select></div>' +
-        '<div class="form-group"><div class="form-label">Team members</div><select multiple id="er-members" style="height:120px">' + peopleOpts + '</select></div>'
+        '<div class="form-group"><div class="form-label">Team members</div>' +
+          '<input type="text" id="er-member-search" placeholder="Search people…" oninput="filterMemberChecklist(this.value)">' +
+          '<div id="er-member-list" style="max-height:220px;overflow-y:auto;border:1px solid #e8e8e5;border-radius:8px;padding:8px;margin-top:6px">' + (memberChecklist || '<span class="text-muted" style="font-size:13px">No individual resources yet</span>') + '</div>' +
+        '</div>'
     ) +
     '<div class="modal-footer"><button class="btn" onclick="closeModal();openManageResources()">Cancel</button>' +
     '<button class="btn btn-primary" id="er-save"><i class="ti ti-check"></i> Save changes</button></div>');
   document.getElementById('er-save').onclick = function(){ return saveResource(rid); };
 }
+
+window.filterMemberChecklist = function(query) {
+  var q = query.trim().toLowerCase();
+  document.querySelectorAll('#er-member-list .member-row').forEach(function(row) {
+    row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'block' : 'none';
+  });
+};
 
 async function saveResource(rid) {
   var res = D.resources.find(function(x){ return x.id===rid; });
@@ -2883,23 +2903,16 @@ async function saveResource(rid) {
     var mgr = D.resources.find(function(x){ return x.id === managerId; });
     res.managerName = mgr ? mgr.name : null;
 
-    var mEl = document.getElementById('er-members');
-    if (mEl) {
-      var newNames = Array.from(mEl.selectedOptions).map(function(o){ return o.value; });
-      var newIds = newNames.map(function(n){ return resolveAssignee(n); }).filter(Boolean);
-      var newResourceIdByName = {};
-      newIds.forEach(function(profile){
-        var match = D.resources.find(function(r){ return r.userId === profile.id; });
-        if (match) newResourceIdByName[profile.id] = match.id;
-      });
+    var mList = document.getElementById('er-member-list');
+    if (mList) {
+      var newMemberResourceIds = Array.from(mList.querySelectorAll('input[type=checkbox]:checked')).map(function(cb){ return cb.value; });
       var oldMemberResourceIds = res.memberIds || [];
-      var newMemberResourceIds = Object.values(newResourceIdByName);
       var toAdd = newMemberResourceIds.filter(function(id){ return oldMemberResourceIds.indexOf(id) < 0; });
       var toRemove = oldMemberResourceIds.filter(function(id){ return newMemberResourceIds.indexOf(id) < 0; });
       if (toAdd.length) await sb.from('resource_team_members').insert(toAdd.map(function(id){ return { team_resource_id: rid, member_resource_id: id }; }));
       for (var i = 0; i < toRemove.length; i++) { await sb.from('resource_team_members').delete().eq('team_resource_id', rid).eq('member_resource_id', toRemove[i]); }
-      res.members = newNames;
       res.memberIds = newMemberResourceIds;
+      res.members = newMemberResourceIds.map(function(id){ var ind = D.resources.find(function(x){ return x.id===id; }); return ind ? ind.name : null; }).filter(Boolean);
       toAdd.forEach(function(id){ var ind = D.resources.find(function(x){ return x.id===id; }); if (ind) { ind.teamId = rid; ind.teamName = tname; } });
       toRemove.forEach(function(id){ var ind = D.resources.find(function(x){ return x.id===id; }); if (ind && ind.teamId === rid) { ind.teamId = null; ind.teamName = null; } });
     }
