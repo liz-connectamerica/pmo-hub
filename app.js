@@ -2665,7 +2665,7 @@ function resourceOpenTaskCount(r) {
 }
 
 function pgResources() {
-  tb('Resources', D.role==='admin' ? '<button class="btn" onclick="openManageResources()"><i class="ti ti-settings"></i> Manage resources</button> <button class="btn btn-primary" onclick="openAddResource()"><i class="ti ti-plus"></i> Add resource</button>' : '');
+  tb('Resources', D.role==='admin' ? '<button class="btn btn-primary" onclick="openAddResource()"><i class="ti ti-plus"></i> Add resource</button>' : '');
   var st = resourcesPageState;
   var individuals = D.resources.filter(function(r){ return r.type === 'individual'; });
   var teams = D.resources.filter(function(r){ return r.type === 'team'; });
@@ -2721,7 +2721,7 @@ function pgResources() {
         '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + r.projects.length + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
         '<td class="text-muted">' + (taskCount === null ? '—' : taskCount) + '</td>' +
         '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:#f0ede8;border-radius:3px;overflow:hidden"><div style="height:100%;width:' + Math.min(pct,100) + '%;background:' + c + '"></div></div><span class="text-muted" style="font-size:11px;min-width:30px">' + pct + '%</span></div></td>' +
-        '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button></td>' +
+        '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button></td>' +
         '</tr>' + projectExpandRow(r, 9);
     }).join('');
     tableHtml = '<table><thead><tr>' +
@@ -2741,7 +2741,7 @@ function pgResources() {
         '<td class="text-muted">' + (r.managerName||'—') + '</td>' +
         '<td class="text-muted">' + (r.members||[]).length + '</td>' +
         '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + r.projects.length + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
-        '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button></td>' +
+        '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button></td>' +
         '</tr>' + projectExpandRow(r, 5);
     }).join('');
     tableHtml = '<table><thead><tr>' +
@@ -2780,37 +2780,12 @@ function pgResources() {
   };
 }
 
-function openManageResources() {
-  var sorted = D.resources.slice().sort(function(a,b){
-    if (a.type !== b.type) return a.type === 'team' ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-  var listHtml = sorted.map(function(r) {
-    var memberList = r.type==='team' && r.members ? r.members.join(', ') : '';
-    var linkBadge = r.type !== 'team' ? (r.userId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : ' <i class="ti ti-link-off" title="Not linked to an account yet" style="color:#ccc;font-size:12px"></i>') : '';
-    var typeBadge = r.type === 'team' ? '<span class="badge badge-purple" style="margin-left:8px">Team</span>' : '<span class="badge badge-blue" style="margin-left:8px">Individual</span>';
-    var subline = r.type==='team'
-      ? (r.managerName ? 'Manager: ' + r.managerName : 'No manager set') + (memberList?' &bull; Members: '+memberList:'')
-      : (r.role||'') + (r.teamName ? ' &bull; ' + r.teamName : '') + (r.email?' &bull; '+r.email:'');
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0ede8;gap:8px">' +
-      '<div><div style="font-size:13px;font-weight:600">' + r.name + typeBadge + linkBadge + '</div>' +
-      '<div class="text-muted">' + subline + '</div></div>' +
-      '<div style="display:flex;gap:6px">' +
-        '<button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button>' +
-        '<button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button>' +
-      '</div></div>';
-  }).join('');
-  showModal('<div class="modal-title">Manage resources <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div style="margin-bottom:16px">' + listHtml + '</div>' +
-    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button>' +
-    '<button class="btn btn-primary" onclick="closeModal();openAddResource()"><i class="ti ti-plus"></i> Add resource</button></div>', true);
-  window.deleteResource = async function(rid) {
-    if (!confirm('Remove this resource?')) return;
-    var result = await sb.from('resources').delete().eq('id', rid);
-    if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
-    D.resources = D.resources.filter(function(x){ return x.id!==rid; });
-    showToast('Resource removed'); closeModal(); pgResources();
-  };
+async function deleteResource(rid) {
+  if (!confirm('Remove this resource?')) return;
+  var result = await sb.from('resources').delete().eq('id', rid);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  D.resources = D.resources.filter(function(x){ return x.id!==rid; });
+  showToast('Resource removed'); closeModal(); pgResources();
 }
 
 function openAddResource() {
@@ -2911,7 +2886,7 @@ function editResource(rid) {
     return '<label class="th-filter-opt member-row" data-name="' + r.name.toLowerCase() + '" style="display:block;padding:5px 0;font-size:13px"><input type="checkbox" value="' + r.id + '"' + (memberIds.indexOf(r.id)>=0?' checked':'') + ' style="margin-right:8px"> ' + r.name + (r.teamName ? ' <span class="text-muted" style="font-size:11px">(' + r.teamName + ')</span>' : '') + '</label>';
   }).join('');
 
-  showModal('<div class="modal-title">Edit resource <button class="btn btn-sm" onclick="closeModal();openManageResources()"><i class="ti ti-x"></i></button></div>' +
+  showModal('<div class="modal-title">Edit resource <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     (res.type === 'individual'
       ? '<div class="grid-2"><div class="form-group"><div class="form-label">First name</div><input type="text" id="er-first" value="' + (res.firstName||'') + '"></div>' +
         '<div class="form-group"><div class="form-label">Last name</div><input type="text" id="er-last" value="' + (res.lastName||'') + '"></div></div>' +
@@ -2926,7 +2901,7 @@ function editResource(rid) {
           '<div id="er-member-list" style="max-height:220px;overflow-y:auto;border:1px solid #e8e8e5;border-radius:8px;padding:8px;margin-top:6px">' + (memberChecklist || '<span class="text-muted" style="font-size:13px">No individual resources yet</span>') + '</div>' +
         '</div>'
     ) +
-    '<div class="modal-footer"><button class="btn" onclick="closeModal();openManageResources()">Cancel</button>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="er-save"><i class="ti ti-check"></i> Save changes</button></div>');
   document.getElementById('er-save').onclick = function(){ return saveResource(rid); };
 }
