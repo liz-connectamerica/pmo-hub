@@ -257,6 +257,97 @@ async function ensureOnTeam(p, profile) {
   p.teamIds.push(profile.id);
 }
 
+function refreshTaskView() {
+  var m = location.hash.match(/^#\/project\/([^\/]+)/);
+  if (m && document.getElementById('ptab-content')) {
+    pgProjectDetail(m[1], 'tasks');
+  } else if (currentPage === 'my-tasks') {
+    pgMyTasks();
+  }
+}
+
+function openCompleteTaskPrompt(pid2, idx) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var task = pr.tasks[idx];
+  showModal('<div class="modal-title">Mark "' + task.title + '" as done <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Add a comment (optional)</div><textarea id="complete-task-comment" rows="3" placeholder="Anything worth noting about this completion?"></textarea></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="complete-task-confirm"><i class="ti ti-check"></i> Mark done</button></div>');
+  document.getElementById('complete-task-confirm').onclick = async function() {
+    var commentText = document.getElementById('complete-task-comment').value.trim();
+    var btn = document.getElementById('complete-task-confirm'); btn.disabled = true;
+    await completeMyTask(pid2, idx, commentText);
+    closeModal();
+  };
+}
+
+async function completeMyTask(pid2, idx, commentText) {
+  var pr = D.projects.find(function(x){return x.id===pid2;});
+  var tk = pr.tasks[idx]; var old = tk.status;
+  var result = await sb.from('tasks').update({ status: 'Done' }).eq('id', tk.id);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  tk.status='Done'; tk.log=tk.log||[];
+  tk.log.push(await writeLog('task_log', 'task_id', tk.id, 'Updated', 'Status: "'+old+'" → "Done"'));
+  if (commentText) {
+    var commentResult = await sb.from('task_comments').insert({
+      task_id: tk.id, author_id: D.currentProfile.id, author_name: D.currentProfile.display_name, body: commentText
+    }).select().single();
+    if (!commentResult.error) {
+      tk.comments = tk.comments || [];
+      tk.comments.push({ id: commentResult.data.id, text: commentText, author: D.currentProfile.display_name, date: ymd(commentResult.data.created_at) });
+    }
+  }
+  refreshTaskView();
+  showToast('Task marked complete');
+}
+
+function toggleTaskComments(pid2, taskId) {
+  var key = pid2 + '|' + taskId;
+  taskCommentsOpen[key] = !taskCommentsOpen[key];
+  refreshTaskView();
+}
+
+async function addComment(pid2, taskId) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var tk = pr.tasks.find(function(x){ return x.id === taskId; });
+  var el = document.getElementById('cmt-input-' + taskId);
+  var text = el ? el.value.trim() : '';
+  if (!text) { showToast('Comment cannot be empty'); return; }
+  var result = await sb.from('task_comments').insert({
+    task_id: taskId, author_id: D.currentProfile.id, author_name: D.currentProfile.display_name, body: text
+  }).select().single();
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  tk.comments = tk.comments || [];
+  tk.comments.push({ id: result.data.id, text: text, author: D.currentProfile.display_name, date: ymd(result.data.created_at) });
+  refreshTaskView();
+  showToast('Comment added');
+}
+
+async function openEditComment(pid2, taskId, cid) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var tk = pr.tasks.find(function(x){ return x.id === taskId; });
+  var c = tk.comments.find(function(x){ return x.id === cid; });
+  var text = prompt('Edit comment:', c.text);
+  if (text == null) return;
+  text = text.trim();
+  if (!text) { showToast('Comment cannot be empty'); return; }
+  var result = await sb.from('task_comments').update({ body: text, edited_at: new Date().toISOString() }).eq('id', cid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  c.text = text;
+  refreshTaskView();
+  showToast('Comment updated');
+}
+
+async function deleteComment(pid2, taskId, cid) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var tk = pr.tasks.find(function(x){ return x.id === taskId; });
+  var result = await sb.from('task_comments').delete().eq('id', cid);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  tk.comments = tk.comments.filter(function(x){ return x.id !== cid; });
+  refreshTaskView();
+  showToast('Comment deleted');
+}
+
 function teamNames() {
   return (D.resources || []).filter(function(r){ return r.type === 'team'; }).map(function(r){ return r.name; });
 }
@@ -1375,40 +1466,6 @@ function pgProjectDetail(pid, tab) {
     pr.raid[type].splice(idx,1);
     document.getElementById('ptab-content').innerHTML=tabC('raid');
   };
-  window.openCompleteTaskPrompt = function(pid2, idx) {
-    var pr = D.projects.find(function(x){ return x.id === pid2; });
-    var task = pr.tasks[idx];
-    showModal('<div class="modal-title">Mark "' + task.title + '" as done <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-      '<div class="form-group"><div class="form-label">Add a comment (optional)</div><textarea id="complete-task-comment" rows="3" placeholder="Anything worth noting about this completion?"></textarea></div>' +
-      '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
-      '<button class="btn btn-primary" id="complete-task-confirm"><i class="ti ti-check"></i> Mark done</button></div>');
-    document.getElementById('complete-task-confirm').onclick = async function() {
-      var commentText = document.getElementById('complete-task-comment').value.trim();
-      var btn = document.getElementById('complete-task-confirm'); btn.disabled = true;
-      await completeMyTask(pid2, idx, commentText);
-      closeModal();
-    };
-  };
-  window.completeMyTask = async function(pid2,idx,commentText){
-    var pr=D.projects.find(function(x){return x.id===pid2;});
-    var tk=pr.tasks[idx]; var old=tk.status;
-    var result = await sb.from('tasks').update({ status: 'Done' }).eq('id', tk.id);
-    if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-    tk.status='Done'; tk.log=tk.log||[];
-    tk.log.push(await writeLog('task_log', 'task_id', tk.id, 'Updated', 'Status: "'+old+'" → "Done"'));
-    if (commentText) {
-      var commentResult = await sb.from('task_comments').insert({
-        task_id: tk.id, author_id: D.currentProfile.id, author_name: D.currentProfile.display_name, body: commentText
-      }).select().single();
-      if (!commentResult.error) {
-        tk.comments = tk.comments || [];
-        tk.comments.push({ id: commentResult.data.id, text: commentText, author: D.currentProfile.display_name, date: ymd(commentResult.data.created_at) });
-      }
-    }
-    if (document.getElementById('ptab-content')) { document.getElementById('ptab-content').innerHTML=tabC('tasks'); }
-    else if (currentPage === 'my-tasks') { pgMyTasks(); }
-    showToast('Task marked complete');
-  };
   window.openAddMilestone = function(pid2){ openMilestoneModal(pid2); };
   window.openAddTask      = function(pid2){ openTaskModal(pid2, null); };
   window.openEditTask     = function(pid2,idx){ openTaskModal(pid2, idx); };
@@ -1417,82 +1474,39 @@ function pgProjectDetail(pid, tab) {
   window.setTaskSort = function(pid2, col) {
     var s = getTaskState(pid2);
     if (s.sort === col) s.dir = s.dir === 'asc' ? 'desc' : 'asc'; else { s.sort = col; s.dir = 'asc'; }
-    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+    refreshTaskView();
   };
   window.onTaskSearch = function(pid2, val) {
     getTaskState(pid2).search = val;
-    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+    refreshTaskView();
     var el = document.getElementById('task-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
   window.toggleTaskFilterPanel = function(pid2, col) {
     var s = getTaskState(pid2);
     s.openFilter = s.openFilter === col ? null : col;
-    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+    refreshTaskView();
   };
   window.closeTaskFilterPanel = function(pid2) {
     getTaskState(pid2).openFilter = null;
-    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+    refreshTaskView();
   };
   window.toggleTaskFilterValue = function(pid2, col, val) {
     var s = getTaskState(pid2);
     var arr = col === 'assignee' ? s.fAssignee : s.fStatus;
     var i = arr.indexOf(val);
     if (i >= 0) arr.splice(i,1); else arr.push(val);
-    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+    refreshTaskView();
   };
   window.clearTaskFilter = function(pid2, col) {
     var s = getTaskState(pid2);
     if (col === 'assignee') s.fAssignee = []; else s.fStatus = [];
-    document.getElementById('ptab-content').innerHTML = tabC('tasks');
+    refreshTaskView();
   };
   window.toggleTaskLog = function(pid2, taskId) {
     var key = pid2 + '|' + taskId;
     taskLogOpen[key] = !taskLogOpen[key];
-    document.getElementById('ptab-content').innerHTML = tabC('tasks');
-  };
-  window.toggleTaskComments = function(pid2, taskId) {
-    var key = pid2 + '|' + taskId;
-    taskCommentsOpen[key] = !taskCommentsOpen[key];
-    document.getElementById('ptab-content').innerHTML = tabC('tasks');
-  };
-  window.addComment = async function(pid2, taskId) {
-    var pr = D.projects.find(function(x){ return x.id === pid2; });
-    var tk = pr.tasks.find(function(x){ return x.id === taskId; });
-    var el = document.getElementById('cmt-input-' + taskId);
-    var text = el ? el.value.trim() : '';
-    if (!text) { showToast('Comment cannot be empty'); return; }
-    var result = await sb.from('task_comments').insert({
-      task_id: taskId, author_id: D.currentProfile.id, author_name: D.currentProfile.display_name, body: text
-    }).select().single();
-    if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-    tk.comments = tk.comments || [];
-    tk.comments.push({ id: result.data.id, text: text, author: D.currentProfile.display_name, date: ymd(result.data.created_at) });
-    document.getElementById('ptab-content').innerHTML = tabC('tasks');
-    showToast('Comment added');
-  };
-  window.openEditComment = async function(pid2, taskId, cid) {
-    var pr = D.projects.find(function(x){ return x.id === pid2; });
-    var tk = pr.tasks.find(function(x){ return x.id === taskId; });
-    var c = tk.comments.find(function(x){ return x.id === cid; });
-    var text = prompt('Edit comment:', c.text);
-    if (text == null) return;
-    text = text.trim();
-    if (!text) { showToast('Comment cannot be empty'); return; }
-    var result = await sb.from('task_comments').update({ body: text, edited_at: new Date().toISOString() }).eq('id', cid);
-    if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-    c.text = text;
-    document.getElementById('ptab-content').innerHTML = tabC('tasks');
-    showToast('Comment updated');
-  };
-  window.deleteComment = async function(pid2, taskId, cid) {
-    var pr = D.projects.find(function(x){ return x.id === pid2; });
-    var tk = pr.tasks.find(function(x){ return x.id === taskId; });
-    var result = await sb.from('task_comments').delete().eq('id', cid);
-    if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
-    tk.comments = tk.comments.filter(function(x){ return x.id !== cid; });
-    document.getElementById('ptab-content').innerHTML = tabC('tasks');
-    showToast('Comment deleted');
+    refreshTaskView();
   };
   window.toggleRaidLog = function(pid2, type, idx) {
     var key = pid2 + '|' + type + '|' + idx;
@@ -2960,11 +2974,35 @@ function pgMyTasks() {
   }
 
   var rows = displayed.map(function(item) {
-    return '<tr><td class="bold">' + item.task.title + '</td>' +
-      '<td><a href="#" onclick="goToProject(\'' + item.project.id + '\');return false;">' + item.project.name + '</a> ' +
-        '<button class="btn btn-sm" title="View this project\'s task list" onclick="goToProject(\'' + item.project.id + '\',\'tasks\')"><i class="ti ti-list"></i></button></td>' +
-      '<td>' + bdg(item.task.status) + '</td><td class="text-muted">' + (item.task.due || '—') + '</td>' +
-      '<td>' + (item.task.status!=='Done' ? '<button class="btn btn-sm btn-success" onclick="openCompleteTaskPrompt(\'' + item.project.id + '\',' + item.idx + ')"><i class="ti ti-check"></i> Mark done</button>' : '') + '</td></tr>';
+    var p = item.project, task = item.task;
+    var canEditThis = canEdit(p);
+    var comments = task.comments || [];
+    var cKey = p.id + '|' + task.id;
+    var cOpenNow = !!taskCommentsOpen[cKey];
+    var commentsRow = '';
+    if (cOpenNow) {
+      var commentEntries = comments.length ? comments.slice().reverse().map(function(c) {
+        var mine = c.author === D.currentProfile.display_name;
+        return '<div class="comment-item">' +
+          '<div class="comment-meta"><strong>' + c.author + '</strong> <span class="text-muted">' + c.date + '</span></div>' +
+          '<div class="comment-text">' + c.text + '</div>' +
+          ((canEditThis || mine) ? '<div class="comment-actions"><button class="btn btn-sm" onclick="openEditComment(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteComment(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')"><i class="ti ti-trash"></i></button></div>' : '') +
+          '</div>';
+      }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No comments yet</div>';
+      commentsRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+        commentEntries +
+        '<div class="comment-add-row"><textarea id="cmt-input-' + task.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addComment(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
+        '</div></td></tr>';
+    }
+    return '<tr><td class="bold">' + task.title + '</td>' +
+      '<td>' + p.name + ' ' +
+        '<button class="btn btn-sm" title="View project overview" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-info-circle"></i></button> ' +
+        '<button class="btn btn-sm" title="View this project\'s task list" onclick="goToProject(\'' + p.id + '\',\'tasks\')"><i class="ti ti-list"></i></button></td>' +
+      '<td>' + bdg(task.status) + '</td><td class="text-muted">' + (task.due || '—') + '</td>' +
+      '<td><div style="display:flex;gap:4px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm" title="Comments" onclick="toggleTaskComments(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (comments.length ? ' ' + comments.length : '') + '</button>' +
+        (task.status!=='Done' ? '<button class="btn btn-sm btn-success" onclick="openCompleteTaskPrompt(\'' + p.id + '\',' + item.idx + ')"><i class="ti ti-check"></i> Mark done</button>' : '') +
+      '</div></td></tr>' + commentsRow;
   }).join('');
 
   var searchBar = '<div class="task-filter-bar"><input type="text" id="my-tasks-search" placeholder="Search your tasks…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onMyTasksSearch(this.value)"></div>';
@@ -3007,6 +3045,7 @@ function pgMyTasks() {
     pgMyTasks();
   };
   window.clearMyTasksFilter = function(col) { myTasksState[col] = []; pgMyTasks(); };
+  document.getElementById('content').style.paddingBottom = myTasksState.openFilter ? '220px' : '';
 }
 
 function pgMyCapacity() {
