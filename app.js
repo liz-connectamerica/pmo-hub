@@ -389,6 +389,10 @@ function teamNames() {
   return (D.resources || []).filter(function(r){ return r.type === 'team'; }).map(function(r){ return r.name; });
 }
 
+function individualResourceNames() {
+  return (D.resources || []).filter(function(r){ return r.type === 'individual'; }).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(r){ return r.name; });
+}
+
 function resolveAssignee(name) {
   return (D.peopleByName && D.peopleByName[name]) ? D.peopleByName[name] : null;
 }
@@ -996,12 +1000,12 @@ function pgBacklog() {
 
 function openScheduleModal(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  var ownerPoolSch = p.owner && D.people.indexOf(p.owner) < 0 ? D.people.concat([p.owner]) : D.people;
+  var ownerPoolSch = p.owner && individualResourceNames().indexOf(p.owner) < 0 ? individualResourceNames().concat([p.owner]) : individualResourceNames();
   var ownerOpts = '<option value="">— None (assign later) —</option>' + ownerPoolSch.map(function(n){
-    var isInactiveCurrent = p.owner === n && D.people.indexOf(n) < 0;
-    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner === n ? ' selected' : '') + '>' + n + (isInactiveCurrent ? ' (deactivated)' : '') + '</option>';
+    var isInactiveCurrent = p.owner === n && individualResourceNames().indexOf(n) < 0;
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner === n ? ' selected' : '') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
   }).join('');
-  var memberOpts = D.people.map(function(n) {
+  var memberOpts = individualResourceNames().map(function(n) {
     var chk = p.team.indexOf(n) >= 0 ? ' checked' : '';
     return '<label class="member-check schm-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" id="schm-' + n.replace(/ /g,'_') + '"' + chk + '> ' + n + '</label>';
   }).join('');
@@ -1027,7 +1031,7 @@ async function scheduleProject(pid) {
   var start = document.getElementById('sch-start').value;
   var end   = document.getElementById('sch-end').value;
   if (!start || !end) { showToast('Please set a start and end date'); return; }
-  var newTeamNames = D.people.filter(function(n){ var el = document.getElementById('schm-' + n.replace(/ /g,'_')); return el && el.checked; });
+  var newTeamNames = individualResourceNames().filter(function(n){ var el = document.getElementById('schm-' + n.replace(/ /g,'_')); return el && el.checked; });
   var ownerName = document.getElementById('sch-owner').value;
   var ownerResource = resolveResource(ownerName);
 
@@ -1098,7 +1102,7 @@ function pgPlanned() {
 async function activateProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   // require at least one named resource (not just a team name)
-  var hasResource = p.team.some(function(m){ return D.people.indexOf(m) >= 0; });
+  var hasResource = p.team.some(function(m){ return individualResourceNames().indexOf(m) >= 0; });
   if (!hasResource) { showToast('Please assign at least one individual resource before activating', 'error'); openScheduleModal(pid); return; }
   var result = await sb.from('projects').update({ stage: 'active', status: 'On Track' }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
@@ -1221,7 +1225,7 @@ function pgProjectDetail(pid, tab) {
           '</div>' : '');
     }
     if (t === 'team') {
-      var candidatePeople = D.people.filter(function(n){ return p.team.indexOf(n) < 0; });
+      var candidatePeople = individualResourceNames().filter(function(n){ return p.team.indexOf(n) < 0; });
       var teamRows = p.team.length
         ? p.team.map(function(m,i){
             var isTeam = teamNames().indexOf(m) >= 0;
@@ -1749,11 +1753,11 @@ function openTaskModal(pid, idx) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   var task = idx != null ? p.tasks[idx] : null;
   // only project members + all people for admin/pm
-  var pool = canEdit(p) ? D.people.concat(teamNames()) : p.team;
+  var pool = canEdit(p) ? individualResourceNames().concat(teamNames()) : p.team;
   if (task && task.assignee && pool.indexOf(task.assignee) < 0) pool = pool.concat([task.assignee]);
   var assigneeOpts = pool.map(function(n){
-    var isInactiveCurrent = task && task.assignee === n && D.people.indexOf(n) < 0 && teamNames().indexOf(n) < 0;
-    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (task && task.assignee===n ? ' selected' : '') + '>' + n + (isInactiveCurrent ? ' (deactivated)' : '') + '</option>';
+    var isInactiveCurrent = task && task.assignee === n && individualResourceNames().indexOf(n) < 0 && teamNames().indexOf(n) < 0;
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (task && task.assignee===n ? ' selected' : '') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
   }).join('');
   showModal('<div class="modal-title">' + (task?'Edit task':'Add task') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Task title *</div><input type="text" id="tm-title" value="' + (task?task.title:'') + '" placeholder="Task name"></div>' +
@@ -1809,11 +1813,11 @@ function openRaidModal(pid, type, idx) {
   var item = isEdit ? p.raid[type][idx] : null;
   var label = {risks:'Risk',assumptions:'Assumption',issues:'Issue',dependencies:'Dependency'}[type];
   // owner: project members; with option to add
-  var ownerPool = p.team.filter(function(m){ return D.people.indexOf(m) >= 0; });
+  var ownerPool = p.team.slice();
   if (item && item.owner && ownerPool.indexOf(item.owner) < 0) ownerPool = ownerPool.concat([item.owner]);
   var ownerOpts = '<option value="">— Select —</option>' + ownerPool.map(function(n){
-    var isInactiveCurrent = item && item.owner === n && D.people.indexOf(n) < 0;
-    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (item && item.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (deactivated)' : '') + '</option>';
+    var isInactiveCurrent = item && item.owner === n && p.team.indexOf(n) < 0;
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (item && item.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (no longer on the team)' : '') + '</option>';
   }).join('') +
     '<option value="__add__">+ Add member to project…</option>';
   var extra = '';
@@ -1841,7 +1845,7 @@ function openRaidModal(pid, type, idx) {
     var sel = document.getElementById('rd-owner');
     if (sel.value === '__add__') {
       var pr2 = D.projects.find(function(x){ return x.id === pid2; });
-      var nonMembers = D.people.filter(function(n){ return pr2.team.indexOf(n) < 0; });
+      var nonMembers = individualResourceNames().filter(function(n){ return pr2.team.indexOf(n) < 0; });
       var chosen = prompt('Select person to add to project:\n' + nonMembers.map(function(n,i){ return (i+1)+'. '+n; }).join('\n') + '\n\nEnter number:');
       var num = parseInt(chosen);
       if (num && nonMembers[num-1]) {
@@ -1854,7 +1858,7 @@ function openRaidModal(pid, type, idx) {
         pr2.teamIds.push(chosenResource.id);
         addNotif(chosenName, 'You have been added to project "' + pr2.name + '".', 'team');
         showToast(chosenName + ' added to project');
-        var newOpts = '<option value="">— Select —</option>' + pr2.team.filter(function(m){ return D.people.indexOf(m)>=0; }).map(function(n){ return '<option>' + n + '</option>'; }).join('') + '<option value="__add__">+ Add member to project…</option>';
+        var newOpts = '<option value="">— Select —</option>' + pr2.team.map(function(n){ return '<option>' + n + '</option>'; }).join('') + '<option value="__add__">+ Add member to project…</option>';
         sel.innerHTML = newOpts;
       } else {
         sel.value = '';
@@ -2077,10 +2081,10 @@ function editProject(pid) {
   var phaseOpts  = PHASES.map(function(s){   return '<option' + (p.phase===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var priorOpts  = PRIORITIES.map(function(s){ return '<option' + (p.priority===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var valOpts    = VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  var ownerPoolEdit = p.owner && D.people.indexOf(p.owner) < 0 ? D.people.concat([p.owner]) : D.people;
+  var ownerPoolEdit = p.owner && individualResourceNames().indexOf(p.owner) < 0 ? individualResourceNames().concat([p.owner]) : individualResourceNames();
   var ownerOpts     = '<option value="">— None —</option>' + ownerPoolEdit.map(function(n){
-    var isInactiveCurrent = p.owner===n && D.people.indexOf(n) < 0;
-    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (deactivated)' : '') + '</option>';
+    var isInactiveCurrent = p.owner===n && individualResourceNames().indexOf(n) < 0;
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
   }).join('');
   var catOpts    = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option' + (p.category===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var buOpts     = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
@@ -2165,7 +2169,7 @@ async function deleteProject(pid) {
 function openNewProjectModal() {
   var valOpts = VALUE_AREAS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var priorOpts = PRIORITIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
-  var ownerOpts = '<option value="">— None —</option>' + D.people.map(function(n){ return '<option>' + n + '</option>'; }).join('');
+  var ownerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var catOpts = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var buOpts = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   showModal('<div class="modal-title">Create new project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
