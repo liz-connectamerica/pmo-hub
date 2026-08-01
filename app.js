@@ -99,7 +99,7 @@ async function loadAllProjects() {
   var results = await Promise.all([
     sb.from('projects').select('*'),
     sb.from('profiles').select('id, display_name, is_active'),
-    sb.from('project_team').select('*'),
+    sb.from('resource_projects').select('*'),
     sb.from('milestones').select('*'),
     sb.from('milestone_log').select('*'),
     sb.from('tasks').select('*'),
@@ -108,7 +108,8 @@ async function loadAllProjects() {
     sb.from('raid_items').select('*'),
     sb.from('raid_log').select('*'),
     sb.from('doc_folders').select('*'),
-    sb.from('documents').select('*')
+    sb.from('documents').select('*'),
+    sb.from('resources').select('id, name, user_id')
   ]);
 
   for (var i = 0; i < results.length; i++) {
@@ -127,13 +128,16 @@ async function loadAllProjects() {
   var raidLogRows       = results[9].data || [];
   var folderRows        = results[10].data || [];
   var docRows           = results[11].data || [];
+  var resourceMiniRows  = results[12].data || [];
 
-  var nameById = {};
-  profilesRows.forEach(function(p){ nameById[p.id] = p.display_name; });
   var activeProfilesRows = profilesRows.filter(function(p){ return p.is_active !== false; });
   D.people = activeProfilesRows.map(function(p){ return p.display_name; });
   D.peopleByName = {};
   activeProfilesRows.forEach(function(p){ D.peopleByName[p.display_name] = p; });
+
+  // Owner/assignee/team all resolve through resources now, not accounts.
+  var resourceNameById = {};
+  resourceMiniRows.forEach(function(r){ resourceNameById[r.id] = r.name; });
 
   var teamByProject      = groupBy(teamRows, 'project_id');
   var milestonesByProj   = groupBy(milestoneRows, 'project_id');
@@ -156,8 +160,8 @@ async function loadAllProjects() {
 
   return projectsRows.map(function(pr) {
     var teamRowsForProj = teamByProject[pr.id] || [];
-    var teamIds = teamRowsForProj.map(function(t){ return t.user_id; });
-    var teamNames = teamIds.map(function(id){ return nameById[id] || id; });
+    var teamIds = teamRowsForProj.map(function(t){ return t.resource_id; });
+    var teamNames = teamIds.map(function(id){ return resourceNameById[id] || id; });
 
     var milestones = (milestonesByProj[pr.id] || []).map(function(m) {
       return {
@@ -170,7 +174,7 @@ async function loadAllProjects() {
     var tasks = (tasksByProj[pr.id] || []).map(function(t) {
       return {
         id: t.id, title: t.title,
-        assignee: t.assignee_name || (t.assignee_id ? nameById[t.assignee_id] : ''),
+        assignee: t.assignee_name || (t.assignee_id ? resourceNameById[t.assignee_id] : ''),
         assigneeId: t.assignee_id, status: t.status, due: t.due_date,
         log: mapLog(taskLogByTask[t.id]),
         comments: (commentsByTask[t.id] || []).map(function(c) {
@@ -207,7 +211,7 @@ async function loadAllProjects() {
 
     return {
       id: pr.id, name: pr.name,
-      owner: pr.owner_name || (pr.owner_id ? nameById[pr.owner_id] : ''), ownerId: pr.owner_id,
+      owner: pr.owner_name || (pr.owner_id ? resourceNameById[pr.owner_id] : ''), ownerId: pr.owner_id,
       sponsor: pr.sponsor, sponsorEmail: pr.sponsor_email, sponsorId: pr.sponsor_id,
       category: pr.category, businessUnit: pr.business_unit,
       team: teamNames, teamIds: teamIds,
@@ -227,7 +231,7 @@ async function loadAllProjects() {
 function pendingCount() { return D.requests.filter(function(r){ return r.status === 'Pending'; }).length; }
 function backlogCount()  { return D.projects.filter(function(p){ return p.stage  === 'backlog'; }).length; }
 function myOpenTasksCount() {
-  var myId = D.currentProfile ? D.currentProfile.id : null;
+  var myId = D.myResourceId;
   if (!myId) return 0;
   var count = 0;
   D.projects.forEach(function(p){ p.tasks.forEach(function(t){ if (t.assigneeId === myId && t.status !== 'Done') count++; }); });
@@ -239,7 +243,7 @@ function myProjects() {
 }
 
 function myAssignedProjects() {
-  var myId = D.currentProfile ? D.currentProfile.id : null;
+  var myId = D.myResourceId;
   if (!myId) return [];
   return D.projects.filter(function(p){
     return (p.teamIds||[]).indexOf(myId) >= 0 || p.ownerId === myId ||
@@ -248,7 +252,7 @@ function myAssignedProjects() {
 }
 
 function hasAssignedWork() {
-  var myId = D.currentProfile ? D.currentProfile.id : null;
+  var myId = D.myResourceId;
   if (!myId) return false;
   var onActiveProject = D.projects.some(function(p){ return p.stage === 'active' && ((p.teamIds||[]).indexOf(myId) >= 0 || p.ownerId === myId); });
   var hasOpenTask = D.projects.some(function(p){ return p.tasks.some(function(t){ return t.assigneeId === myId && t.status !== 'Done'; }); });
@@ -261,17 +265,17 @@ function currentUser() {
 
 function canEdit(p) {
   if (D.role === 'admin') return true;
-  return !!(p.ownerId && D.currentProfile && p.ownerId === D.currentProfile.id);
+  return !!(p.ownerId && D.myResourceId && p.ownerId === D.myResourceId);
 }
 
-async function ensureOnTeam(p, profile) {
-  if (!profile) return;
-  if ((p.teamIds || []).indexOf(profile.id) >= 0) return;
-  var result = await sb.from('project_team').insert({ project_id: p.id, user_id: profile.id });
+async function ensureOnTeam(p, res) {
+  if (!res) return;
+  if ((p.teamIds || []).indexOf(res.id) >= 0) return;
+  var result = await sb.from('resource_projects').insert({ project_id: p.id, resource_id: res.id });
   if (result.error) { console.error('Could not add to team:', result.error); return; }
   p.team = p.team || []; p.teamIds = p.teamIds || [];
-  p.team.push(profile.display_name);
-  p.teamIds.push(profile.id);
+  p.team.push(res.name);
+  p.teamIds.push(res.id);
 }
 
 function openFilterModal(label, choices, getSelected, toggleValue, clearAll, rerenderPage) {
@@ -387,6 +391,10 @@ function teamNames() {
 
 function resolveAssignee(name) {
   return (D.peopleByName && D.peopleByName[name]) ? D.peopleByName[name] : null;
+}
+
+function resolveResource(name) {
+  return D.resources.find(function(r){ return r.name === name; }) || null;
 }
 
 function roleLabel(r) {
@@ -634,6 +642,8 @@ async function bootAppForUser(skipReload) {
     D.projects = loaded[0];
     D.resources = loaded[1];
     D.requests = loaded[2];
+    var myResource = D.resources.find(function(r){ return r.userId === D.currentProfile.id; });
+    D.myResourceId = myResource ? myResource.id : null;
   }
 
   if (location.hash && location.hash.length > 1) {
@@ -1019,23 +1029,23 @@ async function scheduleProject(pid) {
   if (!start || !end) { showToast('Please set a start and end date'); return; }
   var newTeamNames = D.people.filter(function(n){ var el = document.getElementById('schm-' + n.replace(/ /g,'_')); return el && el.checked; });
   var ownerName = document.getElementById('sch-owner').value;
-  var ownerProfile = resolveAssignee(ownerName);
+  var ownerResource = resolveResource(ownerName);
 
   var result = await sb.from('projects').update({
     planned_start: start, start_date: start, end_date: end, stage: 'planned',
-    owner_id: ownerProfile ? ownerProfile.id : null, owner_name: ownerName || null
+    owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null
   }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
 
-  var newRealIds = newTeamNames.map(function(n){ return resolveAssignee(n); }).filter(Boolean).map(function(pr){ return pr.id; });
+  var newRealIds = newTeamNames.map(function(n){ return resolveResource(n); }).filter(Boolean).map(function(r){ return r.id; });
   var oldIds = p.teamIds || [];
   var toAdd = newRealIds.filter(function(id){ return oldIds.indexOf(id) < 0; });
   var toRemove = oldIds.filter(function(id){ return newRealIds.indexOf(id) < 0; });
-  if (toAdd.length) await sb.from('project_team').insert(toAdd.map(function(id){ return { project_id: pid, user_id: id }; }));
-  for (var i = 0; i < toRemove.length; i++) { await sb.from('project_team').delete().eq('project_id', pid).eq('user_id', toRemove[i]); }
+  if (toAdd.length) await sb.from('resource_projects').insert(toAdd.map(function(id){ return { project_id: pid, resource_id: id }; }));
+  for (var i = 0; i < toRemove.length; i++) { await sb.from('resource_projects').delete().eq('project_id', pid).eq('resource_id', toRemove[i]); }
 
   p.team = newTeamNames; p.teamIds = newRealIds;
-  p.owner = ownerName; p.ownerId = ownerProfile ? ownerProfile.id : null;
+  p.owner = ownerName; p.ownerId = ownerResource ? ownerResource.id : null;
   p.plannedStart = start; p.start = start; p.end = end; p.stage = 'planned';
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) await syncRequestStatus(r.id, { status: 'Planned', linkedProject: pid });
@@ -1294,7 +1304,7 @@ function pgProjectDetail(pid, tab) {
 
       var trows = list.map(function(task) {
         var idx = p.tasks.indexOf(task);
-        var myTask = !!(task.assigneeId && D.currentProfile && task.assigneeId === D.currentProfile.id);
+        var myTask = !!(task.assigneeId && D.myResourceId && task.assigneeId === D.myResourceId);
         var logKey = p.id + '|' + task.id;
         var logOpenNow = !!taskLogOpen[logKey];
         var logRow = '';
@@ -1463,12 +1473,12 @@ function pgProjectDetail(pid, tab) {
   };
   window.addTeamMemberDirect = async function(pid2, personName) {
     var pr = D.projects.find(function(x){ return x.id === pid2; });
-    var profile = resolveAssignee(personName);
-    if (!profile) { showToast('Could not find that person'); return; }
-    if (pr.teamIds.indexOf(profile.id) >= 0) { showToast('Already on the team'); return; }
-    var result = await sb.from('project_team').insert({ project_id: pid2, user_id: profile.id });
+    var res = resolveResource(personName);
+    if (!res) { showToast('Could not find that person'); return; }
+    if (pr.teamIds.indexOf(res.id) >= 0) { showToast('Already on the team'); return; }
+    var result = await sb.from('resource_projects').insert({ project_id: pid2, resource_id: res.id });
     if (result.error) { showToast('Could not add: ' + result.error.message); return; }
-    pr.team.push(personName); pr.teamIds.push(profile.id);
+    pr.team.push(personName); pr.teamIds.push(res.id);
     document.getElementById('ptab-content').innerHTML = tabC('team');
     showToast(personName + ' added to the team');
   };
@@ -1477,8 +1487,8 @@ function pgProjectDetail(pid, tab) {
     var idx = pr.team.indexOf(personName);
     if (idx < 0) return;
     if (!confirm('Remove ' + personName + ' from the team?')) return;
-    var userId = pr.teamIds[idx];
-    var result = await sb.from('project_team').delete().eq('project_id', pid2).eq('user_id', userId);
+    var resourceId = pr.teamIds[idx];
+    var result = await sb.from('resource_projects').delete().eq('project_id', pid2).eq('resource_id', resourceId);
     if (result.error) { showToast('Could not remove: ' + result.error.message); return; }
     pr.team.splice(idx,1); pr.teamIds.splice(idx,1);
     document.getElementById('ptab-content').innerHTML = tabC('team');
@@ -1760,7 +1770,7 @@ function openTaskModal(pid, idx) {
     if (!title){ showToast('Task title required'); return; }
     var btn = document.getElementById('tm-save'); btn.disabled = true;
     var newVals = {title:title,assignee:document.getElementById('tm-assignee').value,status:document.getElementById('tm-status').value,due:document.getElementById('tm-due').value};
-    var assigneeProfile = resolveAssignee(newVals.assignee);
+    var assigneeResource = resolveResource(newVals.assignee);
 
     if (idx!=null) {
       var fieldLabels = {title:'Title',assignee:'Assignee',status:'Status',due:'Due date'};
@@ -1769,25 +1779,25 @@ function openTaskModal(pid, idx) {
         if (task[f] !== newVals[f]) changes.push(fieldLabels[f] + ': "' + (task[f]||'—') + '" → "' + (newVals[f]||'—') + '"');
       });
       var result = await sb.from('tasks').update({
-        title: newVals.title, assignee_id: assigneeProfile ? assigneeProfile.id : null,
+        title: newVals.title, assignee_id: assigneeResource ? assigneeResource.id : null,
         assignee_name: newVals.assignee, status: newVals.status, due_date: newVals.due || null
       }).eq('id', task.id);
       if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
-      task.title = newVals.title; task.assignee = newVals.assignee; task.assigneeId = assigneeProfile ? assigneeProfile.id : null;
+      task.title = newVals.title; task.assignee = newVals.assignee; task.assigneeId = assigneeResource ? assigneeResource.id : null;
       task.status = newVals.status; task.due = newVals.due;
       task.log = task.log || [];
       if (changes.length) task.log.push(await writeLog('task_log', 'task_id', task.id, 'Updated', changes.join('; ')));
-      await ensureOnTeam(p, assigneeProfile);
+      await ensureOnTeam(p, assigneeResource);
     } else {
       var insertResult = await sb.from('tasks').insert({
-        project_id: pid, title: newVals.title, assignee_id: assigneeProfile ? assigneeProfile.id : null,
+        project_id: pid, title: newVals.title, assignee_id: assigneeResource ? assigneeResource.id : null,
         assignee_name: newVals.assignee, status: newVals.status, due_date: newVals.due || null
       }).select().single();
       if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
-      var t2 = {id:insertResult.data.id,title:newVals.title,assignee:newVals.assignee,assigneeId:assigneeProfile?assigneeProfile.id:null,status:newVals.status,due:newVals.due,log:[],comments:[]};
+      var t2 = {id:insertResult.data.id,title:newVals.title,assignee:newVals.assignee,assigneeId:assigneeResource?assigneeResource.id:null,status:newVals.status,due:newVals.due,log:[],comments:[]};
       t2.log.push(await writeLog('task_log', 'task_id', t2.id, 'Created', ''));
       p.tasks.push(t2);
-      await ensureOnTeam(p, assigneeProfile);
+      await ensureOnTeam(p, assigneeResource);
     }
     showToast(idx!=null?'Task updated':'Task added'); closeModal(); if (window.switchPTab) window.switchPTab('tasks');
   };
@@ -1836,11 +1846,12 @@ function openRaidModal(pid, type, idx) {
       var num = parseInt(chosen);
       if (num && nonMembers[num-1]) {
         var chosenName = nonMembers[num-1];
-        var chosenProfile = resolveAssignee(chosenName);
-        var result = await sb.from('project_team').insert({ project_id: pid2, user_id: chosenProfile.id });
+        var chosenResource = resolveResource(chosenName);
+        if (!chosenResource) { showToast('Could not find that person as a resource'); sel.value = ''; return; }
+        var result = await sb.from('resource_projects').insert({ project_id: pid2, resource_id: chosenResource.id });
         if (result.error) { showToast('Could not add member: ' + result.error.message); sel.value = ''; return; }
         pr2.team.push(chosenName);
-        pr2.teamIds.push(chosenProfile.id);
+        pr2.teamIds.push(chosenResource.id);
         addNotif(chosenName, 'You have been added to project "' + pr2.name + '".', 'team');
         showToast(chosenName + ' added to project');
         var newOpts = '<option value="">— Select —</option>' + pr2.team.filter(function(m){ return D.people.indexOf(m)>=0; }).map(function(n){ return '<option>' + n + '</option>'; }).join('') + '<option value="__add__">+ Add member to project…</option>';
@@ -2122,8 +2133,8 @@ async function saveProject(pid) {
   var spEl = document.getElementById('ep-sponsor'); if (spEl) newVals.sponsor = spEl.value || null;
   var spEmailEl = document.getElementById('ep-sponsor-email'); if (spEmailEl) newVals.sponsor_email = spEmailEl.value.trim() || null;
   var pmEl = document.getElementById('ep-owner');
-  var ownerProfile = pmEl ? resolveAssignee(pmEl.value) : null;
-  if (pmEl) { newVals.owner_id = ownerProfile ? ownerProfile.id : null; newVals.owner_name = pmEl.value || null; }
+  var ownerResource = pmEl ? resolveResource(pmEl.value) : null;
+  if (pmEl) { newVals.owner_id = ownerResource ? ownerResource.id : null; newVals.owner_name = pmEl.value || null; }
 
   var saveBtn = document.querySelector('.modal-footer .btn-primary'); if (saveBtn) saveBtn.disabled = true;
   var result = await sb.from('projects').update(newVals).eq('id', pid).select().single();
@@ -2173,13 +2184,13 @@ function openNewProjectModal() {
     var name = document.getElementById('np-name').value.trim();
     if (!name){ showToast('Project name required'); return; }
     var ownerName = document.getElementById('np-owner').value;
-    var ownerProfile = resolveAssignee(ownerName);
+    var ownerResource = resolveResource(ownerName);
     var sponsorName = document.getElementById('np-sponsor').value.trim();
     var sponsorEmail = document.getElementById('np-sponsor-email').value.trim();
     var btn = document.getElementById('np-save'); btn.disabled = true;
 
     var record = {
-      name: name, owner_id: ownerProfile ? ownerProfile.id : null, owner_name: ownerName || null,
+      name: name, owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
       sponsor: sponsorName || null, sponsor_email: sponsorEmail || null,
       category: document.getElementById('np-category').value || null, business_unit: document.getElementById('np-bu').value || null,
       status: 'Not Started', phase: 'Not Started', progress: 0,
@@ -2190,7 +2201,7 @@ function openNewProjectModal() {
     if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
 
     D.projects.push({
-      id: result.data.id, name:name, owner:ownerName, ownerId: ownerProfile?ownerProfile.id:null,
+      id: result.data.id, name:name, owner:ownerName, ownerId: ownerResource?ownerResource.id:null,
       sponsor:sponsorName, sponsorEmail:sponsorEmail, sponsorId: result.data.sponsor_id,
       category:record.category, businessUnit:record.business_unit, team:[], teamIds:[],
       status:'Not Started', phase:'Not Started', progress:0, start:'', end:'',
@@ -2426,7 +2437,7 @@ function validateImportRow(row, profilesByEmail) {
   progress = Math.max(0, Math.min(100, progress));
 
   var ownerEmail = String(row['PM Email'] || '').trim().toLowerCase();
-  var ownerProfile = ownerEmail ? profilesByEmail[ownerEmail] : null;
+  var ownerResource = ownerEmail ? profilesByEmail[ownerEmail] : null;
 
   return {
     valid: errors.length === 0,
@@ -2434,8 +2445,8 @@ function validateImportRow(row, profilesByEmail) {
     record: {
       name: name,
       sponsor: row['Sponsor'] || null,
-      owner_id: ownerProfile ? ownerProfile.id : null,
-      owner_name: ownerProfile ? ownerProfile.display_name : (ownerEmail || null),
+      owner_id: ownerResource ? ownerResource.id : null,
+      owner_name: ownerResource ? ownerResource.name : (ownerEmail || null),
       category: category || null,
       business_unit: row['Business Unit'] || null,
       stage: (stage || 'Backlog').toLowerCase(),
@@ -2503,10 +2514,10 @@ async function runImport() {
 async function handleImportFile(file) {
   document.getElementById('import-preview').innerHTML = '<div class="text-muted" style="padding:12px">Reading file…</div>';
 
-  var profilesResult = await sb.from('profiles').select('id, email, display_name');
-  var profilesByEmail = {};
-  (profilesResult.data || []).forEach(function(p){ profilesByEmail[(p.email||'').toLowerCase()] = p; });
-  importState.profilesByEmail = profilesByEmail;
+  var resourcesResult = await sb.from('resources').select('id, email, name').eq('type', 'individual');
+  var resourcesByEmail = {};
+  (resourcesResult.data || []).forEach(function(r){ if (r.email) resourcesByEmail[r.email.toLowerCase()] = r; });
+  importState.profilesByEmail = resourcesByEmail;
 
   var reader = new FileReader();
   reader.onload = function(e) {
@@ -2691,9 +2702,8 @@ function pgImportProjects() {
 }
 
 function resourceOpenTaskCount(r) {
-  if (!r.userId) return null;
   var count = 0;
-  D.projects.forEach(function(p){ p.tasks.forEach(function(t){ if (t.assigneeId === r.userId && t.status !== 'Done') count++; }); });
+  D.projects.forEach(function(p){ p.tasks.forEach(function(t){ if (t.assigneeId === r.id && t.status !== 'Done') count++; }); });
   return count;
 }
 
@@ -3126,7 +3136,7 @@ function pgMyProjectsResource() {
 
 function pgMyTasks() {
   tb('My tasks');
-  var me = D.currentProfile ? D.currentProfile.id : null;
+  var me = D.myResourceId;
   var allTasks = [];
   D.projects.forEach(function(p) {
     p.tasks.forEach(function(t, idx) {

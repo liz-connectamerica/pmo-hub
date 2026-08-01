@@ -193,7 +193,7 @@ input[type=file] { width: 100%; padding: 8px 10px; border: 1px solid #ddd; borde
 .th-filter-btn:hover { color: #534AB7; }
 .th-filter-btn i { font-size: 14px; }
 .th-filter-active { color: #534AB7; }
-.th-filter-panel { position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid #e8e8e5; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 10px; z-index: 50; min-width: 170px; font-weight: normal; text-transform: none; }
+.th-filter-panel { position: fixed; background: #fff; border: 1px solid #e8e8e5; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 10px; z-index: 500; min-width: 170px; font-weight: normal; text-transform: none; }
 .th-filter-opt { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 2px; cursor: pointer; white-space: nowrap; font-weight: normal; }
 .th-filter-actions { display: flex; justify-content: space-between; gap: 6px; margin-top: 6px; padding-top: 6px; border-top: 1px solid #e8e8e5; }
 
