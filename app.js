@@ -53,6 +53,33 @@ async function syncRequestStatus(requestId, updates) {
   Object.assign(r, updates);
 }
 
+async function loadTags() {
+  var results = await Promise.all([
+    sb.from('tags').select('*'),
+    sb.from('project_tags').select('*'),
+    sb.from('resource_tags').select('*')
+  ]);
+  for (var i = 0; i < results.length; i++) {
+    if (results[i].error) { console.error('loadTags query failed:', results[i].error); return { tags: [], projectTagsByProject: {}, resourceTagsByResource: {} }; }
+  }
+  var tagRows = results[0].data || [];
+  var projectTagRows = results[1].data || [];
+  var resourceTagRows = results[2].data || [];
+  var nameById = {};
+  tagRows.forEach(function(t){ nameById[t.id] = t.name; });
+  var projectTagsByProject = groupBy(projectTagRows, 'project_id');
+  var resourceTagsByResource = groupBy(resourceTagRows, 'resource_id');
+  var projectTagNames = {};
+  Object.keys(projectTagsByProject).forEach(function(pid){ projectTagNames[pid] = projectTagsByProject[pid].map(function(r){ return nameById[r.tag_id]; }).filter(Boolean); });
+  var resourceTagNames = {};
+  Object.keys(resourceTagsByResource).forEach(function(rid){ resourceTagNames[rid] = resourceTagsByResource[rid].map(function(r){ return nameById[r.tag_id]; }).filter(Boolean); });
+  return {
+    tags: tagRows.map(function(t){ return { id: t.id, name: t.name }; }).sort(function(a,b){ return a.name.localeCompare(b.name); }),
+    projectTagNames: projectTagNames,
+    resourceTagNames: resourceTagNames
+  };
+}
+
 async function loadResources() {
   var results = await Promise.all([
     sb.from('resources').select('*'),
@@ -278,6 +305,64 @@ async function ensureOnTeam(p, res) {
   p.teamIds.push(res.id);
 }
 
+function tagFilterBarHtml(activeTags, openFnName) {
+  return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
+    '<button class="btn btn-sm" onclick="' + openFnName + '()"><i class="ti ti-tag"></i> Filter by tag' + (activeTags.length ? ' (' + activeTags.length + ')' : '') + '</button>' +
+    activeTags.map(function(t){ return '<span class="badge badge-purple">' + t + '</span>'; }).join('') +
+  '</div>';
+}
+
+function openTagPicker(currentTagNames, onSave) {
+  var selected = currentTagNames.slice();
+  var query = '';
+  function render() {
+    var q = query.trim().toLowerCase();
+    var matches = D.tags.filter(function(t){ return t.name.toLowerCase().indexOf(q) >= 0; });
+    var exactMatch = D.tags.some(function(t){ return t.name.toLowerCase() === q; });
+    var listHtml = matches.map(function(t){
+      var checked = selected.indexOf(t.name) >= 0;
+      var esc = t.name.replace(/'/g,"\\'");
+      return '<label style="display:block;padding:6px 0;cursor:pointer;font-size:13px"><input type="checkbox" style="margin-right:8px"' + (checked?' checked':'') + ' onchange="window.__tagToggle(\'' + esc + '\')"> ' + t.name + '</label>';
+    }).join('');
+    var createRow = (q && !exactMatch) ? '<div style="padding:8px 0 0;border-top:1px solid #eee;margin-top:6px"><button class="btn btn-sm btn-primary" onclick="window.__tagCreate()"><i class="ti ti-plus"></i> Create "' + query.trim().replace(/"/g,'&quot;') + '"</button></div>' : '';
+    var selectedChips = selected.length
+      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' + selected.map(function(n){
+          var esc = n.replace(/'/g,"\\'");
+          return '<span class="badge badge-purple" style="display:inline-flex;align-items:center;gap:4px">' + n + ' <i class="ti ti-x" style="cursor:pointer" onclick="window.__tagToggle(\'' + esc + '\')"></i></span>';
+        }).join('') + '</div>'
+      : '';
+    showModal(
+      '<div class="modal-title">Tags <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+      selectedChips +
+      '<input type="text" id="tag-search" placeholder="Search or create a tag…" value="' + query.replace(/"/g,'&quot;') + '" oninput="window.__tagSearch(this.value)">' +
+      '<div style="max-height:220px;overflow-y:auto;margin-top:8px">' + (listHtml || '<span class="text-muted" style="font-size:13px">No matching tags</span>') + '</div>' +
+      createRow +
+      '<div class="modal-footer"><button class="btn btn-primary" onclick="window.__tagDone()">Done</button></div>'
+    );
+    var searchEl = document.getElementById('tag-search');
+    if (searchEl) { searchEl.focus(); searchEl.selectionStart = searchEl.selectionEnd = searchEl.value.length; }
+  }
+  window.__tagSearch = function(val) { query = val; render(); };
+  window.__tagToggle = function(name) {
+    var i = selected.indexOf(name);
+    if (i >= 0) selected.splice(i,1); else selected.push(name);
+    render();
+  };
+  window.__tagCreate = async function() {
+    var q = document.getElementById('tag-search').value.trim();
+    if (!q) return;
+    var result = await sb.from('tags').insert({ name: q }).select().single();
+    if (result.error) { showToast('Could not create tag: ' + result.error.message); return; }
+    D.tags.push({ id: result.data.id, name: q });
+    D.tags.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    selected.push(q);
+    query = '';
+    render();
+  };
+  window.__tagDone = async function() { closeModal(); await onSave(selected); };
+  render();
+}
+
 function openFilterModal(label, choices, getSelected, toggleValue, clearAll, rerenderPage) {
   function render() {
     var selected = getSelected();
@@ -428,8 +513,15 @@ var docFolderState = {};
 var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fStatus:[], openFilter:null };
 var roadmapCategoryFilter = 'All';
 var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#534AB7', 'Build':'#1D9E75', 'Testing':'#EF9F27', 'Deployment':'#D85A30' };
-var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null };
+var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null, tagFilter:[] };
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
+var portfolioTagFilter = [];
+var backlogTagFilter = [];
+var plannedTagFilter = [];
+var activeProjectsTagFilter = [];
+var completedTagFilter = [];
+var roadmapTagFilter = [];
+var tagAdminState = { expandedId: null };
 var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3 };
 var rejectedFilterState = { range:'30' };
@@ -515,7 +607,8 @@ var NAV_DEF = {
       {id:'import-projects', icon:'ti-file-upload', label:'Import Projects'}
     ]},
     { s:'Administration', items:[
-      {id:'admin-users', icon:'ti-users-group', label:'Manage Users'}
+      {id:'admin-users', icon:'ti-users-group', label:'Manage Users'},
+      {id:'admin-tags', icon:'ti-tag', label:'Tag Management'}
     ]}
   ],
   member: [
@@ -565,7 +658,7 @@ var PAGE_RENDERERS = {
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
-  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers
+  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags
 };
 
 function pageAllowedForRole(page, role) {
@@ -642,10 +735,14 @@ async function bootAppForUser(skipReload) {
 
   if (!skipReload) {
     document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading your projects…</p></div>';
-    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests()]);
+    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests(), loadTags()]);
     D.projects = loaded[0];
     D.resources = loaded[1];
     D.requests = loaded[2];
+    var tagData = loaded[3];
+    D.tags = tagData.tags;
+    D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; });
+    D.resources.forEach(function(r){ r.tags = tagData.resourceTagNames[r.id] || []; });
     var myResource = D.resources.find(function(r){ return r.userId === D.currentProfile.id; });
     D.myResourceId = myResource ? myResource.id : null;
   }
@@ -667,6 +764,13 @@ async function refreshResources() {
 
 async function refreshRequests() {
   D.requests = await loadRequests();
+}
+
+async function refreshTags() {
+  var tagData = await loadTags();
+  D.tags = tagData.tags;
+  D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; });
+  D.resources.forEach(function(r){ r.tags = tagData.resourceTagNames[r.id] || []; });
 }
 
 function setPreviewRole(role) {
@@ -692,6 +796,7 @@ function pgDashboard() {
   if (dst.search) { var dq = dst.search.toLowerCase(); displayed = displayed.filter(function(p){ return p.name.toLowerCase().indexOf(dq) >= 0; }); }
   if (dst.fStatus.length) displayed = displayed.filter(function(p){ return dst.fStatus.indexOf(p.status) >= 0; });
   if (dst.fPhase.length) displayed = displayed.filter(function(p){ return dst.fPhase.indexOf(p.phase) >= 0; });
+  if (dst.tagFilter.length) displayed = displayed.filter(function(p){ return dst.tagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   if (dst.sort) {
     displayed.sort(function(a, b) {
       var av, bv;
@@ -760,7 +865,7 @@ function pgDashboard() {
         ? '<div class="metric"><div class="metric-label">Pending requests</div><div class="metric-value" style="color:#534AB7">' + pendingCount() + '</div></div>'
         : '<div class="metric"><div class="metric-label">In backlog</div><div class="metric-value">' + backlogCount() + '</div></div>') +
     '</div>' +
-    '<div class="card mb-16"><div class="section-title">Active projects</div>' + dashSearchBar +
+    '<div class="card mb-16"><div class="section-title">Active projects</div>' + tagFilterBarHtml(dst.tagFilter, 'openDashTagFilter') + dashSearchBar +
       (displayed.length ? '<div class="table-wrap"><table>' +
       '<thead><tr>' +
         '<th class="sortable-th" onclick="setDashProjSort(\'name\')">Project ' + dArrow('name') + '</th>' +
@@ -812,6 +917,14 @@ function pgDashboard() {
       pgDashboard
     );
   };
+  window.openDashTagFilter = function() {
+    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
+      function() { return dst.tagFilter; },
+      function(val) { var i = dst.tagFilter.indexOf(val); if (i>=0) dst.tagFilter.splice(i,1); else dst.tagFilter.push(val); },
+      function() { dst.tagFilter = []; },
+      pgDashboard
+    );
+  };
 }
 
 // ── Portfolio ───────────────────────────────────────────────────────────────
@@ -819,8 +932,10 @@ function pgDashboard() {
 function pgPortfolio() {
   tb('Portfolio');
   var stageOrder = { active: 0, planned: 1, backlog: 2, hold: 3, complete: 4 };
+  var filtered = D.projects.filter(function(p){ return p.stage !== 'complete'; });
+  if (portfolioTagFilter.length) filtered = filtered.filter(function(p){ return portfolioTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var byVal = {};
-  D.projects.filter(function(p){ return p.stage !== 'complete'; }).forEach(function(p){ if (!byVal[p.value]) byVal[p.value] = []; byVal[p.value].push(p); });
+  filtered.forEach(function(p){ if (!byVal[p.value]) byVal[p.value] = []; byVal[p.value].push(p); });
   Object.keys(byVal).forEach(function(v) {
     byVal[v].sort(function(a, b) {
       var ar = stageOrder[a.stage]; if (ar == null) ar = 9;
@@ -829,7 +944,7 @@ function pgPortfolio() {
     });
   });
   var cols = ['badge-purple','badge-teal','badge-blue','badge-coral','badge-amber'];
-  var i = 0, h = '';
+  var i = 0, h = tagFilterBarHtml(portfolioTagFilter, 'openPortfolioTagFilter');
   Object.keys(byVal).forEach(function(v) {
     var cl = cols[i++ % cols.length];
     var cards = byVal[v].map(function(p) {
@@ -844,7 +959,15 @@ function pgPortfolio() {
     }).join('');
     h += '<div class="card mb-16"><div class="mb-12"><span class="badge ' + cl + '" style="font-size:13px;padding:5px 14px">' + v + '</span></div><div class="grid-2">' + cards + '</div></div>';
   });
-  document.getElementById('content').innerHTML = h || '<div class="empty-state"><i class="ti ti-folder-open"></i><p>No projects yet</p></div>';
+  document.getElementById('content').innerHTML = (Object.keys(byVal).length ? h : h + '<div class="empty-state"><i class="ti ti-folder-open"></i><p>No projects yet</p></div>');
+  window.openPortfolioTagFilter = function() {
+    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
+      function() { return portfolioTagFilter; },
+      function(val) { var i2 = portfolioTagFilter.indexOf(val); if (i2>=0) portfolioTagFilter.splice(i2,1); else portfolioTagFilter.push(val); },
+      function() { portfolioTagFilter = []; },
+      pgPortfolio
+    );
+  };
 }
 
 // ── Requests ────────────────────────────────────────────────────────────────
@@ -980,6 +1103,7 @@ function scheduleFromRequest(rid) {
 function pgBacklog() {
   tb('Backlog');
   var bp = D.projects.filter(function(p){ return p.stage === 'backlog'; });
+  if (backlogTagFilter.length) bp = bp.filter(function(p){ return backlogTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var cards = bp.map(function(p) {
     return '<div class="project-card">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
@@ -993,7 +1117,16 @@ function pgBacklog() {
   document.getElementById('content').innerHTML =
     '<div class="info-banner info-amber"><i class="ti ti-stack-2" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
     '<span>Projects here are <strong>approved</strong> and waiting to be scheduled. Assign a start date to move them to Planned — a PM can be assigned later.</span></div>' +
+    tagFilterBarHtml(backlogTagFilter, 'openBacklogTagFilter') +
     (bp.length ? cards : '<div class="empty-state"><i class="ti ti-stack-2"></i><p>Backlog is clear</p></div>');
+  window.openBacklogTagFilter = function() {
+    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
+      function() { return backlogTagFilter; },
+      function(val) { var i = backlogTagFilter.indexOf(val); if (i>=0) backlogTagFilter.splice(i,1); else backlogTagFilter.push(val); },
+      function() { backlogTagFilter = []; },
+      pgBacklog
+    );
+  };
 }
 
 // ── Schedule Modal ────────────────────────────────────────────────────────────
@@ -1065,6 +1198,7 @@ async function scheduleProject(pid) {
 function pgPlanned() {
   tb('Planned projects');
   var pp = D.projects.filter(function(p){ return p.stage === 'planned'; });
+  if (plannedTagFilter.length) pp = pp.filter(function(p){ return plannedTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var today = new Date();
   var in30  = new Date(); in30.setDate(today.getDate() + 30);
 
@@ -1096,7 +1230,16 @@ function pgPlanned() {
 
   document.getElementById('content').innerHTML =
     '<div class="info-banner info-blue"><i class="ti ti-calendar-event" style="font-size:20px;flex-shrink:0;color:#185FA5"></i><span>' + bannerText + '</span></div>' +
+    tagFilterBarHtml(plannedTagFilter, 'openPlannedTagFilter') +
     (pp.length ? cards : '<div class="empty-state"><i class="ti ti-calendar-event"></i><p>No planned projects yet</p></div>');
+  window.openPlannedTagFilter = function() {
+    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
+      function() { return plannedTagFilter; },
+      function(val) { var i = plannedTagFilter.indexOf(val); if (i>=0) plannedTagFilter.splice(i,1); else plannedTagFilter.push(val); },
+      function() { plannedTagFilter = []; },
+      pgPlanned
+    );
+  };
 }
 
 async function activateProject(pid) {
@@ -1119,6 +1262,7 @@ function pgProjects() {
   var addBtn = D.role === 'admin' ? '<button class="btn btn-primary" onclick="openNewProjectModal()"><i class="ti ti-plus"></i> New project</button>' : '';
   tb('Active projects', addBtn);
   var ps = myProjects().filter(function(p){ return p.stage === 'active'; });
+  if (activeProjectsTagFilter.length) ps = ps.filter(function(p){ return activeProjectsTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var cards = ps.map(function(p) {
     return '<div class="project-card">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
@@ -1135,7 +1279,16 @@ function pgProjects() {
       (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
     '</div>';
   }).join('');
-  document.getElementById('content').innerHTML = ps.length ? cards : '<div class="empty-state"><i class="ti ti-briefcase"></i><p>No active projects</p></div>';
+  document.getElementById('content').innerHTML = tagFilterBarHtml(activeProjectsTagFilter, 'openActiveProjectsTagFilter') +
+    (ps.length ? cards : '<div class="empty-state"><i class="ti ti-briefcase"></i><p>No active projects</p></div>');
+  window.openActiveProjectsTagFilter = function() {
+    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
+      function() { return activeProjectsTagFilter; },
+      function(val) { var i = activeProjectsTagFilter.indexOf(val); if (i>=0) activeProjectsTagFilter.splice(i,1); else activeProjectsTagFilter.push(val); },
+      function() { activeProjectsTagFilter = []; },
+      pgProjects
+    );
+  };
 }
 
 // ── Completed ─────────────────────────────────────────────────────────────────
@@ -1143,7 +1296,7 @@ function pgProjects() {
 function pgCompleted() {
   tb('Completed projects');
   var cp = D.projects.filter(function(p){ return p.stage === 'complete'; });
-  if (!cp.length) { document.getElementById('content').innerHTML = '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No completed projects yet</p></div>'; return; }
+  if (completedTagFilter.length) cp = cp.filter(function(p){ return completedTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var rows = cp.map(function(p) {
     return '<tr><td class="bold">' + p.name + '</td><td>' + badgeIf('badge-purple', p.value) + '</td>' +
       '<td>' + bdg(p.priority) + '</td><td class="text-muted">' + (p.owner||'—') + '</td><td class="text-muted">' + (p.end||'—') + '</td>' +
@@ -1151,10 +1304,20 @@ function pgCompleted() {
       (D.role === 'admin' ? ' <button class="btn btn-sm" onclick="reactivateProject(\'' + p.id + '\')"><i class="ti ti-refresh"></i> Re-activate</button>' : '') +
       '</td></tr>';
   }).join('');
-  document.getElementById('content').innerHTML =
-    '<div class="card"><div class="section-title">Completed projects</div><div class="table-wrap"><table>' +
-    '<thead><tr><th>Project</th><th>Value area</th><th>Priority</th><th>PM</th><th>Completed</th><th></th></tr></thead>' +
-    '<tbody>' + rows + '</tbody></table></div></div>';
+  document.getElementById('content').innerHTML = tagFilterBarHtml(completedTagFilter, 'openCompletedTagFilter') +
+    (cp.length
+      ? '<div class="card"><div class="section-title">Completed projects</div><div class="table-wrap"><table>' +
+        '<thead><tr><th>Project</th><th>Value area</th><th>Priority</th><th>PM</th><th>Completed</th><th></th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table></div></div>'
+      : '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No completed projects yet</p></div>');
+  window.openCompletedTagFilter = function() {
+    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
+      function() { return completedTagFilter; },
+      function(val) { var i = completedTagFilter.indexOf(val); if (i>=0) completedTagFilter.splice(i,1); else completedTagFilter.push(val); },
+      function() { completedTagFilter = []; },
+      pgCompleted
+    );
+  };
 }
 
 async function reactivateProject(pid) {
@@ -1211,6 +1374,10 @@ function pgProjectDetail(pid, tab) {
         '<div class="form-group"><div class="form-label">Sponsor</div>' + (p.sponsor||'—') + '</div>' +
         '<div class="form-group"><div class="form-label">PM</div>' + (p.owner||'—') + '</div>' +
         '</div>' +
+        '<div class="form-group mb-16"><div class="form-label">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+          (p.tags && p.tags.length ? p.tags.map(function(t){ return '<span class="badge badge-purple">' + t + '</span>'; }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
+          (editable ? '<button class="btn btn-sm" onclick="openProjectTagPicker(\'' + p.id + '\')"><i class="ti ti-tag"></i> Edit tags</button>' : '') +
+        '</div></div>' +
         (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '') +
         (p.stage === 'hold' ? '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
         '<div class="form-group" style="margin-top:16px"><div class="form-label">Timeline</div>' + timelineHtml() +
@@ -1226,6 +1393,18 @@ function pgProjectDetail(pid, tab) {
     }
     if (t === 'team') {
       var candidatePeople = individualResourceNames().filter(function(n){ return p.team.indexOf(n) < 0; });
+      var projectTags = p.tags || [];
+      function sharesTag(name) {
+        if (!projectTags.length) return false;
+        var res2 = D.resources.find(function(r){ return r.name === name; });
+        return !!(res2 && res2.tags && res2.tags.some(function(t){ return projectTags.indexOf(t) >= 0; }));
+      }
+      candidatePeople = candidatePeople.slice().sort(function(a, b) {
+        var aRec = sharesTag(a) ? 0 : 1;
+        var bRec = sharesTag(b) ? 0 : 1;
+        if (aRec !== bRec) return aRec - bRec;
+        return a.localeCompare(b);
+      });
       var teamRows = p.team.length
         ? p.team.map(function(m,i){
             var isTeam = teamNames().indexOf(m) >= 0;
@@ -1241,7 +1420,8 @@ function pgProjectDetail(pid, tab) {
           '<input type="text" id="team-add-search" placeholder="Search people…" oninput="filterTeamAddList(this.value)">' +
           '<div id="team-add-list" style="max-height:220px;overflow-y:auto;margin-top:8px">' +
           candidatePeople.map(function(n){
-            return '<div class="team-add-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + n + '</span><button class="btn btn-sm" onclick="addTeamMemberDirect(\'' + p.id + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button></div>';
+            var rec = sharesTag(n);
+            return '<div class="team-add-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + n + (rec ? ' <span class="badge badge-teal" style="font-size:10px">Recommended</span>' : '') + '</span><button class="btn btn-sm" onclick="addTeamMemberDirect(\'' + p.id + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button></div>';
           }).join('') +
           (candidatePeople.length ? '' : '<span class="text-muted" style="font-size:13px">Everyone is already on the team</span>') +
           '</div></div>' : '');
@@ -1469,6 +1649,25 @@ function pgProjectDetail(pid, tab) {
     '<div id="ptab-content">' + tabC(tab) + '</div>' +
     '</div>';
 
+  window.openProjectTagPicker = function(pid2) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    openTagPicker(pr.tags || [], async function(newTags) {
+      var oldTags = pr.tags || [];
+      var toAdd = newTags.filter(function(n){ return oldTags.indexOf(n) < 0; });
+      var toRemove = oldTags.filter(function(n){ return newTags.indexOf(n) < 0; });
+      for (var i = 0; i < toAdd.length; i++) {
+        var tag = D.tags.find(function(t){ return t.name === toAdd[i]; });
+        if (tag) await sb.from('project_tags').insert({ project_id: pid2, tag_id: tag.id });
+      }
+      for (var j = 0; j < toRemove.length; j++) {
+        var tagR = D.tags.find(function(t){ return t.name === toRemove[j]; });
+        if (tagR) await sb.from('project_tags').delete().eq('project_id', pid2).eq('tag_id', tagR.id);
+      }
+      pr.tags = newTags;
+      showToast('Tags updated');
+      if (document.getElementById('ptab-content')) document.getElementById('ptab-content').innerHTML = tabC('overview');
+    });
+  };
   window.filterTeamAddList = function(query) {
     var q = query.trim().toLowerCase();
     document.querySelectorAll('#team-add-list .team-add-row').forEach(function(row) {
@@ -2259,6 +2458,7 @@ function pgRoadmap() {
   }).join('') + '</div>';
 
   var visibleProjects = roadmapCategoryFilter === 'All' ? all : all.filter(function(p){ return (p.category || 'Uncategorized') === roadmapCategoryFilter; });
+  if (roadmapTagFilter.length) visibleProjects = visibleProjects.filter(function(p){ return roadmapTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
 
   function projectBarRow(p) {
     var startOffset = monthsFromWindowStart(p.start);
@@ -2301,11 +2501,14 @@ function pgRoadmap() {
   var msItems = [];
   D.projects.filter(function(p){ return p.stage==='active'; }).forEach(function(p) {
     p.milestones.filter(function(m){ return !m.done; }).forEach(function(m) {
-      msItems.push({ project:p.name, milestone:m.name, due:m.date, status:'Upcoming', category: p.category || 'Uncategorized' });
+      msItems.push({ project:p.name, milestone:m.name, due:m.date, status:'Upcoming', category: p.category || 'Uncategorized', tags: p.tags || [] });
     });
   });
   if (roadmapCategoryFilter !== 'All') {
     msItems = msItems.filter(function(it){ return it.category === roadmapCategoryFilter; });
+  }
+  if (roadmapTagFilter.length) {
+    msItems = msItems.filter(function(it){ return roadmapTagFilter.some(function(t){ return it.tags.indexOf(t) >= 0; }); });
   }
 
   var st = roadmapMsState;
@@ -2348,6 +2551,7 @@ function pgRoadmap() {
     '</tr>';
   document.getElementById('content').innerHTML =
     categoryTabsHtml +
+    tagFilterBarHtml(roadmapTagFilter, 'openRoadmapTagFilter') +
     '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">12-month view — ' + rangeLabel + '</div>' +
     phaseLegend +
     '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + m + '</div>'; }).join('') + '</div>' +
@@ -2359,6 +2563,14 @@ function pgRoadmap() {
     '</div>';
 
   window.setRoadmapCategory = function(cat) { roadmapCategoryFilter = cat; pgRoadmap(); };
+  window.openRoadmapTagFilter = function() {
+    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
+      function() { return roadmapTagFilter; },
+      function(val) { var i = roadmapTagFilter.indexOf(val); if (i>=0) roadmapTagFilter.splice(i,1); else roadmapTagFilter.push(val); },
+      function() { roadmapTagFilter = []; },
+      pgRoadmap
+    );
+  };
   window.setMsSort = function(col) {
     if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; }
     pgRoadmap();
@@ -2555,6 +2767,83 @@ async function callAdminUsersApi(payload) {
   } catch (e) { showToast('Could not reach the server: ' + e.message); return null; }
   if (!res.ok) { showToast(json.error || 'Request failed'); return null; }
   return json;
+}
+
+function pgAdminTags() {
+  tb('Tag Management');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can manage tags.</p></div>';
+    return;
+  }
+  var expandedTagId = tagAdminState.expandedId;
+  var rows = D.tags.map(function(t) {
+    var projectsWithTag = D.projects.filter(function(p){ return (p.tags||[]).indexOf(t.name) >= 0; });
+    var resourcesWithTag = D.resources.filter(function(r){ return (r.tags||[]).indexOf(t.name) >= 0; });
+    var usageCount = projectsWithTag.length + resourcesWithTag.length;
+    var expandRow = '';
+    if (expandedTagId === t.id) {
+      var projLinks = projectsWithTag.map(function(p){ return '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>' + p.name + ' <span class="text-muted" style="font-size:11px">(project)</span></span><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button></div>'; }).join('');
+      var resLinks = resourcesWithTag.map(function(r){ return '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>' + r.name + ' <span class="text-muted" style="font-size:11px">(resource)</span></span><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-eye"></i></button></div>'; }).join('');
+      var body = (projLinks + resLinks) || '<span class="text-muted" style="font-size:13px">Not currently used anywhere</span>';
+      expandRow = '<tr><td colspan="3" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
+    }
+    return '<tr>' +
+      '<td class="bold">' + t.name + '</td>' +
+      '<td><button class="btn btn-sm" onclick="toggleTagExpand(\'' + t.id + '\')">' + usageCount + ' <i class="ti ' + (expandedTagId===t.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
+      '<td><button class="btn btn-sm" onclick="renameTag(\'' + t.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteTag(\'' + t.id + '\')"><i class="ti ti-trash"></i></button></td>' +
+      '</tr>' + expandRow;
+  }).join('');
+
+  document.getElementById('content').innerHTML =
+    '<div class="card"><div class="task-filter-bar" style="display:flex;gap:8px"><input type="text" id="new-tag-input" placeholder="New tag name…" style="flex:1"><button class="btn btn-primary" onclick="createTagFromAdmin()"><i class="ti ti-plus"></i> Add tag</button></div>' +
+    (D.tags.length
+      ? '<div class="table-wrap"><table><thead><tr><th>Tag</th><th>Used by</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+      : '<div class="empty-state" style="padding:24px"><i class="ti ti-tag"></i><p>No tags yet</p></div>') +
+    '</div>';
+
+  window.toggleTagExpand = function(tid) { tagAdminState.expandedId = tagAdminState.expandedId === tid ? null : tid; pgAdminTags(); };
+
+  window.createTagFromAdmin = async function() {
+    var name = document.getElementById('new-tag-input').value.trim();
+    if (!name) return;
+    if (D.tags.some(function(t){ return t.name.toLowerCase() === name.toLowerCase(); })) { showToast('That tag already exists'); return; }
+    var result = await sb.from('tags').insert({ name: name }).select().single();
+    if (result.error) { showToast('Could not create tag: ' + result.error.message); return; }
+    D.tags.push({ id: result.data.id, name: name });
+    D.tags.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    showToast('Tag created');
+    pgAdminTags();
+  };
+
+  window.renameTag = async function(tid) {
+    var tag = D.tags.find(function(t){ return t.id === tid; });
+    var newName = prompt('Rename tag:', tag.name);
+    if (newName == null) return;
+    newName = newName.trim();
+    if (!newName || newName === tag.name) return;
+    var result = await sb.from('tags').update({ name: newName }).eq('id', tid);
+    if (result.error) { showToast('Could not rename: ' + result.error.message); return; }
+    var oldName = tag.name;
+    tag.name = newName;
+    D.projects.forEach(function(p){ if (p.tags) { var i = p.tags.indexOf(oldName); if (i>=0) p.tags[i] = newName; } });
+    D.resources.forEach(function(r){ if (r.tags) { var i = r.tags.indexOf(oldName); if (i>=0) r.tags[i] = newName; } });
+    D.tags.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    showToast('Tag renamed');
+    pgAdminTags();
+  };
+
+  window.deleteTag = async function(tid) {
+    var tag = D.tags.find(function(t){ return t.id === tid; });
+    if (!confirm('Delete tag "' + tag.name + '"? It will be removed from everything currently tagged with it.')) return;
+    var result = await sb.from('tags').delete().eq('id', tid);
+    if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+    D.tags = D.tags.filter(function(t){ return t.id !== tid; });
+    D.projects.forEach(function(p){ if (p.tags) p.tags = p.tags.filter(function(n){ return n !== tag.name; }); });
+    D.resources.forEach(function(r){ if (r.tags) r.tags = r.tags.filter(function(n){ return n !== tag.name; }); });
+    showToast('Tag deleted');
+    pgAdminTags();
+  };
 }
 
 async function pgAdminUsers() {
@@ -2948,9 +3237,32 @@ function editResource(rid) {
           '<div id="er-member-list" style="max-height:220px;overflow-y:auto;border:1px solid #e8e8e5;border-radius:8px;padding:8px;margin-top:6px">' + (memberChecklist || '<span class="text-muted" style="font-size:13px">No individual resources yet</span>') + '</div>' +
         '</div>'
     ) +
+    '<div class="form-group"><div class="form-label">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+      (res.tags && res.tags.length ? res.tags.map(function(t){ return '<span class="badge badge-purple">' + t + '</span>'; }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
+      '<button class="btn btn-sm" onclick="openResourceTagPicker(\'' + rid + '\')"><i class="ti ti-tag"></i> Edit tags</button>' +
+    '</div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="er-save"><i class="ti ti-check"></i> Save changes</button></div>');
   document.getElementById('er-save').onclick = function(){ return saveResource(rid); };
+  window.openResourceTagPicker = function(rid2) {
+    var r = D.resources.find(function(x){ return x.id === rid2; });
+    openTagPicker(r.tags || [], async function(newTags) {
+      var oldTags = r.tags || [];
+      var toAdd = newTags.filter(function(n){ return oldTags.indexOf(n) < 0; });
+      var toRemove = oldTags.filter(function(n){ return newTags.indexOf(n) < 0; });
+      for (var i = 0; i < toAdd.length; i++) {
+        var tag = D.tags.find(function(t){ return t.name === toAdd[i]; });
+        if (tag) await sb.from('resource_tags').insert({ resource_id: rid2, tag_id: tag.id });
+      }
+      for (var j = 0; j < toRemove.length; j++) {
+        var tagR = D.tags.find(function(t){ return t.name === toRemove[j]; });
+        if (tagR) await sb.from('resource_tags').delete().eq('resource_id', rid2).eq('tag_id', tagR.id);
+      }
+      r.tags = newTags;
+      showToast('Tags updated');
+      editResource(rid2);
+    });
+  };
 }
 
 window.filterMemberChecklist = function(query) {
