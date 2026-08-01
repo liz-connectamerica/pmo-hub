@@ -305,10 +305,20 @@ async function ensureOnTeam(p, res) {
   p.teamIds.push(res.id);
 }
 
+var TAG_COLOR_CLASSES = ['badge-purple','badge-teal','badge-amber','badge-red','badge-blue','badge-green','badge-coral'];
+function tagColorClass(name) {
+  var hash = 0;
+  for (var i = 0; i < name.length; i++) { hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0; }
+  return TAG_COLOR_CLASSES[Math.abs(hash) % TAG_COLOR_CLASSES.length];
+}
+function tagBadge(name) {
+  return '<span class="badge ' + tagColorClass(name) + '">' + name + '</span>';
+}
+
 function tagFilterBarHtml(activeTags, openFnName) {
   return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
     '<button class="btn btn-sm" onclick="' + openFnName + '()"><i class="ti ti-tag"></i> Filter by tag' + (activeTags.length ? ' (' + activeTags.length + ')' : '') + '</button>' +
-    activeTags.map(function(t){ return '<span class="badge badge-purple">' + t + '</span>'; }).join('') +
+    activeTags.map(function(t){ return tagBadge(t); }).join('') +
   '</div>';
 }
 
@@ -322,13 +332,14 @@ function openTagPicker(currentTagNames, onSave) {
     var listHtml = matches.map(function(t){
       var checked = selected.indexOf(t.name) >= 0;
       var esc = t.name.replace(/'/g,"\\'");
-      return '<label style="display:block;padding:6px 0;cursor:pointer;font-size:13px"><input type="checkbox" style="margin-right:8px"' + (checked?' checked':'') + ' onchange="window.__tagToggle(\'' + esc + '\')"> ' + t.name + '</label>';
+      var dotClass = tagColorClass(t.name);
+      return '<label style="display:flex;align-items:center;padding:6px 0;cursor:pointer;font-size:13px"><input type="checkbox" style="margin-right:8px"' + (checked?' checked':'') + ' onchange="window.__tagToggle(\'' + esc + '\')"> <span class="badge ' + dotClass + '" style="padding:2px 8px">' + t.name + '</span></label>';
     }).join('');
     var createRow = (q && !exactMatch) ? '<div style="padding:8px 0 0;border-top:1px solid #eee;margin-top:6px"><button class="btn btn-sm btn-primary" onclick="window.__tagCreate()"><i class="ti ti-plus"></i> Create "' + query.trim().replace(/"/g,'&quot;') + '"</button></div>' : '';
     var selectedChips = selected.length
       ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' + selected.map(function(n){
           var esc = n.replace(/'/g,"\\'");
-          return '<span class="badge badge-purple" style="display:inline-flex;align-items:center;gap:4px">' + n + ' <i class="ti ti-x" style="cursor:pointer" onclick="window.__tagToggle(\'' + esc + '\')"></i></span>';
+          return '<span class="badge ' + tagColorClass(n) + '" style="display:inline-flex;align-items:center;gap:4px">' + n + ' <i class="ti ti-x" style="cursor:pointer" onclick="window.__tagToggle(\'' + esc + '\')"></i></span>';
         }).join('') + '</div>'
       : '';
     showModal(
@@ -1375,7 +1386,7 @@ function pgProjectDetail(pid, tab) {
         '<div class="form-group"><div class="form-label">PM</div>' + (p.owner||'—') + '</div>' +
         '</div>' +
         '<div class="form-group mb-16"><div class="form-label">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
-          (p.tags && p.tags.length ? p.tags.map(function(t){ return '<span class="badge badge-purple">' + t + '</span>'; }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
+          (p.tags && p.tags.length ? p.tags.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
           (editable ? '<button class="btn btn-sm" onclick="openProjectTagPicker(\'' + p.id + '\')"><i class="ti ti-tag"></i> Edit tags</button>' : '') +
         '</div></div>' +
         (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '') +
@@ -2789,7 +2800,7 @@ function pgAdminTags() {
       expandRow = '<tr><td colspan="3" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
     }
     return '<tr>' +
-      '<td class="bold">' + t.name + '</td>' +
+      '<td>' + tagBadge(t.name) + '</td>' +
       '<td><button class="btn btn-sm" onclick="toggleTagExpand(\'' + t.id + '\')">' + usageCount + ' <i class="ti ' + (expandedTagId===t.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
       '<td><button class="btn btn-sm" onclick="renameTag(\'' + t.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteTag(\'' + t.id + '\')"><i class="ti ti-trash"></i></button></td>' +
       '</tr>' + expandRow;
@@ -3238,7 +3249,7 @@ function editResource(rid) {
         '</div>'
     ) +
     '<div class="form-group"><div class="form-label">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
-      (res.tags && res.tags.length ? res.tags.map(function(t){ return '<span class="badge badge-purple">' + t + '</span>'; }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
+      (res.tags && res.tags.length ? res.tags.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
       '<button class="btn btn-sm" onclick="openResourceTagPicker(\'' + rid + '\')"><i class="ti ti-tag"></i> Edit tags</button>' +
     '</div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
