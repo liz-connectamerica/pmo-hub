@@ -386,7 +386,7 @@ function openFilterModal(label, choices, getSelected, toggleValue, clearAll, rer
       '<div class="modal-footer"><button class="btn" onclick="window.__filterModalClear()">Clear</button><button class="btn btn-primary" onclick="closeModal()">Done</button></div>');
   }
   window.__filterModalToggle = function(val) { toggleValue(val); rerenderPage(); render(); };
-  window.__filterModalClear = function() { clearAll(); rerenderPage(); render(); };
+  window.__filterModalClear = function() { clearAll(); rerenderPage(); closeModal(); };
   render();
 }
 
