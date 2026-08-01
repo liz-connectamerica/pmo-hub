@@ -991,20 +991,25 @@ function openScheduleModal(pid) {
     var isInactiveCurrent = p.owner === n && D.people.indexOf(n) < 0;
     return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner === n ? ' selected' : '') + '>' + n + (isInactiveCurrent ? ' (deactivated)' : '') + '</option>';
   }).join('');
-  var memberOpts = D.people.concat(teamNames()).map(function(n) {
-    var isTeam = teamNames().indexOf(n) >= 0;
+  var memberOpts = D.people.map(function(n) {
     var chk = p.team.indexOf(n) >= 0 ? ' checked' : '';
-    return '<label class="member-check"><input type="checkbox" id="schm-' + n.replace(/ /g,'_') + '"' + chk + '> ' + n + (isTeam ? ' <span class="badge badge-blue" style="font-size:10px">Team</span>' : '') + '</label>';
+    return '<label class="member-check schm-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" id="schm-' + n.replace(/ /g,'_') + '"' + chk + '> ' + n + '</label>';
   }).join('');
   showModal(
     '<div class="modal-title">Schedule project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div style="font-weight:600;margin-bottom:16px;color:#534AB7">' + p.name + '</div>' +
     '<div class="form-group"><div class="form-label">Project manager</div><select id="sch-owner">' + ownerOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Team members</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' + memberOpts + '</div></div>' +
+    '<div class="form-group"><div class="form-label">Team members</div><input type="text" id="schm-search" placeholder="Search people…" oninput="filterSchmList(this.value)"><div id="schm-list" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">' + memberOpts + '</div></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Planned start *</div><input type="date" id="sch-start" value="' + (p.plannedStart||'') + '"></div>' +
     '<div class="form-group"><div class="form-label">Target end *</div><input type="date" id="sch-end" value="' + (p.end||'') + '"></div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" onclick="scheduleProject(\'' + p.id + '\')"><i class="ti ti-calendar-check"></i> Save changes</button></div>', true);
+  window.filterSchmList = function(query) {
+    var q = query.trim().toLowerCase();
+    document.querySelectorAll('#schm-list .schm-row').forEach(function(row) {
+      row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
+    });
+  };
 }
 
 async function scheduleProject(pid) {
@@ -1012,8 +1017,7 @@ async function scheduleProject(pid) {
   var start = document.getElementById('sch-start').value;
   var end   = document.getElementById('sch-end').value;
   if (!start || !end) { showToast('Please set a start and end date'); return; }
-  var allNames = D.people.concat(teamNames());
-  var newTeamNames = allNames.filter(function(n){ var el = document.getElementById('schm-' + n.replace(/ /g,'_')); return el && el.checked; });
+  var newTeamNames = D.people.filter(function(n){ var el = document.getElementById('schm-' + n.replace(/ /g,'_')); return el && el.checked; });
   var ownerName = document.getElementById('sch-owner').value;
   var ownerProfile = resolveAssignee(ownerName);
 
@@ -1158,7 +1162,7 @@ function pgProjectDetail(pid, tab) {
   renderNav();
   var editable = canEdit(p);
   var isComplete = p.stage === 'complete';
-  var tbs = ['overview','milestones','tasks','raid','documentation'];
+  var tbs = ['overview','team','milestones','tasks','raid','documentation'];
 
   function sortedMilestones() {
     return p.milestones.slice().sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
@@ -1176,9 +1180,6 @@ function pgProjectDetail(pid, tab) {
 
   function tabC(t) {
     if (t === 'overview') {
-      var teamHtml = p.team.length
-        ? p.team.map(function(m,i){ var isTeam = teamNames().indexOf(m) >= 0; var ini = m.split(' ').map(function(x){ return x[0]; }).join(''); return '<div class="team-chip">' + (isTeam ? '<i class="ti ti-users" style="font-size:13px;color:#185FA5"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:12px">' + m + '</span></div>'; }).join('')
-        : '<span class="text-muted">No team assigned</span>';
       return '<div class="grid-2 mb-16">' +
         '<div><div class="form-label">Stage</div>' + stagePill(p.stage) + '</div>' +
         '<div><div class="form-label">Status</div>' + bdg(p.status) + '</div>' +
@@ -1196,7 +1197,6 @@ function pgProjectDetail(pid, tab) {
         '<div class="form-group"><div class="form-label">Sponsor</div>' + (p.sponsor||'—') + '</div>' +
         '<div class="form-group"><div class="form-label">PM</div>' + (p.owner||'—') + '</div>' +
         '</div>' +
-        '<div class="form-group"><div class="form-label">Team</div><div style="display:flex;gap:8px;flex-wrap:wrap">' + teamHtml + '</div></div>' +
         (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '') +
         (p.stage === 'hold' ? '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
         '<div class="form-group" style="margin-top:16px"><div class="form-label">Timeline</div>' + timelineHtml() +
@@ -1209,6 +1209,28 @@ function pgProjectDetail(pid, tab) {
               '<button class="btn btn-success" onclick="markComplete(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>'
           ) +
           '</div>' : '');
+    }
+    if (t === 'team') {
+      var candidatePeople = D.people.filter(function(n){ return p.team.indexOf(n) < 0; });
+      var teamRows = p.team.length
+        ? p.team.map(function(m,i){
+            var isTeam = teamNames().indexOf(m) >= 0;
+            var ini = m.split(' ').map(function(x){ return x[0]; }).join('');
+            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0ede8">' +
+              '<div style="display:flex;align-items:center;gap:10px">' + (isTeam ? '<i class="ti ti-users" style="color:#185FA5"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:13px">' + m + '</span></div>' +
+              (editable ? '<button class="btn btn-sm btn-danger" onclick="removeTeamMemberDirect(\'' + p.id + '\',\'' + m.replace(/'/g,"\\'") + '\')"><i class="ti ti-x"></i></button>' : '') +
+              '</div>';
+          }).join('')
+        : '<div class="text-muted">No team members yet</div>';
+      return '<div class="card"><div class="section-title">Team members</div>' + teamRows + '</div>' +
+        (editable ? '<div class="card mt-16"><div class="section-title">Add a team member</div>' +
+          '<input type="text" id="team-add-search" placeholder="Search people…" oninput="filterTeamAddList(this.value)">' +
+          '<div id="team-add-list" style="max-height:220px;overflow-y:auto;margin-top:8px">' +
+          candidatePeople.map(function(n){
+            return '<div class="team-add-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + n + '</span><button class="btn btn-sm" onclick="addTeamMemberDirect(\'' + p.id + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button></div>';
+          }).join('') +
+          (candidatePeople.length ? '' : '<span class="text-muted" style="font-size:13px">Everyone is already on the team</span>') +
+          '</div></div>' : '');
     }
     if (t === 'milestones') {
       var sorted = sortedMilestones();
@@ -1433,6 +1455,35 @@ function pgProjectDetail(pid, tab) {
     '<div id="ptab-content">' + tabC(tab) + '</div>' +
     '</div>';
 
+  window.filterTeamAddList = function(query) {
+    var q = query.trim().toLowerCase();
+    document.querySelectorAll('#team-add-list .team-add-row').forEach(function(row) {
+      row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
+    });
+  };
+  window.addTeamMemberDirect = async function(pid2, personName) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var profile = resolveAssignee(personName);
+    if (!profile) { showToast('Could not find that person'); return; }
+    if (pr.teamIds.indexOf(profile.id) >= 0) { showToast('Already on the team'); return; }
+    var result = await sb.from('project_team').insert({ project_id: pid2, user_id: profile.id });
+    if (result.error) { showToast('Could not add: ' + result.error.message); return; }
+    pr.team.push(personName); pr.teamIds.push(profile.id);
+    document.getElementById('ptab-content').innerHTML = tabC('team');
+    showToast(personName + ' added to the team');
+  };
+  window.removeTeamMemberDirect = async function(pid2, personName) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var idx = pr.team.indexOf(personName);
+    if (idx < 0) return;
+    if (!confirm('Remove ' + personName + ' from the team?')) return;
+    var userId = pr.teamIds[idx];
+    var result = await sb.from('project_team').delete().eq('project_id', pid2).eq('user_id', userId);
+    if (result.error) { showToast('Could not remove: ' + result.error.message); return; }
+    pr.team.splice(idx,1); pr.teamIds.splice(idx,1);
+    document.getElementById('ptab-content').innerHTML = tabC('team');
+    showToast(personName + ' removed from the team');
+  };
   window.switchPTab = function(t) {
     tbs.forEach(function(x){ var e = document.getElementById('ptab-' + x); if (e) e.className = 'tab' + (x===t?' active':''); });
     document.getElementById('ptab-content').innerHTML = tabC(t);
@@ -2022,10 +2073,6 @@ function editProject(pid) {
   }).join('');
   var catOpts    = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option' + (p.category===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var buOpts     = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  var memberOpts = D.people.concat(teamNames()).map(function(n) {
-    var isTeam = teamNames().indexOf(n) >= 0;
-    return '<label class="member-check"><input type="checkbox" id="ep-tm-' + n.replace(/ /g,'_') + '"' + (p.team.indexOf(n)>=0?' checked':'') + '> ' + n + (isTeam?' <span class="badge badge-blue" style="font-size:10px">Team</span>':'') + '</label>';
-  }).join('');
   showModal('<div class="modal-title">Edit project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Project name</div><input type="text" id="ep-name" value="' + p.name + '"></div>' +
     '<div class="grid-2">' +
@@ -2048,7 +2095,6 @@ function editProject(pid) {
     '<div class="form-group"><div class="form-label">Sponsor email' + (p.sponsorId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : '') + '</div><input type="email" id="ep-sponsor-email" value="' + (p.sponsorEmail||'') + '"></div>' +
     '<div class="form-group"><div class="form-label">Project manager</div><select id="ep-owner">' + ownerOpts + '</select></div>' +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Team members</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' + memberOpts + '</div></div>' +
     '<div class="modal-footer">' +
       (D.role === 'admin' ? '<button class="btn btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
       '<button class="btn" onclick="closeModal()">Cancel</button>' +
@@ -2091,19 +2137,6 @@ async function saveProject(pid) {
   if (spEl) p.sponsor = newVals.sponsor;
   if (spEmailEl) { p.sponsorEmail = newVals.sponsor_email; p.sponsorId = result.data.sponsor_id; }
   if (pmEl) { p.owner = pmEl.value; p.ownerId = newVals.owner_id; }
-
-  // Team membership: diff against real linked accounts only (teams/groups aren't
-  // linkable to a real row yet — that's part of the Resources migration, still to come)
-  var allNames = D.people.concat(teamNames());
-  var newTeamNames = allNames.filter(function(n){ var el = document.getElementById('ep-tm-' + n.replace(/ /g,'_')); return el && el.checked; });
-  var newRealIds = newTeamNames.map(function(n){ return resolveAssignee(n); }).filter(Boolean).map(function(pr){ return pr.id; });
-  var oldIds = p.teamIds || [];
-  var toAdd = newRealIds.filter(function(id){ return oldIds.indexOf(id) < 0; });
-  var toRemove = oldIds.filter(function(id){ return newRealIds.indexOf(id) < 0; });
-  if (toAdd.length) await sb.from('project_team').insert(toAdd.map(function(id){ return { project_id: pid, user_id: id }; }));
-  for (var i = 0; i < toRemove.length; i++) { await sb.from('project_team').delete().eq('project_id', pid).eq('user_id', toRemove[i]); }
-  p.team = newTeamNames;
-  p.teamIds = newRealIds;
 
   closeModal(); showToast('Project saved');
   if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage==='projects') pgProjects(); else if (currentPage === 'requests') pgRequests(); else pgDashboard();
