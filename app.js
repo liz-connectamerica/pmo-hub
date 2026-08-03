@@ -1085,6 +1085,7 @@ function reviewRequest(id) {
   var r = D.requests.find(function(x){ return x.id === id; });
   var canApprove = D.role === 'admin' && r.status === 'Pending';
   var canBacklog  = D.role === 'admin' && r.status === 'Approved';
+  var canResubmit = r.status === 'Rejected' && (r.submitterId === D.currentProfile.id || D.role === 'admin');
   // find linked project for read-only view
   var linkedP = r.linkedProject ? D.projects.find(function(p){ return p.id === r.linkedProject; }) : null;
 
@@ -1128,10 +1129,72 @@ function reviewRequest(id) {
       '<button class="btn btn-success" onclick="decideReq(\'' + r.id + '\',\'Approved\')"><i class="ti ti-check"></i> Approve — add to backlog</button></div>';
   } else if (canBacklog) {
     html += '<div class="modal-footer"><button class="btn btn-primary" onclick="scheduleFromRequest(\'' + r.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule this project</button><button class="btn" onclick="closeModal()">Close</button></div>';
+  } else if (canResubmit) {
+    html += '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditResubmitModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit &amp; resubmit</button></div>';
   } else {
     html += '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button></div>';
   }
   showModal(html);
+}
+
+function openEditResubmitModal(id) {
+  var r = D.requests.find(function(x){ return x.id === id; });
+  var deptOpts = ['Marketing','Operations','HR','Sales','Product','Finance','Technology'].map(function(d){ return '<option' + (r.dept===d?' selected':'') + '>' + d + '</option>'; }).join('');
+  var priorOpts = ['Critical','High','Medium','Low'].map(function(p){ return '<option' + (r.priority===p?' selected':'') + '>' + p + '</option>'; }).join('');
+  var valOpts = VALUE_AREAS.map(function(v){ return '<option' + (r.value===v?' selected':'') + '>' + v + '</option>'; }).join('');
+  var effortLabels = { S:'S — days', M:'M — weeks', L:'L — 1–3 months', XL:'XL — 3+ months' };
+  var effortOpts = ['S','M','L','XL'].map(function(e){ return '<option value="' + e + '"' + (r.effort===e?' selected':'') + '>' + effortLabels[e] + '</option>'; }).join('');
+  showModal('<div class="modal-title">Edit &amp; resubmit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    (r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:#FBE7E3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid #993C1D">' + r.feedback + '</div></div>' : '') +
+    '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="er-req-title" value="' + r.title.replace(/"/g,'&quot;') + '"></div>' +
+    '<div class="grid-2">' +
+      '<div class="form-group"><div class="form-label">Department</div><select id="er-req-dept">' + deptOpts + '</select></div>' +
+      '<div class="form-group"><div class="form-label">Priority</div><select id="er-req-priority">' + priorOpts + '</select></div>' +
+    '</div><div class="grid-2">' +
+      '<div class="form-group"><div class="form-label">Value area</div><select id="er-req-value">' + valOpts + '</select></div>' +
+      '<div class="form-group"><div class="form-label">Effort</div><select id="er-req-effort">' + effortOpts + '</select></div>' +
+    '</div>' +
+    '<div class="form-group"><div class="form-label">Estimated cost ($) *</div><input type="text" id="er-req-cost" value="' + r.cost + '"><div id="er-req-cost-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div></div>' +
+    '<div class="form-group"><div class="form-label">Business description *</div><textarea id="er-req-desc" rows="4">' + r.description.replace(/</g,'&lt;') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Impact &amp; value proposition *</div><textarea id="er-req-impact" rows="3">' + r.impact.replace(/</g,'&lt;') + '</textarea></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="er-req-save"><i class="ti ti-send"></i> Resubmit request</button></div>');
+
+  document.getElementById('er-req-cost').addEventListener('input', function() {
+    this.value = this.value.replace(/[^0-9]/g,'');
+    document.getElementById('er-req-cost-err').style.display = 'none';
+  });
+
+  document.getElementById('er-req-save').onclick = function(){ return resubmitRequest(id); };
+}
+
+async function resubmitRequest(id) {
+  var r = D.requests.find(function(x){ return x.id === id; });
+  var title  = document.getElementById('er-req-title').value.trim();
+  var desc   = document.getElementById('er-req-desc').value.trim();
+  var impact = document.getElementById('er-req-impact').value.trim();
+  var costRaw = document.getElementById('er-req-cost').value.trim();
+  var errEl = document.getElementById('er-req-cost-err');
+  if (!title || !desc || !impact) { showToast('Please fill in all required fields', 'error'); return; }
+  if (!costRaw || isNaN(Number(costRaw))) { errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+
+  var btn = document.getElementById('er-req-save'); btn.disabled = true;
+  var updates = {
+    title: title, dept: document.getElementById('er-req-dept').value,
+    priority: document.getElementById('er-req-priority').value, value_area: document.getElementById('er-req-value').value,
+    effort: document.getElementById('er-req-effort').value, cost: Number(costRaw),
+    description: desc, impact: impact, status: 'Pending', feedback: null
+  };
+  var result = await sb.from('requests').update(updates).eq('id', id);
+  if (result.error) { showToast('Could not resubmit: ' + result.error.message); btn.disabled = false; return; }
+
+  r.title = title; r.dept = updates.dept; r.priority = updates.priority; r.value = updates.value_area;
+  r.effort = updates.effort; r.cost = updates.cost; r.description = desc; r.impact = impact;
+  r.status = 'Pending'; r.feedback = '';
+
+  showToast('Request resubmitted for review'); closeModal(); renderNav();
+  if (currentPage === 'my-requests') pgMyRequests(); else if (currentPage === 'requests') pgRequests();
 }
 
 async function decideReq(id, decision) {
@@ -1261,9 +1324,11 @@ async function scheduleProject(pid) {
 
   var result = await sb.from('projects').update({
     planned_start: start, start_date: start, end_date: end, stage: 'planned',
-    owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null
+    owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
+    target_quarter: null, target_year: null
   }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  p.targetQuarter = null; p.targetYear = null;
 
   var newRealIds = newTeamNames.map(function(n){ return resolveResource(n); }).filter(Boolean).map(function(r){ return r.id; });
   var oldIds = p.teamIds || [];
