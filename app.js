@@ -53,6 +53,20 @@ async function syncRequestStatus(requestId, updates) {
   Object.assign(r, updates);
 }
 
+async function loadFieldOptions() {
+  var result = await sb.from('field_options').select('*');
+  if (result.error) { console.error('loadFieldOptions query failed:', result.error); return; }
+  var rows = result.data || [];
+  function valuesFor(fieldName) {
+    return rows.filter(function(r){ return r.field_name === fieldName; })
+      .map(function(r){ return r.value; })
+      .sort(function(a,b){ return a.localeCompare(b); });
+  }
+  VALUE_AREAS = valuesFor('value_area');
+  BUSINESS_UNITS = valuesFor('business_unit');
+  CATEGORIES = valuesFor('category');
+}
+
 async function loadTags() {
   var results = await Promise.all([
     sb.from('tags').select('*'),
@@ -688,7 +702,8 @@ var NAV_DEF = {
     ]},
     { s:'Administration', items:[
       {id:'admin-users', icon:'ti-users-group', label:'Manage Users'},
-      {id:'admin-tags', icon:'ti-tag', label:'Manage Tags'}
+      {id:'admin-tags', icon:'ti-tag', label:'Manage Tags'},
+      {id:'admin-values', icon:'ti-list-details', label:'Manage Values'}
     ]}
   ],
   member: [
@@ -739,7 +754,7 @@ var PAGE_RENDERERS = {
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
-  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'future-planning':pgFuturePlanning, hold:pgHold
+  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold
 };
 
 function pageAllowedForRole(page, role) {
@@ -816,7 +831,7 @@ async function bootAppForUser(skipReload) {
 
   if (!skipReload) {
     document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading your projects…</p></div>';
-    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests(), loadTags()]);
+    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests(), loadTags(), loadFieldOptions()]);
     D.projects = loaded[0];
     D.resources = loaded[1];
     D.requests = loaded[2];
@@ -3284,6 +3299,106 @@ async function callAdminUsersApi(payload) {
   } catch (e) { showToast('Could not reach the server: ' + e.message); return null; }
   if (!res.ok) { showToast(json.error || 'Request failed'); return null; }
   return json;
+}
+
+function pgManageValues() {
+  tb('Manage Values');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can manage these values.</p></div>';
+    return;
+  }
+
+  function usageCount(fieldName, value) {
+    if (fieldName === 'value_area') {
+      return D.projects.filter(function(p){ return p.value === value; }).length + D.requests.filter(function(r){ return r.value === value; }).length;
+    }
+    if (fieldName === 'business_unit') {
+      return D.projects.filter(function(p){ return p.businessUnit === value; }).length;
+    }
+    return D.projects.filter(function(p){ return (p.categories||[]).indexOf(value) >= 0; }).length;
+  }
+
+  function fieldSection(fieldName, label, values) {
+    var rows = values.map(function(v){
+      var count = usageCount(fieldName, v);
+      var esc = v.replace(/'/g,"\\'");
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0ede8">' +
+        '<div><span style="font-size:13px;font-weight:600">' + v + '</span> <span class="text-muted" style="font-size:12px">— used by ' + count + '</span></div>' +
+        '<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="renameFieldOption(\'' + fieldName + '\',\'' + esc + '\')"><i class="ti ti-edit"></i></button>' +
+        '<button class="btn btn-sm btn-danger" onclick="deleteFieldOption(\'' + fieldName + '\',\'' + esc + '\')"><i class="ti ti-trash"></i></button></div></div>';
+    }).join('');
+    return '<div class="card mb-16"><div class="section-title">' + label + '</div>' +
+      (rows || '<span class="text-muted" style="font-size:13px">No values yet</span>') +
+      '<div class="task-filter-bar" style="display:flex;gap:8px;margin-top:12px"><input type="text" id="new-' + fieldName + '-input" placeholder="New ' + label.toLowerCase() + '…" style="flex:1"><button class="btn btn-primary" onclick="createFieldOption(\'' + fieldName + '\')"><i class="ti ti-plus"></i> Add</button></div>' +
+      '</div>';
+  }
+
+  document.getElementById('content').innerHTML =
+    fieldSection('value_area', 'Value Area', VALUE_AREAS) +
+    fieldSection('business_unit', 'Business Unit', BUSINESS_UNITS) +
+    fieldSection('category', 'Category', CATEGORIES);
+
+  window.createFieldOption = async function(fieldName) {
+    var el = document.getElementById('new-' + fieldName + '-input');
+    var value = el.value.trim();
+    if (!value) return;
+    var existing = fieldName === 'value_area' ? VALUE_AREAS : fieldName === 'business_unit' ? BUSINESS_UNITS : CATEGORIES;
+    if (existing.some(function(v){ return v.toLowerCase() === value.toLowerCase(); })) { showToast('That value already exists'); return; }
+    var result = await sb.from('field_options').insert({ field_name: fieldName, value: value });
+    if (result.error) { showToast('Could not add: ' + result.error.message); return; }
+    await loadFieldOptions();
+    showToast('Added'); pgManageValues();
+  };
+
+  window.renameFieldOption = async function(fieldName, oldValue) {
+    var newValue = prompt('Rename "' + oldValue + '" to:', oldValue);
+    if (newValue == null) return;
+    newValue = newValue.trim();
+    if (!newValue || newValue === oldValue) return;
+
+    var result = await sb.from('field_options').update({ value: newValue }).eq('field_name', fieldName).eq('value', oldValue);
+    if (result.error) { showToast('Could not rename: ' + result.error.message); return; }
+
+    if (fieldName === 'value_area') {
+      await sb.from('projects').update({ value_area: newValue }).eq('value_area', oldValue);
+      await sb.from('requests').update({ value_area: newValue }).eq('value_area', oldValue);
+      D.projects.forEach(function(p){ if (p.value === oldValue) p.value = newValue; });
+      D.requests.forEach(function(r){ if (r.value === oldValue) r.value = newValue; });
+    } else if (fieldName === 'business_unit') {
+      await sb.from('projects').update({ business_unit: newValue }).eq('business_unit', oldValue);
+      D.projects.forEach(function(p){ if (p.businessUnit === oldValue) p.businessUnit = newValue; });
+    } else {
+      // Category is multi-valued per project, so a project could in theory
+      // already have both the old and new name — handle that collision per
+      // project rather than a single bulk update that could hit a duplicate key.
+      var affected = D.projects.filter(function(p){ return p.categories && p.categories.indexOf(oldValue) >= 0; });
+      for (var i = 0; i < affected.length; i++) {
+        var proj = affected[i];
+        if (proj.categories.indexOf(newValue) >= 0) {
+          await sb.from('project_categories').delete().eq('project_id', proj.id).eq('category', oldValue);
+          proj.categories = proj.categories.filter(function(c){ return c !== oldValue; });
+        } else {
+          await sb.from('project_categories').update({ category: newValue }).eq('project_id', proj.id).eq('category', oldValue);
+          var idx = proj.categories.indexOf(oldValue);
+          proj.categories[idx] = newValue;
+        }
+      }
+    }
+
+    await loadFieldOptions();
+    showToast('Renamed'); pgManageValues();
+  };
+
+  window.deleteFieldOption = async function(fieldName, value) {
+    var count = usageCount(fieldName, value);
+    var msg = 'Delete "' + value + '"?' + (count > 0 ? ' It is currently used by ' + count + ' item(s) — they will keep showing this value, but it will no longer be selectable for new entries.' : '');
+    if (!confirm(msg)) return;
+    var result = await sb.from('field_options').delete().eq('field_name', fieldName).eq('value', value);
+    if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+    await loadFieldOptions();
+    showToast('Deleted'); pgManageValues();
+  };
 }
 
 function pgAdminTags() {
