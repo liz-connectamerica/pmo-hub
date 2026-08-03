@@ -256,7 +256,7 @@ async function loadAllProjects() {
       start: pr.start_date, end: pr.end_date, plannedStart: pr.planned_start,
       value: pr.value_area, priority: pr.priority, description: pr.description,
       blockers: pr.blockers, health: pr.health, stage: pr.stage, requestId: pr.request_id,
-      holdReason: pr.hold_reason, preHoldStage: pr.pre_hold_stage,
+      holdReason: pr.hold_reason, preHoldStage: pr.pre_hold_stage, heldAt: pr.held_at,
       targetQuarter: pr.target_quarter, targetYear: pr.target_year,
       milestones: milestones, tasks: tasks, raid: raid,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
@@ -674,6 +674,7 @@ var NAV_DEF = {
       {id:'planned',  icon:'ti-calendar-event', label:'Planned'},
       {id:'backlog',  icon:'ti-stack-2',        label:'Backlog',         badge:'backlog'},
       {id:'completed',icon:'ti-circle-check',   label:'Completed'},
+      {id:'hold',     icon:'ti-player-pause',   label:'Hold'},
       {id:'future-planning', icon:'ti-calendar-time', label:'Future Planning'},
       {id:'resources',icon:'ti-users',          label:'Resources'}
     ]},
@@ -700,6 +701,7 @@ var NAV_DEF = {
       {id:'projects',  icon:'ti-briefcase',      label:'Active Projects'},
       {id:'planned',   icon:'ti-calendar-event', label:'Planned'},
       {id:'completed', icon:'ti-circle-check',   label:'Completed'},
+      {id:'hold',      icon:'ti-player-pause',   label:'Hold'},
       {id:'resources', icon:'ti-users',          label:'Resources'}
     ]},
     { s:'My Requests', items:[
@@ -737,7 +739,7 @@ var PAGE_RENDERERS = {
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
-  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'future-planning':pgFuturePlanning
+  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'future-planning':pgFuturePlanning, hold:pgHold
 };
 
 function pageAllowedForRole(page, role) {
@@ -1489,7 +1491,7 @@ function pgProjectDetail(pid, tab) {
           '<button class="btn btn-primary" onclick="closeModal();editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit project</button>' +
           (p.stage === 'hold'
             ? '<button class="btn btn-success" onclick="resumeFromHold(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Resume</button>'
-            : ((p.stage === 'active' || p.stage === 'planned') ? '<button class="btn" onclick="putOnHold(\'' + p.id + '\')"><i class="ti ti-player-pause"></i> Put on hold</button>' : '') +
+            : ((p.stage === 'active' || p.stage === 'planned' || p.stage === 'backlog') ? '<button class="btn" onclick="putOnHold(\'' + p.id + '\')"><i class="ti ti-player-pause"></i> Put on hold</button>' : '') +
               '<button class="btn btn-success" onclick="markComplete(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>'
           ) +
           '</div>' : '');
@@ -1984,21 +1986,22 @@ async function putOnHold(pid) {
   if (reason == null) return;
   reason = reason.trim();
   if (!reason) { showToast('A hold reason is required'); return; }
-  var result = await sb.from('projects').update({ stage: 'hold', hold_reason: reason, pre_hold_stage: p.stage }).eq('id', pid);
+  var heldAt = new Date().toISOString();
+  var result = await sb.from('projects').update({ stage: 'hold', hold_reason: reason, pre_hold_stage: p.stage, held_at: heldAt }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-  p.preHoldStage = p.stage; p.stage = 'hold'; p.holdReason = reason;
+  p.preHoldStage = p.stage; p.stage = 'hold'; p.holdReason = reason; p.heldAt = heldAt;
   closeModal(); showToast('"' + p.name + '" is now on hold'); renderNav();
-  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else pgDashboard();
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else if (currentPage === 'hold') pgHold(); else pgDashboard();
 }
 
 async function resumeFromHold(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   var resumeStage = p.preHoldStage || 'planned';
-  var result = await sb.from('projects').update({ stage: resumeStage, hold_reason: null, pre_hold_stage: null }).eq('id', pid);
+  var result = await sb.from('projects').update({ stage: resumeStage, hold_reason: null, pre_hold_stage: null, held_at: null }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-  p.stage = resumeStage; p.holdReason = null; p.preHoldStage = null;
+  p.stage = resumeStage; p.holdReason = null; p.preHoldStage = null; p.heldAt = null;
   closeModal(); showToast('"' + p.name + '" resumed'); renderNav();
-  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else pgDashboard();
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else if (currentPage === 'hold') pgHold(); else pgDashboard();
 }
 
 async function markComplete(pid) {
@@ -2584,6 +2587,54 @@ function openNewProjectModal() {
 }
 
 // ── Roadmap ────────────────────────────────────────────────────────────────────
+
+var holdTagFilter = [];
+
+function pgHold() {
+  tb('Hold');
+  var hp = D.projects.filter(function(p){ return p.stage === 'hold'; });
+  if (holdTagFilter.length) hp = hp.filter(function(p){ return holdTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
+  hp = hp.slice().sort(function(a,b){ return (b.heldAt||'').localeCompare(a.heldAt||''); });
+
+  function scheduleInfo(p) {
+    if (p.preHoldStage === 'backlog') return '<span class="text-muted">Was in Backlog — no schedule set yet</span>';
+    var start = p.plannedStart || p.start;
+    if (!start && !p.end) return '<span class="text-muted">No schedule was set</span>';
+    return '<span class="text-muted">Start: </span>' + (start||'TBD') + ' &nbsp; <span class="text-muted">End: </span>' + (p.end||'TBD');
+  }
+
+  var cards = hp.map(function(p) {
+    var heldDate = p.heldAt ? new Date(p.heldAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : 'Unknown date';
+    return '<div class="project-card">' +
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
+        '<div><div class="bold mb-12">' + p.name + '</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.priority) + ' ' + badgeIf('badge-purple', p.value) + ' <span class="badge badge-gray">Was: ' + (p.preHoldStage||'—') + '</span></div></div>' +
+        '<div style="display:flex;gap:8px">' +
+          '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+          (canEdit(p) ? '<button class="btn btn-success" onclick="resumeFromHold(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Resume</button>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="grid-2 mt-12" style="font-size:13px">' +
+        '<div><span class="text-muted">On hold since: </span>' + heldDate + '</div>' +
+        '<div>' + scheduleInfo(p) + '</div>' +
+      '</div>' +
+      '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D;margin-top:10px"><i class="ti ti-player-pause"></i> <strong>Hold reason:</strong> ' + (p.holdReason||'—') + '</div>' +
+    '</div>';
+  }).join('');
+
+  document.getElementById('content').innerHTML =
+    tagFilterBarHtml(holdTagFilter, 'openHoldTagFilter') +
+    (hp.length ? cards : '<div class="empty-state"><i class="ti ti-player-pause"></i><p>Nothing on hold right now</p></div>');
+
+  window.openHoldTagFilter = function() {
+    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
+      function() { return holdTagFilter; },
+      function(val) { var i = holdTagFilter.indexOf(val); if (i>=0) holdTagFilter.splice(i,1); else holdTagFilter.push(val); },
+      function() { holdTagFilter = []; },
+      pgHold
+    );
+  };
+}
 
 function pgFuturePlanning() {
   tb('Future Planning');
