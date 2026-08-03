@@ -325,6 +325,40 @@ function tagBadge(name) {
   return '<span class="badge ' + tagColorClass(name) + '">' + name + '</span>';
 }
 
+// Reusable 12-month-window computation, shared by Roadmap and (eventually)
+// Future Planning. Mode is one of: 'next12' (rolling forward, default),
+// 'last12' (rolling backward, ending this month), 'year' (fixed Jan-Dec of
+// a chosen year).
+function computeDateWindow(mode, year) {
+  var windowMonths = 12;
+  var windowStart;
+  if (mode === 'last12') {
+    var now = new Date(); now.setDate(1); now.setHours(0,0,0,0);
+    windowStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+  } else if (mode === 'year') {
+    windowStart = new Date(year, 0, 1);
+  } else {
+    windowStart = new Date(); windowStart.setDate(1); windowStart.setHours(0,0,0,0);
+  }
+  return { windowStart: windowStart, windowMonths: windowMonths };
+}
+
+function dateRangeControlHtml(mode, year, setModeFnName, setYearFnName) {
+  var yearOpts = '';
+  var thisYear = new Date().getFullYear();
+  for (var y = thisYear - 2; y <= thisYear + 3; y++) {
+    yearOpts += '<option value="' + y + '"' + (y === year ? ' selected' : '') + '>' + y + '</option>';
+  }
+  return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">' +
+    '<div class="tab-bar" style="margin-bottom:0">' +
+      '<div class="tab' + (mode==='next12'?' active':'') + '" onclick="' + setModeFnName + '(\'next12\')">Next 12 months</div>' +
+      '<div class="tab' + (mode==='last12'?' active':'') + '" onclick="' + setModeFnName + '(\'last12\')">Last 12 months</div>' +
+      '<div class="tab' + (mode==='year'?' active':'') + '" onclick="' + setModeFnName + '(\'year\')">Specific year</div>' +
+    '</div>' +
+    (mode === 'year' ? '<select onchange="' + setYearFnName + '(this.value)">' + yearOpts + '</select>' : '') +
+  '</div>';
+}
+
 function tagFilterBarHtml(activeTags, openFnName) {
   return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
     '<button class="btn btn-sm" onclick="' + openFnName + '()"><i class="ti ti-tag"></i> Filter by tag' + (activeTags.length ? ' (' + activeTags.length + ')' : '') + '</button>' +
@@ -542,6 +576,8 @@ var plannedTagFilter = [];
 var activeProjectsTagFilter = [];
 var completedTagFilter = [];
 var roadmapTagFilter = [];
+var roadmapRangeMode = 'next12'; // 'next12' | 'last12' | 'year'
+var roadmapSelectedYear = new Date().getFullYear();
 var tagAdminState = { expandedId: null };
 var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3 };
@@ -2524,8 +2560,9 @@ function openNewProjectModal() {
 
 function pgRoadmap() {
   tb('Roadmap');
-  var windowStart = new Date(); windowStart.setDate(1); windowStart.setHours(0,0,0,0);
-  var windowMonths = 12;
+  var win = computeDateWindow(roadmapRangeMode, roadmapSelectedYear);
+  var windowStart = win.windowStart;
+  var windowMonths = win.windowMonths;
   var monthLabels = [];
   for (var mi = 0; mi < windowMonths; mi++) {
     var md = new Date(windowStart.getFullYear(), windowStart.getMonth() + mi, 1);
@@ -2665,9 +2702,10 @@ function pgRoadmap() {
     '<th class="sortable-th" style="position:relative"><span onclick="setMsSort(\'status\')">Status ' + msArrow('status') + '</span>' + msFilterIcon('fStatus', st.fStatus.length>0) + '</th>' +
     '</tr>';
   document.getElementById('content').innerHTML =
+    dateRangeControlHtml(roadmapRangeMode, roadmapSelectedYear, 'setRoadmapRangeMode', 'setRoadmapYear') +
     categoryTabsHtml +
     tagFilterBarHtml(roadmapTagFilter, 'openRoadmapTagFilter') +
-    '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">12-month view — ' + rangeLabel + '</div>' +
+    '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">' + windowMonths + '-month view — ' + rangeLabel + '</div>' +
     phaseLegend +
     '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + m + '</div>'; }).join('') + '</div>' +
     timelineBody + '</div>' +
@@ -2678,6 +2716,8 @@ function pgRoadmap() {
     '</div>';
 
   window.setRoadmapCategory = function(cat) { roadmapCategoryFilter = cat; pgRoadmap(); };
+  window.setRoadmapRangeMode = function(mode) { roadmapRangeMode = mode; pgRoadmap(); };
+  window.setRoadmapYear = function(year) { roadmapSelectedYear = parseInt(year); pgRoadmap(); };
   window.openRoadmapTagFilter = function() {
     openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
       function() { return roadmapTagFilter; },
