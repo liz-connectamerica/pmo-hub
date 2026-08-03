@@ -1029,7 +1029,8 @@ function pgPortfolio() {
     var cards = byVal[v].map(function(p) {
       var req = p.requestId ? D.requests.find(function(r){ return r.id === p.requestId; }) : null;
       return '<div class="card card-sm" style="cursor:pointer;border:1px solid #e8e8e5;border-radius:10px" onclick="goToProject(\'' + p.id + '\')">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px"><span class="bold" style="font-size:13px">' + p.name + '</span>' + stagePill(p.stage) + '</div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px"><span class="bold" style="font-size:13px">' + p.name + '</span>' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0">' + stagePill(p.stage) + '<button class="btn btn-sm" onclick="event.stopPropagation();goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></div></div>' +
         (p.stage === 'hold' && p.holdReason ? '<div class="text-muted mb-12" style="font-size:12px"><i class="ti ti-player-pause"></i> ' + p.holdReason + '</div>' : '') +
         '<div class="text-muted mb-12" style="line-height:1.5">' + (p.description||'') + '</div>' +
         (req && req.cost != null ? '<div class="text-muted mb-12" style="font-size:12px"><i class="ti ti-currency-dollar"></i> Estimated cost: ' + fmtCost(req.cost) + '</div>' : '') +
@@ -1188,7 +1189,10 @@ function pgBacklog() {
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
         '<div><div class="bold mb-12">' + p.name + '</div>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.priority) + ' ' + badgeIf('badge-purple', p.value) + ' ' + stagePill('backlog') + '</div></div>' +
-        (D.role === 'admin' ? '<button class="btn btn-primary" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule</button>' : '') +
+        '<div style="display:flex;gap:8px">' +
+          '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+          (D.role === 'admin' ? '<button class="btn btn-primary" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule</button>' : '') +
+        '</div>' +
       '</div>' +
       '<div class="text-muted mt-12">' + (p.description||'') + '</div>' +
     '</div>';
@@ -1296,10 +1300,11 @@ function pgPlanned() {
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.priority) + ' ' + badgeIf('badge-purple', p.value) + ' ' + stagePill('planned') + '</div></div>' +
         (D.role === 'admin'
           ? '<div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">' +
+              '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
               '<button class="btn btn-success" onclick="activateProject(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Activate</button>' +
               '<button class="btn btn-sm" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit schedule</button>' +
             '</div>'
-          : '') +
+          : '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>') +
       '</div>' +
       '<div class="grid-2 mt-12" style="font-size:13px">' +
         '<div><span class="text-muted">Start: </span>' + (p.plannedStart||'TBD') + '</div>' +
@@ -2622,7 +2627,8 @@ function pgFuturePlanning() {
       '<div style="display:flex;gap:6px">' +
         (entry.confirmed
           ? '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>'
-          : '<button class="btn btn-sm" onclick="openSetQuarterModal(\'' + p.id + '\')"><i class="ti ti-calendar-time"></i> Change quarter</button>' +
+          : '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+            '<button class="btn btn-sm" onclick="openSetQuarterModal(\'' + p.id + '\')"><i class="ti ti-calendar-time"></i> Change quarter</button>' +
             '<button class="btn btn-sm" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule now</button>') +
       '</div></div>';
   }
@@ -2639,7 +2645,8 @@ function pgFuturePlanning() {
       ? needsEstimate.map(function(p){
           return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;background:#faf9f7;border-radius:8px;margin-bottom:6px">' +
             '<span style="font-size:13px;font-weight:600">' + p.name + '</span>' +
-            '<div style="display:flex;gap:6px"><button class="btn btn-sm btn-primary" onclick="openSetQuarterModal(\'' + p.id + '\')"><i class="ti ti-calendar-time"></i> Set target quarter</button>' +
+            '<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+            '<button class="btn btn-sm btn-primary" onclick="openSetQuarterModal(\'' + p.id + '\')"><i class="ti ti-calendar-time"></i> Set target quarter</button>' +
             '<button class="btn btn-sm" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule now</button></div></div>';
         }).join('')
       : '<span class="text-muted" style="font-size:13px">Every backlog project has at least a rough estimate</span>') +
