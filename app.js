@@ -1540,7 +1540,6 @@ function pgProjectDetail(pid, tab) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   if (!p) { nav('projects'); return; }
   tab = tab || 'overview';
-  var cameFromMyProjects = currentPage === 'my-projects';
   currentPage = 'projectDetail';
   renderNav();
   var editable = canEdit(p);
@@ -1859,7 +1858,7 @@ function pgProjectDetail(pid, tab) {
     return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t) + '</div>';
   }).join('');
 
-  tb(p.name, '<button class="btn btn-sm" onclick="nav(\'' + (cameFromMyProjects ? 'my-projects' : 'projects') + '\')"><i class="ti ti-arrow-left"></i> Back to projects</button>');
+  tb(p.name);
 
   document.getElementById('content').innerHTML =
     '<div class="card">' +
