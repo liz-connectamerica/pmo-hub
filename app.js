@@ -668,44 +668,43 @@ var currentPage = '';
 
 var NAV_DEF = {
   admin: [
-    { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'}] },
-    { s:'Intake',   items:[{id:'requests',icon:'ti-inbox',label:'Requests',badge:'pending'}] },
+    { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'}] },
     { s:'Projects', items:[
-      {id:'backlog',  icon:'ti-stack-2',        label:'Backlog',         badge:'backlog'},
-      {id:'future-planning', icon:'ti-calendar-time', label:'Future Planning'},
+      {id:'projects', icon:'ti-briefcase',      label:'Active Projects'},
       {id:'planned',  icon:'ti-calendar-event', label:'Planned'},
-      {id:'projects', icon:'ti-briefcase',      label:'Active projects'},
+      {id:'backlog',  icon:'ti-stack-2',        label:'Backlog',         badge:'backlog'},
       {id:'completed',icon:'ti-circle-check',   label:'Completed'},
-      {id:'roadmap',  icon:'ti-road',           label:'Roadmap'},
+      {id:'future-planning', icon:'ti-calendar-time', label:'Future Planning'},
       {id:'resources',icon:'ti-users',          label:'Resources'}
     ]},
+    { s:'Intake',   items:[{id:'requests',icon:'ti-inbox',label:'Requests',badge:'pending'}] },
     { s:'My Requests', items:[
-      {id:'submit',       icon:'ti-send',  label:'Submit a request'},
-      {id:'my-requests',  icon:'ti-clock', label:'My requests'}
+      {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
+      {id:'my-requests',  icon:'ti-clock', label:'My Requests'}
     ]},
     { s:'Data Tools', items:[
       {id:'import-projects', icon:'ti-file-upload', label:'Import Projects'}
     ]},
     { s:'Administration', items:[
       {id:'admin-users', icon:'ti-users-group', label:'Manage Users'},
-      {id:'admin-tags', icon:'ti-tag', label:'Tag Management'}
+      {id:'admin-tags', icon:'ti-tag', label:'Manage Tags'}
     ]}
   ],
   member: [
     { s:'Overview', items:[
       {id:'dashboard', icon:'ti-layout-dashboard', label:'Dashboard'},
+      {id:'roadmap',   icon:'ti-road',             label:'Roadmap'},
       {id:'portfolio', icon:'ti-folder-open',      label:'Portfolio'}
     ]},
     { s:'Projects', items:[
+      {id:'projects',  icon:'ti-briefcase',      label:'Active Projects'},
       {id:'planned',   icon:'ti-calendar-event', label:'Planned'},
-      {id:'projects',  icon:'ti-briefcase',      label:'Active projects'},
       {id:'completed', icon:'ti-circle-check',   label:'Completed'},
-      {id:'roadmap',   icon:'ti-road',           label:'Roadmap'},
       {id:'resources', icon:'ti-users',          label:'Resources'}
     ]},
-    { s:'Requests', items:[
-      {id:'submit',       icon:'ti-send',  label:'Submit a request'},
-      {id:'my-requests',  icon:'ti-clock', label:'My requests'}
+    { s:'My Requests', items:[
+      {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
+      {id:'my-requests',  icon:'ti-clock', label:'My Requests'}
     ]}
   ]
 };
@@ -714,9 +713,9 @@ function renderNav() {
   var defs = (NAV_DEF[D.role] || []).slice();
   if (hasAssignedWork()) {
     defs = defs.concat([{ s:'My Work', items:[
-      {id:'my-projects', icon:'ti-briefcase',   label:'My projects'},
-      {id:'my-tasks',    icon:'ti-check',       label:'My tasks', badge:'my-tasks'},
-      {id:'my-capacity', icon:'ti-adjustments', label:'My capacity'}
+      {id:'my-projects', icon:'ti-briefcase',   label:'My Projects'},
+      {id:'my-tasks',    icon:'ti-check',       label:'My Tasks', badge:'my-tasks'},
+      {id:'my-capacity', icon:'ti-adjustments', label:'My Capacity'}
     ]}]);
   }
   var h = '';
@@ -1346,7 +1345,7 @@ async function activateProject(pid) {
 
 function pgProjects() {
   var addBtn = D.role === 'admin' ? '<button class="btn btn-primary" onclick="openNewProjectModal()"><i class="ti ti-plus"></i> New project</button>' : '';
-  tb('Active projects', addBtn);
+  tb('Active Projects', addBtn);
   var ps = myProjects().filter(function(p){ return p.stage === 'active'; });
   if (activeProjectsTagFilter.length) ps = ps.filter(function(p){ return activeProjectsTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var cards = ps.map(function(p) {
@@ -3100,7 +3099,7 @@ async function callAdminUsersApi(payload) {
 }
 
 function pgAdminTags() {
-  tb('Tag Management');
+  tb('Manage Tags');
   if (D.role !== 'admin') {
     document.getElementById('content').innerHTML =
       '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can manage tags.</p></div>';
@@ -3668,7 +3667,7 @@ async function saveResource(rid) {
 // ── Stakeholder: Submit ────────────────────────────────────────────────────────
 
 function pgSubmit() {
-  tb('Submit a request');
+  tb('Submit a Request');
   var valOpts = VALUE_AREAS.map(function(v){ return '<option>' + v + '</option>'; }).join('');
   document.getElementById('content').innerHTML =
     '<div class="card" style="max-width:660px;margin:0 auto">' +
@@ -3724,7 +3723,7 @@ function pgSubmit() {
 // ── Stakeholder: My Requests ────────────────────────────────────────────────────
 
 function pgMyRequests() {
-  tb('My requests');
+  tb('My Requests');
   var me = currentUser() || 'Current User';
   var mine = D.requests.filter(function(r){ return r.submitter === me; });
   var myNotifs = D.notifications.filter(function(n){ return n.submitter === me; });
@@ -3758,7 +3757,7 @@ function pgMyRequests() {
 // ── Resource Role Pages ────────────────────────────────────────────────────────
 
 function pgMyProjectsResource() {
-  tb('My projects');
+  tb('My Projects');
   var ps = myAssignedProjects();
   if (!ps.length) { document.getElementById('content').innerHTML = '<div class="empty-state"><i class="ti ti-briefcase"></i><p>You are not assigned to any projects</p></div>'; return; }
   var cards = ps.map(function(p) {
@@ -3781,7 +3780,7 @@ function pgMyProjectsResource() {
 }
 
 function pgMyTasks() {
-  tb('My tasks');
+  tb('My Tasks');
   var me = D.myResourceId;
   var allTasks = [];
   D.projects.forEach(function(p) {
@@ -3901,7 +3900,7 @@ function pgMyTasks() {
 }
 
 function pgMyCapacity() {
-  tb('My capacity');
+  tb('My Capacity');
   var me = currentUser();
   var res = D.resources.find(function(r){ return r.name===me; });
   var nonPct = res ? (res.nonProjectCapacity||0) : 0;
