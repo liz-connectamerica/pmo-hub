@@ -2646,50 +2646,87 @@ function pgFuturePlanning() {
 
   var win = computeDateWindow(futurePlanningRangeMode, futurePlanningSelectedYear);
   var quarters = quartersInWindow(win.windowStart, win.windowMonths);
-  var bucketKey = function(q, y) { return q + '-' + y; };
-
-  var buckets = {};
-  quarters.forEach(function(q){ buckets[bucketKey(q.quarter, q.year)] = []; });
   var needsEstimate = [];
 
+  function quarterIndexOf(quarter, year) {
+    for (var i = 0; i < quarters.length; i++) {
+      if (quarters[i].quarter === quarter && quarters[i].year === year) return i;
+    }
+    return -1;
+  }
+  function quarterPosition(dateStr) {
+    var qi = quarterOfDate(dateStr);
+    if (!qi) return null;
+    var idx = quarterIndexOf(qi.quarter, qi.year);
+    if (idx < 0) {
+      var firstQ = quarters[0], lastQ = quarters[quarters.length-1];
+      if (qi.year < firstQ.year || (qi.year === firstQ.year && qi.quarter < firstQ.quarter)) return -0.001;
+      if (qi.year > lastQ.year || (qi.year === lastQ.year && qi.quarter > lastQ.quarter)) return quarters.length + 0.001;
+      return null;
+    }
+    var d = new Date(dateStr + 'T00:00:00');
+    var quarterStart = new Date(qi.year, (qi.quarter - 1) * 3, 1);
+    var daysSinceStart = (d - quarterStart) / 86400000;
+    var fraction = Math.max(0, Math.min(1, daysSinceStart / 91));
+    return idx + fraction;
+  }
+
+  var allEntries = [];
   D.projects.filter(function(p){ return p.stage !== 'complete'; }).forEach(function(p) {
     if (p.start && p.end) {
-      var qi = quarterOfDate(p.start);
-      if (qi) {
-        var key = bucketKey(qi.quarter, qi.year);
-        if (buckets[key]) buckets[key].push({ project: p, confirmed: true });
+      var startPos = quarterPosition(p.start);
+      var endPos = quarterPosition(p.end);
+      if (startPos != null && endPos != null && endPos > 0 && startPos < quarters.length) {
+        allEntries.push({ project: p, confirmed: true, startPos: startPos, endPos: endPos });
       }
     } else if (p.stage === 'backlog') {
       if (p.targetQuarter && p.targetYear) {
-        var key2 = bucketKey(p.targetQuarter, p.targetYear);
-        if (buckets[key2]) buckets[key2].push({ project: p, confirmed: false });
+        var idx = quarterIndexOf(p.targetQuarter, p.targetYear);
+        if (idx >= 0) allEntries.push({ project: p, confirmed: false, startPos: idx, endPos: idx + 1 });
       } else {
         needsEstimate.push(p);
       }
     }
   });
+  allEntries.sort(function(a,b){ return a.startPos - b.startPos; });
 
-  function projectRow(entry) {
+  function timelineRow(entry) {
     var p = entry.project;
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;background:#faf9f7;border-radius:8px;margin-bottom:6px">' +
-      '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:13px;font-weight:600">' + p.name + '</span>' +
-      (entry.confirmed ? '<span class="badge badge-teal" style="font-size:11px">Confirmed: ' + p.start + ' – ' + p.end + '</span>' : '<span class="badge badge-amber" style="font-size:11px">Estimated</span>') +
-      '</div>' +
-      '<div style="display:flex;gap:6px">' +
-        (entry.confirmed
-          ? '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>'
-          : '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
-            '<button class="btn btn-sm" onclick="openSetQuarterModal(\'' + p.id + '\')"><i class="ti ti-calendar-time"></i> Change quarter</button>' +
-            '<button class="btn btn-sm" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule now</button>') +
-      '</div></div>';
+    var startPos = entry.startPos, endPos = entry.endPos;
+    var hasBar = startPos != null && endPos != null && endPos > 0 && startPos < quarters.length;
+    var barHtml;
+    if (hasBar) {
+      var clampedStart = Math.max(0, startPos);
+      var clampedEnd = Math.min(quarters.length, endPos);
+      var widthPct = Math.max(0.3, clampedEnd - clampedStart) / quarters.length * 100;
+      var leftPct = clampedStart / quarters.length * 100;
+      var barStyle = entry.confirmed
+        ? 'background:' + (PHASE_COLORS[p.phase] || '#534AB7')
+        : 'background:repeating-linear-gradient(45deg,#EFCB8E,#EFCB8E 6px,#FBF0DA 6px,#FBF0DA 12px);border:1px dashed #BA7517;color:#63410A';
+      barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '">' + (entry.confirmed ? (p.phase||'') : 'Estimate') + '</div></div>';
+    } else {
+      barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">Outside this window</span></div>';
+    }
+    var actionIcons = '<button class="btn btn-sm" style="padding:2px 6px;margin-right:4px" title="View project" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button>';
+    if (!entry.confirmed) {
+      actionIcons += '<button class="btn btn-sm" style="padding:2px 6px;margin-right:4px" title="Change target quarter" onclick="openSetQuarterModal(\'' + p.id + '\')"><i class="ti ti-calendar-time"></i></button>' +
+        '<button class="btn btn-sm" style="padding:2px 6px" title="Schedule now" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i></button>';
+    }
+    return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + actionIcons + p.name + '</div>' + barHtml + '</div>';
   }
 
-  var quarterSections = quarters.map(function(q) {
-    var entries = buckets[bucketKey(q.quarter, q.year)];
-    return '<div class="card mb-16"><div class="section-title">Q' + q.quarter + ' ' + q.year + '</div>' +
-      (entries.length ? entries.map(projectRow).join('') : '<span class="text-muted" style="font-size:13px">Nothing planned for this quarter yet</span>') +
-      '</div>';
-  }).join('');
+  var quarterHeaderHtml = '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + quarters.map(function(q){
+    return '<div style="flex:1;font-size:11px;color:#999;text-align:center">Q' + q.quarter + ' \'' + String(q.year).slice(2) + '</div>';
+  }).join('') + '</div>';
+
+  var legendHtml = '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:#666">' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:10px;border-radius:2px;background:#534AB7;display:inline-block"></span>Confirmed (real dates)</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:10px;border-radius:2px;background:repeating-linear-gradient(45deg,#EFCB8E,#EFCB8E 3px,#FBF0DA 3px,#FBF0DA 6px);border:1px dashed #BA7517;display:inline-block"></span>Estimated (quarter only)</div>' +
+  '</div>';
+
+  var timelineHtml2 = allEntries.length
+    ? '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">Timeline</div>' + legendHtml + quarterHeaderHtml + allEntries.map(timelineRow).join('') + '</div>'
+    : '<div class="empty-state"><i class="ti ti-calendar-time"></i><p>Nothing scheduled or estimated in this window</p></div>';
 
   var needsEstimateSection = '<div class="card mb-16" style="border:1px solid #EFCB8E"><div class="section-title">Needs an estimate</div>' +
     (needsEstimate.length
@@ -2706,7 +2743,7 @@ function pgFuturePlanning() {
   document.getElementById('content').innerHTML =
     dateRangeControlHtml(futurePlanningRangeMode, futurePlanningSelectedYear, 'setFuturePlanningRangeMode', 'setFuturePlanningYear') +
     needsEstimateSection +
-    quarterSections;
+    timelineHtml2;
 
   window.setFuturePlanningRangeMode = function(mode) { futurePlanningRangeMode = mode; pgFuturePlanning(); };
   window.setFuturePlanningYear = function(year) { futurePlanningSelectedYear = parseInt(year); pgFuturePlanning(); };
