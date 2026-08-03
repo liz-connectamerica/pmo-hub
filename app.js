@@ -137,7 +137,8 @@ async function loadAllProjects() {
     sb.from('doc_folders').select('*'),
     sb.from('documents').select('*'),
     sb.from('resources').select('id, name, user_id'),
-    sb.from('project_categories').select('*')
+    sb.from('project_categories').select('*'),
+    sb.from('project_dependencies').select('*')
   ]);
 
   for (var i = 0; i < results.length; i++) {
@@ -158,6 +159,7 @@ async function loadAllProjects() {
   var docRows           = results[11].data || [];
   var resourceMiniRows  = results[12].data || [];
   var categoryRows      = results[13].data || [];
+  var dependencyRows    = results[14].data || [];
 
   var activeProfilesRows = profilesRows.filter(function(p){ return p.is_active !== false; });
   D.people = activeProfilesRows.map(function(p){ return p.display_name; });
@@ -167,6 +169,10 @@ async function loadAllProjects() {
   // Owner/assignee/team all resolve through resources now, not accounts.
   var resourceNameById = {};
   resourceMiniRows.forEach(function(r){ resourceNameById[r.id] = r.name; });
+
+  var projectInfoById = {};
+  projectsRows.forEach(function(pr){ projectInfoById[pr.id] = { id: pr.id, name: pr.name, stage: pr.stage, start: pr.start_date, end: pr.end_date }; });
+  var dependenciesByProject = groupBy(dependencyRows, 'project_id');
 
   var teamByProject      = groupBy(teamRows, 'project_id');
   var categoriesByProj   = groupBy(categoryRows, 'project_id');
@@ -244,6 +250,7 @@ async function loadAllProjects() {
       owner: pr.owner_name || (pr.owner_id ? resourceNameById[pr.owner_id] : ''), ownerId: pr.owner_id,
       sponsor: pr.sponsor, sponsorEmail: pr.sponsor_email, sponsorId: pr.sponsor_id,
       categories: (categoriesByProj[pr.id]||[]).map(function(c){ return c.category; }), businessUnit: pr.business_unit,
+      dependencies: (dependenciesByProject[pr.id]||[]).map(function(d){ return projectInfoById[d.depends_on_project_id]; }).filter(Boolean),
       team: teamNames, teamIds: teamIds,
       status: pr.status, phase: pr.phase, progress: pr.progress,
       start: pr.start_date, end: pr.end_date, plannedStart: pr.planned_start,
@@ -1156,8 +1163,14 @@ function openScheduleModal(pid) {
     var chk = p.team.indexOf(n) >= 0 ? ' checked' : '';
     return '<label class="member-check schm-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" id="schm-' + n.replace(/ /g,'_') + '"' + chk + '> ' + n + '</label>';
   }).join('');
+  var unplannedDeps = (p.dependencies||[]).filter(function(d){ return !(d.start && d.end); });
+  var depWarning = unplannedDeps.length
+    ? '<div class="info-banner info-amber" style="margin-bottom:16px"><i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
+      '<span>This project depends on ' + (unplannedDeps.length===1 ? 'a project' : unplannedDeps.length + ' projects') + ' that ' + (unplannedDeps.length===1?'hasn\'t':'haven\'t') + ' been planned yet: <strong>' + unplannedDeps.map(function(d){ return d.name; }).join(', ') + '</strong>. You can still schedule this project, but worth planning ' + (unplannedDeps.length===1?'that one':'those') + ' too.</span></div>'
+    : '';
   showModal(
     '<div class="modal-title">Schedule project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    depWarning +
     '<div style="font-weight:600;margin-bottom:16px;color:#534AB7">' + p.name + '</div>' +
     '<div class="form-group"><div class="form-label">Project manager</div><select id="sch-owner">' + ownerOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Team members</div><input type="text" id="schm-search" placeholder="Search people…" oninput="filterSchmList(this.value)"><div id="schm-list" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">' + memberOpts + '</div></div>' +
@@ -1391,6 +1404,19 @@ function pgProjectDetail(pid, tab) {
         '<div class="form-group mb-16"><div class="form-label">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
           (p.tags && p.tags.length ? p.tags.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
           (editable ? '<button class="btn btn-sm" onclick="openProjectTagPicker(\'' + p.id + '\')"><i class="ti ti-tag"></i> Edit tags</button>' : '') +
+        '</div></div>' +
+        '<div class="form-group mb-16"><div class="form-label">Depends on</div><div style="display:flex;flex-direction:column;gap:6px">' +
+          (p.dependencies && p.dependencies.length
+            ? p.dependencies.map(function(d){
+                var isPlanned = !!(d.start && d.end);
+                return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:#faf9f7;border-radius:6px">' +
+                  '<span style="font-size:13px"><i class="ti ti-eye" style="cursor:pointer;margin-right:6px" onclick="goToProject(\'' + d.id + '\')"></i>' + d.name + '</span>' +
+                  (isPlanned ? '<span class="badge badge-teal" style="font-size:11px">Planned: ' + d.start + ' – ' + d.end + '</span>' : '<span class="badge badge-amber" style="font-size:11px"><i class="ti ti-alert-triangle"></i> Not yet planned</span>') +
+                  (editable ? '<button class="btn btn-sm btn-danger" onclick="removeProjectDependency(\'' + p.id + '\',\'' + d.id + '\')"><i class="ti ti-x"></i></button>' : '') +
+                  '</div>';
+              }).join('')
+            : '<span class="text-muted" style="font-size:13px">No dependencies</span>') +
+          (editable ? '<button class="btn btn-sm" style="align-self:flex-start" onclick="openDependencyPicker(\'' + p.id + '\')"><i class="ti ti-link"></i> Add dependency</button>' : '') +
         '</div></div>' +
         (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '') +
         (p.stage === 'hold' ? '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
@@ -1681,6 +1707,48 @@ function pgProjectDetail(pid, tab) {
       showToast('Tags updated');
       if (document.getElementById('ptab-content')) document.getElementById('ptab-content').innerHTML = tabC('overview');
     });
+  };
+  window.openDependencyPicker = function(pid2) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var currentDepIds = (pr.dependencies||[]).map(function(d){ return d.id; });
+    var candidates = D.projects.filter(function(x){ return x.id !== pid2 && currentDepIds.indexOf(x.id) < 0; });
+    var query = '';
+    function render() {
+      var q = query.trim().toLowerCase();
+      var matches = candidates.filter(function(x){ return x.name.toLowerCase().indexOf(q) >= 0; });
+      var listHtml = matches.map(function(x){
+        var isPlanned = !!(x.start && x.end);
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + x.name + (isPlanned ? '' : ' <span class="badge badge-amber" style="font-size:10px">Not planned</span>') + '</span><button class="btn btn-sm" onclick="window.__depAdd(\'' + x.id + '\')"><i class="ti ti-plus"></i> Add</button></div>';
+      }).join('');
+      showModal('<div class="modal-title">Add a dependency <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+        '<input type="text" id="dep-search" placeholder="Search projects…" value="' + query.replace(/"/g,'&quot;') + '" oninput="window.__depSearch(this.value)">' +
+        '<div style="max-height:260px;overflow-y:auto;margin-top:8px">' + (listHtml || '<span class="text-muted" style="font-size:13px">No matching projects</span>') + '</div>' +
+        '<div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Done</button></div>');
+      var el = document.getElementById('dep-search');
+      if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+    }
+    window.__depSearch = function(val) { query = val; render(); };
+    window.__depAdd = async function(depId) {
+      var result = await sb.from('project_dependencies').insert({ project_id: pid2, depends_on_project_id: depId });
+      if (result.error) { showToast('Could not add dependency: ' + result.error.message); return; }
+      var depProj = D.projects.find(function(x){ return x.id === depId; });
+      pr.dependencies = pr.dependencies || [];
+      pr.dependencies.push({ id: depProj.id, name: depProj.name, stage: depProj.stage, start: depProj.start, end: depProj.end });
+      candidates = candidates.filter(function(x){ return x.id !== depId; });
+      showToast(depProj.name + ' added as a dependency');
+      render();
+      if (document.getElementById('ptab-content')) document.getElementById('ptab-content').innerHTML = tabC('overview');
+    };
+    render();
+  };
+  window.removeProjectDependency = async function(pid2, depId) {
+    if (!confirm('Remove this dependency?')) return;
+    var result = await sb.from('project_dependencies').delete().eq('project_id', pid2).eq('depends_on_project_id', depId);
+    if (result.error) { showToast('Could not remove: ' + result.error.message); return; }
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    pr.dependencies = (pr.dependencies||[]).filter(function(d){ return d.id !== depId; });
+    showToast('Dependency removed');
+    if (document.getElementById('ptab-content')) document.getElementById('ptab-content').innerHTML = tabC('overview');
   };
   window.filterTeamAddList = function(query) {
     var q = query.trim().toLowerCase();
@@ -2304,7 +2372,13 @@ function editProject(pid) {
     return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="ep-category-cb" value="' + s + '"' + (checked?' checked':'') + '> ' + s + '</label>';
   }).join('');
   var buOpts     = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
+  var unplannedDepsEdit = (p.dependencies||[]).filter(function(d){ return !(d.start && d.end); });
+  var depWarningEdit = unplannedDepsEdit.length
+    ? '<div class="info-banner info-amber" style="margin-bottom:16px"><i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
+      '<span>This project depends on ' + (unplannedDepsEdit.length===1 ? 'a project' : unplannedDepsEdit.length + ' projects') + ' that ' + (unplannedDepsEdit.length===1?'hasn\'t':'haven\'t') + ' been planned yet: <strong>' + unplannedDepsEdit.map(function(d){ return d.name; }).join(', ') + '</strong>.</span></div>'
+    : '';
   showModal('<div class="modal-title">Edit project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    depWarningEdit +
     '<div class="form-group"><div class="form-label">Project name</div><input type="text" id="ep-name" value="' + p.name + '"></div>' +
     '<div class="grid-2">' +
       '<div class="form-group"><div class="form-label">Status</div><select id="ep-status">' + statusOpts + '</select></div>' +
