@@ -1282,6 +1282,7 @@ function pgBacklog() {
         '</div>' +
       '</div>' +
       '<div class="text-muted mt-12">' + (p.description||'') + '</div>' +
+      (p.tags && p.tags.length ? '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
     '</div>';
   }).join('');
   document.getElementById('content').innerHTML =
@@ -1401,6 +1402,7 @@ function pgPlanned() {
         '<div><span class="text-muted">PM: </span>' + (p.owner || '<em style="color:#777">Not assigned</em>') + '</div>' +
         '<div><span class="text-muted">Team: </span>' + p.team.length + ' member' + (p.team.length !== 1 ? 's' : '') + '</div>' +
       '</div>' +
+      (p.tags && p.tags.length ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
       (soonNoPM ? '<div class="blocker-note" style="background:#FAEEDA;color:#854F0B;margin-top:10px"><i class="ti ti-alert-triangle"></i> <strong>No PM assigned</strong> — this project starts within 30 days. Please assign a PM before activation.</div>' : '') +
     '</div>';
   }).join('');
@@ -1477,6 +1479,7 @@ function pgProjects() {
       '<div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:12px;color:#777;margin-bottom:4px"><span>Progress</span><span>' + p.progress + '%</span></div>' +
       '<div class="progress-bar"><div class="progress-fill" style="width:' + p.progress + '%"></div></div></div>' +
       '<div class="grid-2 mt-12" style="font-size:12px;color:#777"><div>PM: ' + (p.owner||'—') + ' &bull; Due ' + (p.end||'TBD') + '</div><div>' + p.team.length + ' team member' + (p.team.length!==1?'s':'') + '</div></div>' +
+      (p.tags && p.tags.length ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
       (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
     '</div>';
   }).join('');
@@ -1499,7 +1502,9 @@ function pgCompleted() {
   var cp = D.projects.filter(function(p){ return p.stage === 'complete'; });
   if (completedTagFilter.length) cp = cp.filter(function(p){ return completedTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var rows = cp.map(function(p) {
-    return '<tr><td class="bold">' + p.name + '</td><td>' + badgeIf('badge-purple', p.value) + '</td>' +
+    return '<tr><td class="bold">' + p.name +
+      (p.tags && p.tags.length ? '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
+      '</td><td>' + badgeIf('badge-purple', p.value) + '</td>' +
       '<td>' + bdg(p.priority) + '</td><td class="text-muted">' + (p.owner||'—') + '</td><td class="text-muted">' + (p.end||'—') + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
       (D.role === 'admin' ? ' <button class="btn btn-sm" onclick="reactivateProject(\'' + p.id + '\')"><i class="ti ti-refresh"></i> Re-activate</button>' : '') +
@@ -2727,6 +2732,7 @@ function pgHold() {
         '<div><span class="text-muted">On hold since: </span>' + heldDate + '</div>' +
         '<div>' + scheduleInfo(p) + '</div>' +
       '</div>' +
+      (p.tags && p.tags.length ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
       '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D;margin-top:10px"><i class="ti ti-player-pause"></i> <strong>Hold reason:</strong> ' + (p.holdReason||'—') + '</div>' +
     '</div>';
   }).join('');
