@@ -3490,12 +3490,13 @@ function pgAllProjects() {
   window.openBulkEditModal = function() {
     var selectedIds = Object.keys(st.selected).filter(function(id){ return st.selected[id]; });
     if (!selectedIds.length) return;
+    window.__bulkEditSelectedIds = selectedIds;
     var fieldOpts = '<option value="sponsor">Sponsor</option><option value="owner">Owner</option><option value="businessUnit">Business Unit</option>' +
       '<option value="value">Value Area</option><option value="priority">Priority</option><option value="status">Status</option><option value="phase">Phase</option>';
     showModal('<div class="modal-title">Bulk edit ' + selectedIds.length + ' project' + (selectedIds.length===1?'':'s') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
       '<div class="form-group"><div class="form-label">Field to update</div><select id="bulk-field" onchange="renderBulkValueInput(this.value)">' + fieldOpts + '</select></div>' +
       '<div id="bulk-value-container"></div>' +
-      '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="applyBulkEdit(' + JSON.stringify(selectedIds) + ')">Apply</button></div>');
+      '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="applyBulkEdit()">Apply</button></div>');
     window.renderBulkValueInput('sponsor');
   };
 
@@ -3515,7 +3516,8 @@ function pgAllProjects() {
     container.innerHTML = html;
   };
 
-  window.applyBulkEdit = async function(selectedIds) {
+  window.applyBulkEdit = async function() {
+    var selectedIds = window.__bulkEditSelectedIds || [];
     var field = document.getElementById('bulk-field').value;
     var value = document.getElementById('bulk-value-input').value;
     var btn = document.querySelector('.modal-footer .btn-primary'); if (btn) btn.disabled = true;
