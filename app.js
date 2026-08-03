@@ -841,6 +841,7 @@ async function bootAppForUser(skipReload) {
     D.resources.forEach(function(r){ r.tags = tagData.resourceTagNames[r.id] || []; });
     var myResource = D.resources.find(function(r){ return r.userId === D.currentProfile.id; });
     D.myResourceId = myResource ? myResource.id : null;
+    await autoActivatePlannedProjects();
   }
 
   if (location.hash && location.hash.length > 1) {
@@ -1414,11 +1415,33 @@ function pgPlanned() {
   };
 }
 
+async function autoActivatePlannedProjects() {
+  var today = new Date().toISOString().slice(0,10);
+  var due = D.projects.filter(function(p){ return p.stage === 'planned' && p.start && p.start <= today; });
+  if (!due.length) return;
+
+  var activatedCount = 0;
+  for (var i = 0; i < due.length; i++) {
+    var p = due[i];
+    var result = await sb.from('projects').update({ stage: 'active', status: 'On Track' }).eq('id', p.id);
+    if (result.error) { console.error('Could not auto-activate "' + p.name + '":', result.error); continue; }
+    p.stage = 'active'; p.status = 'On Track';
+    activatedCount++;
+    var r = D.requests.find(function(x){ return x.id === p.requestId; });
+    if (r) await syncRequestStatus(r.id, { status: 'Active' });
+  }
+
+  if (activatedCount > 0) {
+    showToast(activatedCount === 1 ? '1 project automatically moved to Active (start date reached)' : activatedCount + ' projects automatically moved to Active (start date reached)');
+    renderNav();
+    if (currentPage === 'planned') pgPlanned();
+    else if (currentPage === 'projects') pgProjects();
+    else if (currentPage === 'dashboard') pgDashboard();
+  }
+}
+
 async function activateProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  // require at least one named resource (not just a team name)
-  var hasResource = p.team.some(function(m){ return individualResourceNames().indexOf(m) >= 0; });
-  if (!hasResource) { showToast('Please assign at least one individual resource before activating', 'error'); openScheduleModal(pid); return; }
   var result = await sb.from('projects').update({ stage: 'active', status: 'On Track' }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
   p.stage = 'active'; p.status = 'On Track';
