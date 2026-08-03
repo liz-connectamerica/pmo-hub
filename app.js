@@ -984,7 +984,7 @@ function pgDashboard() {
         '<th class="sortable-th" onclick="setDashProjSort(\'priority\')">Priority ' + dArrow('priority') + '</th>' +
         '<th class="sortable-th" style="position:relative"><span onclick="setDashProjSort(\'phase\')">Phase ' + dArrow('phase') + '</span>' + dFilterIcon('fPhase', phaseChoicesD) + '</th>' +
         '<th class="sortable-th" style="min-width:160px" onclick="setDashProjSort(\'progress\')">Progress ' + dArrow('progress') + '</th>' +
-        '<th>PM</th><th>Blockers</th><th></th></tr></thead>' +
+        '<th>Owner</th><th>Blockers</th><th></th></tr></thead>' +
       '<tbody>' + projRows + '</tbody></table></div>'
       : (active.length ? '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No projects match your search/filters</p></div>' : '<div class="empty-state" style="padding:24px"><i class="ti ti-briefcase"></i><p>No active projects</p></div>')) +
     '</div>' +
@@ -1067,7 +1067,7 @@ function pgPortfolio() {
         '<div class="text-muted mb-12" style="line-height:1.5">' + (p.description||'') + '</div>' +
         (req && req.cost != null ? '<div class="text-muted mb-12" style="font-size:12px"><i class="ti ti-currency-dollar"></i> Estimated cost: ' + fmtCost(req.cost) + '</div>' : '') +
         '<div class="progress-bar mb-12"><div class="progress-fill" style="width:' + p.progress + '%"></div></div>' +
-        '<div style="display:flex;justify-content:space-between"><span class="text-muted">' + (p.owner || 'No PM') + '</span><span class="text-muted">' + (p.end || 'TBD') + '</span></div></div>';
+        '<div style="display:flex;justify-content:space-between"><span class="text-muted">' + (p.owner || 'No Owner') + '</span><span class="text-muted">' + (p.end || 'TBD') + '</span></div></div>';
     }).join('');
     h += '<div class="card mb-16"><div class="mb-12"><span class="badge ' + cl + '" style="font-size:13px;padding:5px 14px">' + v + '</span></div><div class="grid-2">' + cards + '</div></div>';
   });
@@ -1144,7 +1144,7 @@ function reviewRequest(id) {
         '<div class="grid-2" style="gap:8px 16px;font-size:12px">' +
           '<div><span class="text-muted">Status: </span>' + bdg(linkedP.status) + '</div>' +
           '<div><span class="text-muted">Phase: </span><span class="badge badge-gray">' + linkedP.phase + '</span></div>' +
-          '<div><span class="text-muted">PM: </span>' + (linkedP.owner || '—') + '</div>' +
+          '<div><span class="text-muted">Owner: </span>' + (linkedP.owner || '—') + '</div>' +
           '<div><span class="text-muted">Due: </span>' + (linkedP.end || 'TBD') + '</div>' +
         '</div>' +
         '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:11px;color:#777;margin-bottom:3px"><span>Progress</span><span>' + linkedP.progress + '%</span></div>' +
@@ -1296,7 +1296,7 @@ function pgBacklog() {
   }).join('');
   document.getElementById('content').innerHTML =
     '<div class="info-banner info-amber"><i class="ti ti-stack-2" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
-    '<span>Projects here are <strong>approved</strong> and waiting to be scheduled. Assign a start date to move them to Planned — a PM can be assigned later.</span></div>' +
+    '<span>Projects here are <strong>approved</strong> and waiting to be scheduled. Assign a start date to move them to Planned — an Owner can be assigned later.</span></div>' +
     searchBoxHtml(backlogSearch, 'Search projects by name…', 'backlog-search', 'onBacklogSearch') +
     tagFilterBarHtml(backlogTagFilter, 'openBacklogTagFilter') +
     (bp.length ? cards : '<div class="empty-state"><i class="ti ti-stack-2"></i><p>Backlog is clear</p></div>');
@@ -1380,7 +1380,7 @@ async function scheduleProject(pid) {
   p.plannedStart = start; p.start = start; p.end = end; p.stage = 'planned';
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) await syncRequestStatus(r.id, { status: 'Planned', linkedProject: pid });
-  addNotif(r ? r.submitter : '', 'Great news! "' + p.name + '" has been scheduled to start on ' + start + (p.owner ? '. PM: ' + p.owner : '') + '.', 'planned');
+  addNotif(r ? r.submitter : '', 'Great news! "' + p.name + '" has been scheduled to start on ' + start + (p.owner ? '. Owner: ' + p.owner : '') + '.', 'planned');
   closeModal(); showToast('Project scheduled'); renderNav();
   if (currentPage === 'backlog') pgBacklog();
   else if (currentPage === 'planned') pgPlanned();
@@ -1399,7 +1399,7 @@ function pgPlanned() {
 
   var cards = pp.map(function(p) {
     var startDate = p.plannedStart ? new Date(p.plannedStart) : null;
-    var soonNoPM  = !p.owner && startDate && startDate <= in30;
+    var soonNoOwner  = !p.owner && startDate && startDate <= in30;
     return '<div class="project-card">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
         '<div><div class="bold mb-12">' + p.name + '</div>' +
@@ -1415,11 +1415,11 @@ function pgPlanned() {
       '<div class="grid-2 mt-12" style="font-size:13px">' +
         '<div><span class="text-muted">Start: </span>' + (p.plannedStart||'TBD') + '</div>' +
         '<div><span class="text-muted">End: </span>' + (p.end||'TBD') + '</div>' +
-        '<div><span class="text-muted">PM: </span>' + (p.owner || '<em style="color:#777">Not assigned</em>') + '</div>' +
+        '<div><span class="text-muted">Owner: </span>' + (p.owner || '<em style="color:#777">Not assigned</em>') + '</div>' +
         '<div><span class="text-muted">Team: </span>' + p.team.length + ' member' + (p.team.length !== 1 ? 's' : '') + '</div>' +
       '</div>' +
       (p.tags && p.tags.length ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
-      (soonNoPM ? '<div class="blocker-note" style="background:#FAEEDA;color:#854F0B;margin-top:10px"><i class="ti ti-alert-triangle"></i> <strong>No PM assigned</strong> — this project starts within 30 days. Please assign a PM before activation.</div>' : '') +
+      (soonNoOwner ? '<div class="blocker-note" style="background:#FAEEDA;color:#854F0B;margin-top:10px"><i class="ti ti-alert-triangle"></i> <strong>No Owner assigned</strong> — this project starts within 30 days. Please assign an Owner before activation.</div>' : '') +
     '</div>';
   }).join('');
 
@@ -1501,7 +1501,7 @@ function pgProjects() {
       '</div>' +
       '<div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:12px;color:#777;margin-bottom:4px"><span>Progress</span><span>' + p.progress + '%</span></div>' +
       '<div class="progress-bar"><div class="progress-fill" style="width:' + p.progress + '%"></div></div></div>' +
-      '<div class="grid-2 mt-12" style="font-size:12px;color:#777"><div>PM: ' + (p.owner||'—') + ' &bull; Due ' + (p.end||'TBD') + '</div><div>' + p.team.length + ' team member' + (p.team.length!==1?'s':'') + '</div></div>' +
+      '<div class="grid-2 mt-12" style="font-size:12px;color:#777"><div>Owner: ' + (p.owner||'—') + ' &bull; Due ' + (p.end||'TBD') + '</div><div>' + p.team.length + ' team member' + (p.team.length!==1?'s':'') + '</div></div>' +
       (p.tags && p.tags.length ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
       (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
     '</div>';
@@ -1546,7 +1546,7 @@ function pgCompleted() {
     tagFilterBarHtml(completedTagFilter, 'openCompletedTagFilter') +
     (cp.length
       ? '<div class="card"><div class="section-title">Completed projects</div><div class="table-wrap"><table>' +
-        '<thead><tr><th>Project</th><th>Value area</th><th>Priority</th><th>PM</th><th>Completed</th><th></th></tr></thead>' +
+        '<thead><tr><th>Project</th><th>Value area</th><th>Priority</th><th>Owner</th><th>Completed</th><th></th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table></div></div>'
       : '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No completed projects yet</p></div>');
   window.onCompletedSearch = function(v) {
@@ -1615,7 +1615,7 @@ function pgProjectDetail(pid, tab) {
         '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'') + '</div></div>' +
         '<div class="grid-2 mb-16">' +
         '<div class="form-group"><div class="form-label">Sponsor</div>' + (p.sponsor||'—') + '</div>' +
-        '<div class="form-group"><div class="form-label">PM</div>' + (p.owner||'—') + '</div>' +
+        '<div class="form-group"><div class="form-label">Owner</div>' + (p.owner||'—') + '</div>' +
         '</div>' +
         '<div class="form-group mb-16"><div class="form-label">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
           (p.tags && p.tags.length ? p.tags.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
@@ -2428,7 +2428,6 @@ function openDocModal(pid, idx) {
   var isEdit = idx != null;
   var d = isEdit ? p.documents[idx] : null;
   var catOpts = DOC_TYPES.concat(['Other']).map(function(c){ return '<option' + (d && d.category===c ? ' selected' : '') + '>' + c + '</option>'; }).join('');
-  var isLink = d ? d.sourceType === 'link' : true;
   var defaultFolder = d ? (d.folder||'General') : (docFolderState[pid] && docFolderState[pid] !== 'All' ? docFolderState[pid] : 'General');
   var folderOpts = p.docFolders.map(function(f){ return '<option' + (defaultFolder===f?' selected':'') + '>' + f + '</option>'; }).join('') + '<option value="__new__">+ New folder…</option>';
 
@@ -2438,27 +2437,9 @@ function openDocModal(pid, idx) {
     '<div class="form-group"><div class="form-label">Folder</div><select id="dm-folder" onchange="handleDocFolderChange(\'' + pid + '\')">' + folderOpts + '</select></div>' +
     '</div>' +
     '<div class="form-group"><div class="form-label">Name *</div><input type="text" id="dm-name" value="' + (d ? d.name : '') + '" placeholder="e.g. Project Charter v1"></div>' +
-    '<div class="form-group"><div class="form-label">Source</div>' +
-      '<div class="radio-row">' +
-        '<label><input type="radio" name="dm-src" value="link"' + (isLink ? ' checked' : '') + ' onchange="toggleDocSource()"> External link (Jira, SharePoint, etc.)</label>' +
-        '<label><input type="radio" name="dm-src" value="file"' + (!isLink ? ' checked' : '') + ' onchange="toggleDocSource()"> Upload file</label>' +
-      '</div>' +
-      '<div id="dm-link-row"><input type="text" id="dm-url" value="' + (isLink && d ? d.url : '') + '" placeholder="https://…"></div>' +
-      '<div id="dm-file-row" style="display:none"><input type="file" id="dm-file"></div>' +
-    '</div>' +
+    '<div class="form-group"><div class="form-label">Link URL *</div><input type="text" id="dm-url" value="' + (d ? d.url : '') + '" placeholder="https://…"></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="dm-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add document') + '</button></div>', true);
-
-  window.toggleDocSource = function() {
-    var checkedEl = document.querySelector('input[name="dm-src"]:checked');
-    var linkRow = document.getElementById('dm-link-row');
-    var fileRow = document.getElementById('dm-file-row');
-    if (!checkedEl || !linkRow || !fileRow) return;
-    var src = checkedEl.value;
-    linkRow.style.display = src === 'link' ? 'block' : 'none';
-    fileRow.style.display = src === 'file' ? 'block' : 'none';
-  };
-  setTimeout(function(){ if (window.toggleDocSource) window.toggleDocSource(); }, 0);
 
   window.handleDocFolderChange = async function(pid2) {
     var sel = document.getElementById('dm-folder');
@@ -2489,17 +2470,9 @@ function openDocModal(pid, idx) {
     var cat = document.getElementById('dm-cat').value;
     var folder = document.getElementById('dm-folder').value;
     if (folder === '__new__') folder = 'General';
-    var src = document.querySelector('input[name="dm-src"]:checked').value;
-    var url = '';
-    if (src === 'link') {
-      url = document.getElementById('dm-url').value.trim();
-      if (!url) { showToast('Enter a link URL'); return; }
-    } else {
-      var fileEl = document.getElementById('dm-file');
-      if (fileEl.files && fileEl.files[0]) url = URL.createObjectURL(fileEl.files[0]);
-      else if (isEdit && d.sourceType === 'file') url = d.url;
-      else { showToast('Choose a file to upload'); return; }
-    }
+    var src = 'link';
+    var url = document.getElementById('dm-url').value.trim();
+    if (!url) { showToast('Enter a link URL'); return; }
     var folderId = (folder === 'General') ? null : ((p.docFolderIds && p.docFolderIds[folder]) || null);
     var btn = document.getElementById('dm-save'); btn.disabled = true;
 
@@ -3240,7 +3213,7 @@ function validateImportRow(row, profilesByEmail) {
   if (isNaN(progress)) progress = 0;
   progress = Math.max(0, Math.min(100, progress));
 
-  var ownerEmail = String(row['PM Email'] || '').trim().toLowerCase();
+  var ownerEmail = String(row['Owner Email'] || '').trim().toLowerCase();
   var ownerResource = ownerEmail ? profilesByEmail[ownerEmail] : null;
 
   var tagNames = String(row['Tags'] || '').split(',').map(function(t){ return t.trim(); }).filter(Boolean);
@@ -3316,7 +3289,7 @@ function renderImportPreview() {
       '<i class="ti ti-info-circle"></i><div>' + validCount + ' of ' + rows.length + ' rows are ready to import' +
       (validCount < rows.length ? '. Rows with errors will be skipped — fix them in your spreadsheet and re-upload if you want them included.' : '.') +
       '</div></div>' +
-    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>PM</th><th>Categories</th><th>Tags</th><th>Target Quarter</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
+    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>Owner</th><th>Categories</th><th>Tags</th><th>Target Quarter</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
     (validCount > 0 ? '<button class="btn btn-primary mt-12" id="confirm-import-btn"><i class="ti ti-upload"></i> Import ' + validCount + ' project' + (validCount===1?'':'s') + '</button>' : '');
 
   if (validCount > 0) {
@@ -4368,7 +4341,7 @@ function pgMyProjectsResource() {
         '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
       '</div>' +
       '<div class="grid-2 mt-12" style="font-size:12px;color:#777">' +
-        '<div>PM: ' + (p.owner||'—') + '</div><div>Due: ' + (p.end||'TBD') + '</div>' +
+        '<div>Owner: ' + (p.owner||'—') + '</div><div>Due: ' + (p.end||'TBD') + '</div>' +
         '<div>My tasks: ' + doneTasks + '/' + myTasks.length + ' done</div>' +
       '</div>' +
       (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
