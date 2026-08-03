@@ -6,7 +6,7 @@ function daysAgo(n) {
 
 var ALL_PEOPLE = ['Alex Turner','Mia Nguyen','Jordan Lee','Sam Park','Casey Morgan','Robin Chen','Dana Wu','Chris Bell'];
 var VALUE_AREAS = ['Revenue Growth','Customer Experience','Operational Efficiency','Employee Experience','Compliance & Risk'];
-var PHASES = ['Not Started','Discovery','Design','Build','Testing','Deployment'];
+var PHASES = ['Not Started','Discovery','Design','Build','Testing','Deployment','Monitor'];
 var STATUSES = ['Not Started','On Track','At Risk','Planning','Blocked','Complete'];
 var PRIORITIES = ['Critical','High','Medium','Low'];
 var AV_COLS = ['av-purple','av-teal','av-blue','av-coral','av-amber'];
