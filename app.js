@@ -668,14 +668,13 @@ var currentPage = '';
 
 var NAV_DEF = {
   admin: [
-    { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'}] },
+    { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'}] },
     { s:'Projects', items:[
-      {id:'projects', icon:'ti-briefcase',      label:'Active Projects'},
+      {id:'projects', icon:'ti-briefcase',      label:'Active'},
       {id:'planned',  icon:'ti-calendar-event', label:'Planned'},
       {id:'backlog',  icon:'ti-stack-2',        label:'Backlog',         badge:'backlog'},
-      {id:'completed',icon:'ti-circle-check',   label:'Completed'},
       {id:'hold',     icon:'ti-player-pause',   label:'Hold'},
-      {id:'future-planning', icon:'ti-calendar-time', label:'Future Planning'},
+      {id:'completed',icon:'ti-circle-check',   label:'Completed'},
       {id:'resources',icon:'ti-users',          label:'Resources'}
     ]},
     { s:'Intake',   items:[{id:'requests',icon:'ti-inbox',label:'Requests',badge:'pending'}] },
@@ -698,10 +697,10 @@ var NAV_DEF = {
       {id:'portfolio', icon:'ti-folder-open',      label:'Portfolio'}
     ]},
     { s:'Projects', items:[
-      {id:'projects',  icon:'ti-briefcase',      label:'Active Projects'},
+      {id:'projects',  icon:'ti-briefcase',      label:'Active'},
       {id:'planned',   icon:'ti-calendar-event', label:'Planned'},
-      {id:'completed', icon:'ti-circle-check',   label:'Completed'},
       {id:'hold',      icon:'ti-player-pause',   label:'Hold'},
+      {id:'completed', icon:'ti-circle-check',   label:'Completed'},
       {id:'resources', icon:'ti-users',          label:'Resources'}
     ]},
     { s:'My Requests', items:[
@@ -1417,7 +1416,7 @@ async function activateProject(pid) {
 
 function pgProjects() {
   var addBtn = D.role === 'admin' ? '<button class="btn btn-primary" onclick="openNewProjectModal()"><i class="ti ti-plus"></i> New project</button>' : '';
-  tb('Active Projects', addBtn);
+  tb('Active', addBtn);
   var ps = myProjects().filter(function(p){ return p.stage === 'active'; });
   if (activeProjectsTagFilter.length) ps = ps.filter(function(p){ return activeProjectsTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var cards = ps.map(function(p) {
@@ -2807,8 +2806,8 @@ function pgFuturePlanning() {
 
   document.getElementById('content').innerHTML =
     dateRangeControlHtml(futurePlanningRangeMode, futurePlanningSelectedYear, 'setFuturePlanningRangeMode', 'setFuturePlanningYear') +
-    needsEstimateSection +
-    timelineHtml2;
+    timelineHtml2 +
+    needsEstimateSection;
 
   window.setFuturePlanningRangeMode = function(mode) { futurePlanningRangeMode = mode; pgFuturePlanning(); };
   window.setFuturePlanningYear = function(year) { futurePlanningSelectedYear = parseInt(year); pgFuturePlanning(); };
