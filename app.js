@@ -257,6 +257,7 @@ async function loadAllProjects() {
       value: pr.value_area, priority: pr.priority, description: pr.description,
       blockers: pr.blockers, health: pr.health, stage: pr.stage, requestId: pr.request_id,
       holdReason: pr.hold_reason, preHoldStage: pr.pre_hold_stage,
+      targetQuarter: pr.target_quarter, targetYear: pr.target_year,
       milestones: milestones, tasks: tasks, raid: raid,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
     };
@@ -341,6 +342,25 @@ function computeDateWindow(mode, year) {
     windowStart = new Date(); windowStart.setDate(1); windowStart.setHours(0,0,0,0);
   }
   return { windowStart: windowStart, windowMonths: windowMonths };
+}
+
+function quarterOfDate(dateStr) {
+  if (!dateStr) return null;
+  var d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return null;
+  return { quarter: Math.floor(d.getMonth()/3) + 1, year: d.getFullYear() };
+}
+
+function quartersInWindow(windowStart, windowMonths) {
+  var quarters = [];
+  var seen = {};
+  for (var i = 0; i < windowMonths; i++) {
+    var d = new Date(windowStart.getFullYear(), windowStart.getMonth() + i, 1);
+    var q = Math.floor(d.getMonth()/3) + 1;
+    var key = q + '-' + d.getFullYear();
+    if (!seen[key]) { seen[key] = true; quarters.push({ quarter: q, year: d.getFullYear() }); }
+  }
+  return quarters;
 }
 
 function dateRangeControlHtml(mode, year, setModeFnName, setYearFnName) {
@@ -578,6 +598,8 @@ var completedTagFilter = [];
 var roadmapTagFilter = [];
 var roadmapRangeMode = 'next12'; // 'next12' | 'last12' | 'year'
 var roadmapSelectedYear = new Date().getFullYear();
+var futurePlanningRangeMode = 'next12';
+var futurePlanningSelectedYear = new Date().getFullYear();
 var tagAdminState = { expandedId: null };
 var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3 };
@@ -650,6 +672,7 @@ var NAV_DEF = {
     { s:'Intake',   items:[{id:'requests',icon:'ti-inbox',label:'Requests',badge:'pending'}] },
     { s:'Projects', items:[
       {id:'backlog',  icon:'ti-stack-2',        label:'Backlog',         badge:'backlog'},
+      {id:'future-planning', icon:'ti-calendar-time', label:'Future Planning'},
       {id:'planned',  icon:'ti-calendar-event', label:'Planned'},
       {id:'projects', icon:'ti-briefcase',      label:'Active projects'},
       {id:'completed',icon:'ti-circle-check',   label:'Completed'},
@@ -715,7 +738,7 @@ var PAGE_RENDERERS = {
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
-  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags
+  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'future-planning':pgFuturePlanning
 };
 
 function pageAllowedForRole(page, role) {
@@ -2557,6 +2580,113 @@ function openNewProjectModal() {
 }
 
 // ── Roadmap ────────────────────────────────────────────────────────────────────
+
+function pgFuturePlanning() {
+  tb('Future Planning');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access Future Planning.</p></div>';
+    return;
+  }
+
+  var win = computeDateWindow(futurePlanningRangeMode, futurePlanningSelectedYear);
+  var quarters = quartersInWindow(win.windowStart, win.windowMonths);
+  var bucketKey = function(q, y) { return q + '-' + y; };
+
+  var buckets = {};
+  quarters.forEach(function(q){ buckets[bucketKey(q.quarter, q.year)] = []; });
+  var needsEstimate = [];
+
+  D.projects.filter(function(p){ return p.stage !== 'complete'; }).forEach(function(p) {
+    if (p.start && p.end) {
+      var qi = quarterOfDate(p.start);
+      if (qi) {
+        var key = bucketKey(qi.quarter, qi.year);
+        if (buckets[key]) buckets[key].push({ project: p, confirmed: true });
+      }
+    } else if (p.stage === 'backlog') {
+      if (p.targetQuarter && p.targetYear) {
+        var key2 = bucketKey(p.targetQuarter, p.targetYear);
+        if (buckets[key2]) buckets[key2].push({ project: p, confirmed: false });
+      } else {
+        needsEstimate.push(p);
+      }
+    }
+  });
+
+  function projectRow(entry) {
+    var p = entry.project;
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;background:#faf9f7;border-radius:8px;margin-bottom:6px">' +
+      '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:13px;font-weight:600">' + p.name + '</span>' +
+      (entry.confirmed ? '<span class="badge badge-teal" style="font-size:11px">Confirmed: ' + p.start + ' – ' + p.end + '</span>' : '<span class="badge badge-amber" style="font-size:11px">Estimated</span>') +
+      '</div>' +
+      '<div style="display:flex;gap:6px">' +
+        (entry.confirmed
+          ? '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>'
+          : '<button class="btn btn-sm" onclick="openSetQuarterModal(\'' + p.id + '\')"><i class="ti ti-calendar-time"></i> Change quarter</button>' +
+            '<button class="btn btn-sm" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule now</button>') +
+      '</div></div>';
+  }
+
+  var quarterSections = quarters.map(function(q) {
+    var entries = buckets[bucketKey(q.quarter, q.year)];
+    return '<div class="card mb-16"><div class="section-title">Q' + q.quarter + ' ' + q.year + '</div>' +
+      (entries.length ? entries.map(projectRow).join('') : '<span class="text-muted" style="font-size:13px">Nothing planned for this quarter yet</span>') +
+      '</div>';
+  }).join('');
+
+  var needsEstimateSection = '<div class="card mb-16" style="border:1px solid #EFCB8E"><div class="section-title">Needs an estimate</div>' +
+    (needsEstimate.length
+      ? needsEstimate.map(function(p){
+          return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;background:#faf9f7;border-radius:8px;margin-bottom:6px">' +
+            '<span style="font-size:13px;font-weight:600">' + p.name + '</span>' +
+            '<div style="display:flex;gap:6px"><button class="btn btn-sm btn-primary" onclick="openSetQuarterModal(\'' + p.id + '\')"><i class="ti ti-calendar-time"></i> Set target quarter</button>' +
+            '<button class="btn btn-sm" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule now</button></div></div>';
+        }).join('')
+      : '<span class="text-muted" style="font-size:13px">Every backlog project has at least a rough estimate</span>') +
+    '</div>';
+
+  document.getElementById('content').innerHTML =
+    dateRangeControlHtml(futurePlanningRangeMode, futurePlanningSelectedYear, 'setFuturePlanningRangeMode', 'setFuturePlanningYear') +
+    needsEstimateSection +
+    quarterSections;
+
+  window.setFuturePlanningRangeMode = function(mode) { futurePlanningRangeMode = mode; pgFuturePlanning(); };
+  window.setFuturePlanningYear = function(year) { futurePlanningSelectedYear = parseInt(year); pgFuturePlanning(); };
+
+  window.openSetQuarterModal = function(pid) {
+    var p = D.projects.find(function(x){ return x.id === pid; });
+    var qOpts = [1,2,3,4].map(function(q){ return '<option value="' + q + '"' + (p.targetQuarter===q?' selected':'') + '>Q' + q + '</option>'; }).join('');
+    var thisYear = new Date().getFullYear();
+    var yOpts = '';
+    for (var y = thisYear - 1; y <= thisYear + 4; y++) { yOpts += '<option value="' + y + '"' + (p.targetYear===y?' selected':'') + '>' + y + '</option>'; }
+    showModal('<div class="modal-title">Set target quarter <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+      '<div style="font-weight:600;margin-bottom:16px;color:#534AB7">' + p.name + '</div>' +
+      '<div class="grid-2"><div class="form-group"><div class="form-label">Quarter</div><select id="sq-quarter">' + qOpts + '</select></div>' +
+      '<div class="form-group"><div class="form-label">Year</div><select id="sq-year">' + yOpts + '</select></div></div>' +
+      '<div class="modal-footer">' + (p.targetQuarter ? '<button class="btn btn-danger" onclick="clearTargetQuarter(\'' + pid + '\')">Clear estimate</button>' : '') +
+      '<button class="btn" onclick="closeModal()">Cancel</button>' +
+      '<button class="btn btn-primary" onclick="saveTargetQuarter(\'' + pid + '\')">Save</button></div>');
+  };
+
+  window.saveTargetQuarter = async function(pid) {
+    var p = D.projects.find(function(x){ return x.id === pid; });
+    var q = parseInt(document.getElementById('sq-quarter').value);
+    var y = parseInt(document.getElementById('sq-year').value);
+    var result = await sb.from('projects').update({ target_quarter: q, target_year: y }).eq('id', pid);
+    if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+    p.targetQuarter = q; p.targetYear = y;
+    closeModal(); showToast('Target quarter set'); pgFuturePlanning();
+  };
+
+  window.clearTargetQuarter = async function(pid) {
+    var p = D.projects.find(function(x){ return x.id === pid; });
+    var result = await sb.from('projects').update({ target_quarter: null, target_year: null }).eq('id', pid);
+    if (result.error) { showToast('Could not clear: ' + result.error.message); return; }
+    p.targetQuarter = null; p.targetYear = null;
+    closeModal(); showToast('Estimate cleared'); pgFuturePlanning();
+  };
+}
 
 function pgRoadmap() {
   tb('Roadmap');
