@@ -136,7 +136,8 @@ async function loadAllProjects() {
     sb.from('raid_log').select('*'),
     sb.from('doc_folders').select('*'),
     sb.from('documents').select('*'),
-    sb.from('resources').select('id, name, user_id')
+    sb.from('resources').select('id, name, user_id'),
+    sb.from('project_categories').select('*')
   ]);
 
   for (var i = 0; i < results.length; i++) {
@@ -156,6 +157,7 @@ async function loadAllProjects() {
   var folderRows        = results[10].data || [];
   var docRows           = results[11].data || [];
   var resourceMiniRows  = results[12].data || [];
+  var categoryRows      = results[13].data || [];
 
   var activeProfilesRows = profilesRows.filter(function(p){ return p.is_active !== false; });
   D.people = activeProfilesRows.map(function(p){ return p.display_name; });
@@ -167,6 +169,7 @@ async function loadAllProjects() {
   resourceMiniRows.forEach(function(r){ resourceNameById[r.id] = r.name; });
 
   var teamByProject      = groupBy(teamRows, 'project_id');
+  var categoriesByProj   = groupBy(categoryRows, 'project_id');
   var milestonesByProj   = groupBy(milestoneRows, 'project_id');
   var msLogByMilestone   = groupBy(milestoneLogRows, 'milestone_id');
   var tasksByProj        = groupBy(taskRows, 'project_id');
@@ -240,7 +243,7 @@ async function loadAllProjects() {
       id: pr.id, name: pr.name,
       owner: pr.owner_name || (pr.owner_id ? resourceNameById[pr.owner_id] : ''), ownerId: pr.owner_id,
       sponsor: pr.sponsor, sponsorEmail: pr.sponsor_email, sponsorId: pr.sponsor_id,
-      category: pr.category, businessUnit: pr.business_unit,
+      categories: (categoriesByProj[pr.id]||[]).map(function(c){ return c.category; }), businessUnit: pr.business_unit,
       team: teamNames, teamIds: teamIds,
       status: pr.status, phase: pr.phase, progress: pr.progress,
       start: pr.start_date, end: pr.end_date, plannedStart: pr.planned_start,
@@ -1377,7 +1380,7 @@ function pgProjectDetail(pid, tab) {
         '<div><div class="form-label">Progress</div><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></div>' +
         '<div><div class="form-label">Start</div>' + (p.start||'—') + '</div>' +
         '<div><div class="form-label">Target end</div>' + (p.end||'—') + '</div>' +
-        '<div><div class="form-label">Category</div>' + (p.category ? '<span class="badge badge-blue">' + p.category + '</span>' : '<span class="text-muted">—</span>') + '</div>' +
+        '<div><div class="form-label">Category</div>' + (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</div>' +
         '<div><div class="form-label">Business unit</div>' + (p.businessUnit || '—') + '</div>' +
         '</div>' +
         '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'') + '</div></div>' +
@@ -2296,7 +2299,10 @@ function editProject(pid) {
     var isInactiveCurrent = p.owner===n && individualResourceNames().indexOf(n) < 0;
     return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
   }).join('');
-  var catOpts    = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option' + (p.category===s?' selected':'') + '>' + s + '</option>'; }).join('');
+  var catCheckboxes = CATEGORIES.map(function(s){
+    var checked = (p.categories||[]).indexOf(s) >= 0;
+    return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="ep-category-cb" value="' + s + '"' + (checked?' checked':'') + '> ' + s + '</label>';
+  }).join('');
   var buOpts     = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
   showModal('<div class="modal-title">Edit project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Project name</div><input type="text" id="ep-name" value="' + p.name + '"></div>' +
@@ -2309,9 +2315,9 @@ function editProject(pid) {
       '<div class="form-group"><div class="form-label">Target end</div><input type="date" id="ep-end" value="' + p.end + '"></div>' +
       '<div class="form-group"><div class="form-label">Progress (%)</div><input type="number" id="ep-progress" value="' + p.progress + '" min="0" max="100"></div>' +
       '<div class="form-group"><div class="form-label">Health</div><select id="ep-health"><option value="green"' + (p.health==='green'?' selected':'') + '>Green</option><option value="amber"' + (p.health==='amber'?' selected':'') + '>Amber</option><option value="red"' + (p.health==='red'?' selected':'') + '>Red</option></select></div>' +
-      '<div class="form-group"><div class="form-label">Category</div><select id="ep-category">' + catOpts + '</select></div>' +
       '<div class="form-group"><div class="form-label">Business unit</div><select id="ep-bu">' + buOpts + '</select></div>' +
     '</div>' +
+    '<div class="form-group"><div class="form-label">Categories</div><div>' + catCheckboxes + '</div></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="ep-desc">' + (p.description||'') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="ep-blocker" value="' + (p.blockers||'') + '"></div>' +
     '<div class="divider"></div>' +
@@ -2342,7 +2348,6 @@ async function saveProject(pid) {
     description: document.getElementById('ep-desc').value,
     blockers: document.getElementById('ep-blocker').value
   };
-  var catEl = document.getElementById('ep-category'); if (catEl) newVals.category = catEl.value || null;
   var buEl = document.getElementById('ep-bu'); if (buEl) newVals.business_unit = buEl.value || null;
   var spEl = document.getElementById('ep-sponsor'); if (spEl) newVals.sponsor = spEl.value || null;
   var spEmailEl = document.getElementById('ep-sponsor-email'); if (spEmailEl) newVals.sponsor_email = spEmailEl.value.trim() || null;
@@ -2354,10 +2359,20 @@ async function saveProject(pid) {
   var result = await sb.from('projects').update(newVals).eq('id', pid).select().single();
   if (result.error) { showToast('Could not save: ' + result.error.message); if (saveBtn) saveBtn.disabled = false; return; }
 
+  var catCbs = document.querySelectorAll('.ep-category-cb');
+  if (catCbs.length) {
+    var newCats = Array.from(catCbs).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
+    var oldCats = p.categories || [];
+    var catsToAdd = newCats.filter(function(c){ return oldCats.indexOf(c) < 0; });
+    var catsToRemove = oldCats.filter(function(c){ return newCats.indexOf(c) < 0; });
+    if (catsToAdd.length) await sb.from('project_categories').insert(catsToAdd.map(function(c){ return { project_id: pid, category: c }; }));
+    for (var ci = 0; ci < catsToRemove.length; ci++) { await sb.from('project_categories').delete().eq('project_id', pid).eq('category', catsToRemove[ci]); }
+    p.categories = newCats;
+  }
+
   p.name = newVals.name; p.status = newVals.status; p.phase = newVals.phase; p.priority = newVals.priority;
   p.value = newVals.value_area; p.start = newVals.start_date; p.end = newVals.end_date; p.progress = newVals.progress;
   p.health = newVals.health; p.description = newVals.description; p.blockers = newVals.blockers;
-  if (catEl) p.category = newVals.category;
   if (buEl) p.businessUnit = newVals.business_unit;
   if (spEl) p.sponsor = newVals.sponsor;
   if (spEmailEl) { p.sponsorEmail = newVals.sponsor_email; p.sponsorId = result.data.sponsor_id; }
@@ -2380,14 +2395,14 @@ function openNewProjectModal() {
   var valOpts = VALUE_AREAS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var priorOpts = PRIORITIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var ownerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
-  var catOpts = '<option value="">— None —</option>' + CATEGORIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
+  var catCheckboxesNew = CATEGORIES.map(function(s){ return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="np-category-cb" value="' + s + '"> ' + s + '</label>'; }).join('');
   var buOpts = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   showModal('<div class="modal-title">Create new project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Project name *</div><input type="text" id="np-name" placeholder="Project name"></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Value area</div><select id="np-value">' + valOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Priority</div><select id="np-priority">' + priorOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Category</div><select id="np-category">' + catOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Business unit</div><select id="np-bu">' + buOpts + '</select></div></div>' +
+    '<div class="form-group"><div class="form-label">Categories</div><div>' + catCheckboxesNew + '</div></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="np-desc" placeholder="What is this project about?"></textarea></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="np-sponsor" placeholder="Sponsor name"></div>' +
     '<div class="form-group"><div class="form-label">Sponsor email</div><input type="email" id="np-sponsor-email" placeholder="name@yourcompany.com"></div>' +
@@ -2403,10 +2418,11 @@ function openNewProjectModal() {
     var sponsorEmail = document.getElementById('np-sponsor-email').value.trim();
     var btn = document.getElementById('np-save'); btn.disabled = true;
 
+    var selectedCats = Array.from(document.querySelectorAll('.np-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
     var record = {
       name: name, owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
       sponsor: sponsorName || null, sponsor_email: sponsorEmail || null,
-      category: document.getElementById('np-category').value || null, business_unit: document.getElementById('np-bu').value || null,
+      business_unit: document.getElementById('np-bu').value || null,
       status: 'Not Started', phase: 'Not Started', progress: 0,
       value_area: document.getElementById('np-value').value, priority: document.getElementById('np-priority').value,
       description: document.getElementById('np-desc').value, blockers: '', health: 'green', stage: 'active'
@@ -2414,10 +2430,12 @@ function openNewProjectModal() {
     var result = await sb.from('projects').insert(record).select().single();
     if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
 
+    if (selectedCats.length) await sb.from('project_categories').insert(selectedCats.map(function(c){ return { project_id: result.data.id, category: c }; }));
+
     D.projects.push({
       id: result.data.id, name:name, owner:ownerName, ownerId: ownerResource?ownerResource.id:null,
       sponsor:sponsorName, sponsorEmail:sponsorEmail, sponsorId: result.data.sponsor_id,
-      category:record.category, businessUnit:record.business_unit, team:[], teamIds:[],
+      categories:selectedCats, businessUnit:record.business_unit, team:[], teamIds:[],
       status:'Not Started', phase:'Not Started', progress:0, start:'', end:'',
       value:record.value_area, priority:record.priority, description:record.description,
       blockers:'', health:'green', stage:'active', plannedStart:'', requestId:'',
@@ -2456,11 +2474,13 @@ function pgRoadmap() {
 
   // Category tabs — built from whichever categories actually appear, plus an
   // Uncategorized bucket only if something would actually land there.
+  // A project carrying multiple categories shows up under every one of them.
   var categoriesPresent = [];
   var hasUncategorized = false;
   all.forEach(function(p){
-    if (p.category) { if (categoriesPresent.indexOf(p.category) < 0) categoriesPresent.push(p.category); }
-    else hasUncategorized = true;
+    if (p.categories && p.categories.length) {
+      p.categories.forEach(function(c){ if (categoriesPresent.indexOf(c) < 0) categoriesPresent.push(c); });
+    } else hasUncategorized = true;
   });
   var tabList = ['All'].concat(categoriesPresent).concat(hasUncategorized ? ['Uncategorized'] : []);
   if (tabList.indexOf(roadmapCategoryFilter) < 0) roadmapCategoryFilter = 'All';
@@ -2468,7 +2488,12 @@ function pgRoadmap() {
     return '<div class="tab' + (roadmapCategoryFilter === c ? ' active' : '') + '" onclick="setRoadmapCategory(\'' + c.replace(/'/g,"\\'") + '\')">' + c + '</div>';
   }).join('') + '</div>';
 
-  var visibleProjects = roadmapCategoryFilter === 'All' ? all : all.filter(function(p){ return (p.category || 'Uncategorized') === roadmapCategoryFilter; });
+  function projectMatchesCategory(p, cat) {
+    if (cat === 'All') return true;
+    if (cat === 'Uncategorized') return !p.categories || !p.categories.length;
+    return p.categories && p.categories.indexOf(cat) >= 0;
+  }
+  var visibleProjects = roadmapCategoryFilter === 'All' ? all : all.filter(function(p){ return projectMatchesCategory(p, roadmapCategoryFilter); });
   if (roadmapTagFilter.length) visibleProjects = visibleProjects.filter(function(p){ return roadmapTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
 
   function projectBarRow(p) {
@@ -2500,7 +2525,10 @@ function pgRoadmap() {
     timelineBody = '<div class="text-muted">No projects in this view</div>';
   } else if (roadmapCategoryFilter === 'All') {
     var groups = {};
-    visibleProjects.forEach(function(p){ var key = p.category || 'Uncategorized'; (groups[key] = groups[key] || []).push(p); });
+    visibleProjects.forEach(function(p){
+      var keys = (p.categories && p.categories.length) ? p.categories : ['Uncategorized'];
+      keys.forEach(function(key){ (groups[key] = groups[key] || []).push(p); });
+    });
     var groupOrder = categoriesPresent.concat(hasUncategorized ? ['Uncategorized'] : []);
     timelineBody = groupOrder.filter(function(g){ return groups[g] && groups[g].length; }).map(function(g) {
       return '<div class="bold" style="margin:14px 0 8px;font-size:13px">' + g + '</div>' + groups[g].map(projectBarRow).join('');
@@ -2512,11 +2540,13 @@ function pgRoadmap() {
   var msItems = [];
   D.projects.filter(function(p){ return p.stage==='active'; }).forEach(function(p) {
     p.milestones.filter(function(m){ return !m.done; }).forEach(function(m) {
-      msItems.push({ project:p.name, milestone:m.name, due:m.date, status:'Upcoming', category: p.category || 'Uncategorized', tags: p.tags || [] });
+      msItems.push({ project:p.name, milestone:m.name, due:m.date, status:'Upcoming', categories: p.categories || [], tags: p.tags || [] });
     });
   });
   if (roadmapCategoryFilter !== 'All') {
-    msItems = msItems.filter(function(it){ return it.category === roadmapCategoryFilter; });
+    msItems = msItems.filter(function(it){
+      return roadmapCategoryFilter === 'Uncategorized' ? !it.categories.length : it.categories.indexOf(roadmapCategoryFilter) >= 0;
+    });
   }
   if (roadmapTagFilter.length) {
     msItems = msItems.filter(function(it){ return roadmapTagFilter.some(function(t){ return it.tags.indexOf(t) >= 0; }); });
@@ -2642,9 +2672,14 @@ function validateImportRow(row, profilesByEmail) {
   var priority = priorityRaw ? matchOneOf(priorityRaw, ['Critical','High','Medium','Low']) : null;
   if (priority === undefined) errors.push('Priority "' + priorityRaw + '" is not one of Critical/High/Medium/Low');
 
-  var categoryRaw = row['Category'];
-  var category = categoryRaw ? matchOneOf(categoryRaw, CATEGORIES) : null;
-  if (category === undefined) errors.push('Category "' + categoryRaw + '" is not a recognized category');
+  var categoryRaw = String(row['Category'] || '').trim();
+  var categoryPieces = categoryRaw ? categoryRaw.split(',').map(function(c){ return c.trim(); }).filter(Boolean) : [];
+  var categories = [];
+  categoryPieces.forEach(function(piece){
+    var matched = matchOneOf(piece, CATEGORIES);
+    if (matched === undefined) errors.push('Category "' + piece + '" is not a recognized category');
+    else if (matched && categories.indexOf(matched) < 0) categories.push(matched);
+  });
 
   var statusRaw = row['Status'];
   var status = statusRaw ? matchOneOf(statusRaw, STATUSES) : null;
@@ -2672,12 +2707,12 @@ function validateImportRow(row, profilesByEmail) {
     valid: errors.length === 0,
     errors: errors,
     tags: tagNames,
+    categories: categories,
     record: {
       name: name,
       sponsor: row['Sponsor'] || null,
       owner_id: ownerResource ? ownerResource.id : null,
       owner_name: ownerResource ? ownerResource.name : (ownerEmail || null),
-      category: category || null,
       business_unit: row['Business Unit'] || null,
       stage: (stage || 'Backlog').toLowerCase(),
       status: status || null,
@@ -2705,6 +2740,7 @@ function renderImportPreview() {
       '<td>' + (v.record.name || '<span class="text-muted">(missing)</span>') + '</td>' +
       '<td>' + (v.record.stage || '') + '</td>' +
       '<td>' + (v.record.owner_name || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (v.categories.length ? v.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (v.tags.length ? v.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td style="color:#A32D2D;font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
       '</tr>';
@@ -2715,7 +2751,7 @@ function renderImportPreview() {
       '<i class="ti ti-info-circle"></i><div>' + validCount + ' of ' + rows.length + ' rows are ready to import' +
       (validCount < rows.length ? '. Rows with errors will be skipped — fix them in your spreadsheet and re-upload if you want them included.' : '.') +
       '</div></div>' +
-    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>PM</th><th>Tags</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
+    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>PM</th><th>Categories</th><th>Tags</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
     (validCount > 0 ? '<button class="btn btn-primary mt-12" id="confirm-import-btn"><i class="ti ti-upload"></i> Import ' + validCount + ' project' + (validCount===1?'':'s') + '</button>' : '');
 
   if (validCount > 0) {
@@ -2759,6 +2795,16 @@ async function runImport() {
     });
   });
   if (projectTagRows.length) await sb.from('project_tags').insert(projectTagRows);
+
+  // Categories are a fixed list (already validated), so this is a simple
+  // insert per project — no find-or-create needed like tags.
+  var projectCategoryRows = [];
+  insertedProjects.forEach(function(pr, i) {
+    validEntries[i].categories.forEach(function(cat) {
+      projectCategoryRows.push({ project_id: pr.id, category: cat });
+    });
+  });
+  if (projectCategoryRows.length) await sb.from('project_categories').insert(projectCategoryRows);
 
   showToast(records.length + ' project' + (records.length===1?'':'s') + ' imported');
   importState = { rows: null, profilesByEmail: null };
