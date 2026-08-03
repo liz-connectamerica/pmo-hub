@@ -2727,6 +2727,7 @@ function pgFuturePlanning() {
   var win = computeDateWindow(futurePlanningRangeMode, futurePlanningSelectedYear);
   var quarters = quartersInWindow(win.windowStart, win.windowMonths);
   var needsEstimate = [];
+  var missingSchedule = [];
 
   function quarterIndexOf(quarter, year) {
     for (var i = 0; i < quarters.length; i++) {
@@ -2792,6 +2793,8 @@ function pgFuturePlanning() {
       } else {
         needsEstimate.push(p);
       }
+    } else if (p.stage === 'active' || p.stage === 'planned') {
+      missingSchedule.push(p);
     }
   });
   allEntries.sort(function(a,b){ return a.startPos - b.startPos; });
@@ -2846,11 +2849,24 @@ function pgFuturePlanning() {
       : '<span class="text-muted" style="font-size:13px">Every backlog project has at least a rough estimate</span>') +
     '</div>';
 
+  var missingScheduleSection = missingSchedule.length
+    ? '<div class="card mb-16" style="border:1px solid #F09595"><div class="section-title"><i class="ti ti-alert-triangle" style="color:#A32D2D"></i> Missing a schedule</div>' +
+      '<div class="text-muted" style="font-size:13px;margin-bottom:10px">These are marked Active or Planned but have no start or end date — usually from an import. They won\'t show anywhere on a timeline until fixed.</div>' +
+      missingSchedule.map(function(p){
+        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;background:#faf9f7;border-radius:8px;margin-bottom:6px">' +
+          '<span style="font-size:13px;font-weight:600">' + p.name + '</span> <span class="badge badge-gray" style="font-size:11px">' + p.stage + '</span>' +
+          '<div style="display:flex;gap:6px;margin-left:auto"><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+          '<button class="btn btn-sm btn-primary" onclick="closeModal();editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit project</button></div></div>';
+      }).join('') +
+      '</div>'
+    : '';
+
   document.getElementById('content').innerHTML =
     dateRangeControlHtml(futurePlanningRangeMode, futurePlanningSelectedYear, 'setFuturePlanningRangeMode', 'setFuturePlanningYear') +
     categoryTabsHtml +
     timelineHtml2 +
-    needsEstimateSection;
+    needsEstimateSection +
+    missingScheduleSection;
 
   window.setFuturePlanningRangeMode = function(mode) { futurePlanningRangeMode = mode; pgFuturePlanning(); };
   window.setFuturePlanningYear = function(year) { futurePlanningSelectedYear = parseInt(year); pgFuturePlanning(); };
@@ -3149,6 +3165,26 @@ function validateImportRow(row, profilesByEmail) {
 
   var tagNames = String(row['Tags'] || '').split(',').map(function(t){ return t.trim(); }).filter(Boolean);
 
+  var quarterRaw = String(row['Target Quarter'] || '').trim();
+  var yearRaw = String(row['Target Year'] || '').trim();
+  var targetQuarter = null, targetYear = null;
+  if (quarterRaw || yearRaw) {
+    var qMatch = quarterRaw.match(/^Q?([1-4])$/i);
+    if (!qMatch) {
+      errors.push('Target Quarter "' + quarterRaw + '" should be Q1, Q2, Q3, or Q4');
+    } else {
+      targetQuarter = parseInt(qMatch[1]);
+    }
+    if (!/^\d{4}$/.test(yearRaw)) {
+      errors.push('Target Year "' + yearRaw + '" should be a 4-digit year');
+    } else {
+      targetYear = parseInt(yearRaw);
+    }
+    if ((stage || 'Backlog').toLowerCase() !== 'backlog') {
+      errors.push('Target Quarter/Year can only be set on Backlog-stage projects');
+    }
+  }
+
   return {
     valid: errors.length === 0,
     errors: errors,
@@ -3170,7 +3206,9 @@ function validateImportRow(row, profilesByEmail) {
       progress: progress,
       description: row['Description'] || null,
       blockers: row['Current Blockers'] || null,
-      health: 'green'
+      health: 'green',
+      target_quarter: targetQuarter,
+      target_year: targetYear
     }
   };
 }
@@ -3188,6 +3226,7 @@ function renderImportPreview() {
       '<td>' + (v.record.owner_name || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (v.categories.length ? v.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (v.tags.length ? v.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (v.record.target_quarter && v.record.target_year ? '<span class="badge badge-amber">Q' + v.record.target_quarter + ' ' + v.record.target_year + '</span>' : '<span class="text-muted">—</span>') + '</td>' +
       '<td style="color:#A32D2D;font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
       '</tr>';
   }).join('');
@@ -3197,7 +3236,7 @@ function renderImportPreview() {
       '<i class="ti ti-info-circle"></i><div>' + validCount + ' of ' + rows.length + ' rows are ready to import' +
       (validCount < rows.length ? '. Rows with errors will be skipped — fix them in your spreadsheet and re-upload if you want them included.' : '.') +
       '</div></div>' +
-    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>PM</th><th>Categories</th><th>Tags</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
+    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>PM</th><th>Categories</th><th>Tags</th><th>Target Quarter</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
     (validCount > 0 ? '<button class="btn btn-primary mt-12" id="confirm-import-btn"><i class="ti ti-upload"></i> Import ' + validCount + ' project' + (validCount===1?'':'s') + '</button>' : '');
 
   if (validCount > 0) {
