@@ -393,6 +393,10 @@ function dateRangeControlHtml(mode, year, setModeFnName, setYearFnName) {
   '</div>';
 }
 
+function searchBoxHtml(value, placeholder, id, onInputFnName) {
+  return '<div class="task-filter-bar" style="margin-bottom:12px"><input type="text" id="' + id + '" placeholder="' + placeholder + '" value="' + (value||'').replace(/"/g,'&quot;') + '" oninput="' + onInputFnName + '(this.value)"></div>';
+}
+
 function tagFilterBarHtml(activeTags, openFnName) {
   return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
     '<button class="btn btn-sm" onclick="' + openFnName + '()"><i class="ti ti-tag"></i> Filter by tag' + (activeTags.length ? ' (' + activeTags.length + ')' : '') + '</button>' +
@@ -606,9 +610,13 @@ var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
 var portfolioTagFilter = [];
 var backlogTagFilter = [];
+var backlogSearch = '';
 var plannedTagFilter = [];
+var plannedSearch = '';
 var activeProjectsTagFilter = [];
+var activeProjectsSearch = '';
 var completedTagFilter = [];
+var completedSearch = '';
 var roadmapTagFilter = [];
 var roadmapRangeMode = 'next12'; // 'next12' | 'last12' | 'year'
 var roadmapSelectedYear = new Date().getFullYear();
@@ -1270,6 +1278,7 @@ function scheduleFromRequest(rid) {
 function pgBacklog() {
   tb('Backlog');
   var bp = D.projects.filter(function(p){ return p.stage === 'backlog'; });
+  if (backlogSearch) { var bq = backlogSearch.toLowerCase(); bp = bp.filter(function(p){ return p.name.toLowerCase().indexOf(bq) >= 0; }); }
   if (backlogTagFilter.length) bp = bp.filter(function(p){ return backlogTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var cards = bp.map(function(p) {
     return '<div class="project-card">' +
@@ -1288,8 +1297,14 @@ function pgBacklog() {
   document.getElementById('content').innerHTML =
     '<div class="info-banner info-amber"><i class="ti ti-stack-2" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
     '<span>Projects here are <strong>approved</strong> and waiting to be scheduled. Assign a start date to move them to Planned — a PM can be assigned later.</span></div>' +
+    searchBoxHtml(backlogSearch, 'Search projects by name…', 'backlog-search', 'onBacklogSearch') +
     tagFilterBarHtml(backlogTagFilter, 'openBacklogTagFilter') +
     (bp.length ? cards : '<div class="empty-state"><i class="ti ti-stack-2"></i><p>Backlog is clear</p></div>');
+  window.onBacklogSearch = function(v) {
+    backlogSearch = v; pgBacklog();
+    var el = document.getElementById('backlog-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
   window.openBacklogTagFilter = function() {
     openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
       function() { return backlogTagFilter; },
@@ -1377,6 +1392,7 @@ async function scheduleProject(pid) {
 function pgPlanned() {
   tb('Planned projects');
   var pp = D.projects.filter(function(p){ return p.stage === 'planned'; });
+  if (plannedSearch) { var plq = plannedSearch.toLowerCase(); pp = pp.filter(function(p){ return p.name.toLowerCase().indexOf(plq) >= 0; }); }
   if (plannedTagFilter.length) pp = pp.filter(function(p){ return plannedTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var today = new Date();
   var in30  = new Date(); in30.setDate(today.getDate() + 30);
@@ -1411,8 +1427,14 @@ function pgPlanned() {
 
   document.getElementById('content').innerHTML =
     '<div class="info-banner info-blue"><i class="ti ti-calendar-event" style="font-size:20px;flex-shrink:0;color:#185FA5"></i><span>' + bannerText + '</span></div>' +
+    searchBoxHtml(plannedSearch, 'Search projects by name…', 'planned-search', 'onPlannedSearch') +
     tagFilterBarHtml(plannedTagFilter, 'openPlannedTagFilter') +
     (pp.length ? cards : '<div class="empty-state"><i class="ti ti-calendar-event"></i><p>No planned projects yet</p></div>');
+  window.onPlannedSearch = function(v) {
+    plannedSearch = v; pgPlanned();
+    var el = document.getElementById('planned-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
   window.openPlannedTagFilter = function() {
     openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
       function() { return plannedTagFilter; },
@@ -1465,6 +1487,7 @@ function pgProjects() {
   var addBtn = D.role === 'admin' ? '<button class="btn btn-primary" onclick="openNewProjectModal()"><i class="ti ti-plus"></i> New project</button>' : '';
   tb('Active', addBtn);
   var ps = myProjects().filter(function(p){ return p.stage === 'active'; });
+  if (activeProjectsSearch) { var apq = activeProjectsSearch.toLowerCase(); ps = ps.filter(function(p){ return p.name.toLowerCase().indexOf(apq) >= 0; }); }
   if (activeProjectsTagFilter.length) ps = ps.filter(function(p){ return activeProjectsTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var cards = ps.map(function(p) {
     return '<div class="project-card">' +
@@ -1483,8 +1506,15 @@ function pgProjects() {
       (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
     '</div>';
   }).join('');
-  document.getElementById('content').innerHTML = tagFilterBarHtml(activeProjectsTagFilter, 'openActiveProjectsTagFilter') +
+  document.getElementById('content').innerHTML =
+    searchBoxHtml(activeProjectsSearch, 'Search projects by name…', 'active-projects-search', 'onActiveProjectsSearch') +
+    tagFilterBarHtml(activeProjectsTagFilter, 'openActiveProjectsTagFilter') +
     (ps.length ? cards : '<div class="empty-state"><i class="ti ti-briefcase"></i><p>No active projects</p></div>');
+  window.onActiveProjectsSearch = function(v) {
+    activeProjectsSearch = v; pgProjects();
+    var el = document.getElementById('active-projects-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
   window.openActiveProjectsTagFilter = function() {
     openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
       function() { return activeProjectsTagFilter; },
@@ -1500,6 +1530,7 @@ function pgProjects() {
 function pgCompleted() {
   tb('Completed projects');
   var cp = D.projects.filter(function(p){ return p.stage === 'complete'; });
+  if (completedSearch) { var cq = completedSearch.toLowerCase(); cp = cp.filter(function(p){ return p.name.toLowerCase().indexOf(cq) >= 0; }); }
   if (completedTagFilter.length) cp = cp.filter(function(p){ return completedTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   var rows = cp.map(function(p) {
     return '<tr><td class="bold">' + p.name +
@@ -1510,12 +1541,19 @@ function pgCompleted() {
       (D.role === 'admin' ? ' <button class="btn btn-sm" onclick="reactivateProject(\'' + p.id + '\')"><i class="ti ti-refresh"></i> Re-activate</button>' : '') +
       '</td></tr>';
   }).join('');
-  document.getElementById('content').innerHTML = tagFilterBarHtml(completedTagFilter, 'openCompletedTagFilter') +
+  document.getElementById('content').innerHTML =
+    searchBoxHtml(completedSearch, 'Search projects by name…', 'completed-search', 'onCompletedSearch') +
+    tagFilterBarHtml(completedTagFilter, 'openCompletedTagFilter') +
     (cp.length
       ? '<div class="card"><div class="section-title">Completed projects</div><div class="table-wrap"><table>' +
         '<thead><tr><th>Project</th><th>Value area</th><th>Priority</th><th>PM</th><th>Completed</th><th></th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table></div></div>'
       : '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No completed projects yet</p></div>');
+  window.onCompletedSearch = function(v) {
+    completedSearch = v; pgCompleted();
+    var el = document.getElementById('completed-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
   window.openCompletedTagFilter = function() {
     openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
       function() { return completedTagFilter; },
@@ -2702,10 +2740,12 @@ function openNewProjectModal() {
 // ── Roadmap ────────────────────────────────────────────────────────────────────
 
 var holdTagFilter = [];
+var holdSearch = '';
 
 function pgHold() {
   tb('Hold');
   var hp = D.projects.filter(function(p){ return p.stage === 'hold'; });
+  if (holdSearch) { var hq = holdSearch.toLowerCase(); hp = hp.filter(function(p){ return p.name.toLowerCase().indexOf(hq) >= 0; }); }
   if (holdTagFilter.length) hp = hp.filter(function(p){ return holdTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   hp = hp.slice().sort(function(a,b){ return (b.heldAt||'').localeCompare(a.heldAt||''); });
 
@@ -2737,9 +2777,15 @@ function pgHold() {
   }).join('');
 
   document.getElementById('content').innerHTML =
+    searchBoxHtml(holdSearch, 'Search projects by name…', 'hold-search', 'onHoldSearch') +
     tagFilterBarHtml(holdTagFilter, 'openHoldTagFilter') +
     (hp.length ? cards : '<div class="empty-state"><i class="ti ti-player-pause"></i><p>Nothing on hold right now</p></div>');
 
+  window.onHoldSearch = function(v) {
+    holdSearch = v; pgHold();
+    var el = document.getElementById('hold-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
   window.openHoldTagFilter = function() {
     openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
       function() { return holdTagFilter; },
