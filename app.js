@@ -600,6 +600,7 @@ var roadmapRangeMode = 'next12'; // 'next12' | 'last12' | 'year'
 var roadmapSelectedYear = new Date().getFullYear();
 var futurePlanningRangeMode = 'next12';
 var futurePlanningSelectedYear = new Date().getFullYear();
+var futurePlanningCategoryFilter = 'All';
 var tagAdminState = { expandedId: null };
 var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3 };
@@ -2736,7 +2737,33 @@ function pgFuturePlanning() {
   }
 
   var allEntries = [];
-  D.projects.filter(function(p){ return p.stage !== 'complete'; }).forEach(function(p) {
+  var eligibleProjects = D.projects.filter(function(p){ return p.stage !== 'complete'; });
+
+  // Category tabs — same pattern as Roadmap: a project carrying multiple
+  // categories shows up under every one of them.
+  var categoriesPresent = [];
+  var hasUncategorized = false;
+  eligibleProjects.forEach(function(p){
+    if (p.categories && p.categories.length) {
+      p.categories.forEach(function(c){ if (categoriesPresent.indexOf(c) < 0) categoriesPresent.push(c); });
+    } else hasUncategorized = true;
+  });
+  var tabList = ['All'].concat(categoriesPresent).concat(hasUncategorized ? ['Uncategorized'] : []);
+  if (tabList.indexOf(futurePlanningCategoryFilter) < 0) futurePlanningCategoryFilter = 'All';
+  var categoryTabsHtml = '<div class="tab-bar" style="margin-bottom:16px">' + tabList.map(function(c) {
+    return '<div class="tab' + (futurePlanningCategoryFilter === c ? ' active' : '') + '" onclick="setFuturePlanningCategory(\'' + c.replace(/'/g,"\\'") + '\')">' + c + '</div>';
+  }).join('') + '</div>';
+
+  function projectMatchesCategory(p, cat) {
+    if (cat === 'All') return true;
+    if (cat === 'Uncategorized') return !p.categories || !p.categories.length;
+    return p.categories && p.categories.indexOf(cat) >= 0;
+  }
+  if (futurePlanningCategoryFilter !== 'All') {
+    eligibleProjects = eligibleProjects.filter(function(p){ return projectMatchesCategory(p, futurePlanningCategoryFilter); });
+  }
+
+  eligibleProjects.forEach(function(p) {
     if (p.start && p.end) {
       var startPos = quarterPosition(p.start);
       var endPos = quarterPosition(p.end);
@@ -2806,11 +2833,13 @@ function pgFuturePlanning() {
 
   document.getElementById('content').innerHTML =
     dateRangeControlHtml(futurePlanningRangeMode, futurePlanningSelectedYear, 'setFuturePlanningRangeMode', 'setFuturePlanningYear') +
+    categoryTabsHtml +
     timelineHtml2 +
     needsEstimateSection;
 
   window.setFuturePlanningRangeMode = function(mode) { futurePlanningRangeMode = mode; pgFuturePlanning(); };
   window.setFuturePlanningYear = function(year) { futurePlanningSelectedYear = parseInt(year); pgFuturePlanning(); };
+  window.setFuturePlanningCategory = function(cat) { futurePlanningCategoryFilter = cat; pgFuturePlanning(); };
 
   window.openSetQuarterModal = function(pid) {
     var p = D.projects.find(function(x){ return x.id === pid; });
