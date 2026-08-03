@@ -615,6 +615,11 @@ var roadmapSelectedYear = new Date().getFullYear();
 var futurePlanningRangeMode = 'next12';
 var futurePlanningSelectedYear = new Date().getFullYear();
 var futurePlanningCategoryFilter = 'All';
+var allProjectsState = {
+  search: '', sort: 'name', dir: 'asc', selected: {},
+  filters: { category:[], businessUnit:[], stage:[], status:[], phase:[], priority:[], value:[], sponsor:[], owner:[] },
+  openFilter: null
+};
 var tagAdminState = { expandedId: null };
 var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3 };
@@ -703,7 +708,8 @@ var NAV_DEF = {
     { s:'Administration', items:[
       {id:'admin-users', icon:'ti-users-group', label:'Manage Users'},
       {id:'admin-tags', icon:'ti-tag', label:'Manage Tags'},
-      {id:'admin-values', icon:'ti-list-details', label:'Manage Values'}
+      {id:'admin-values', icon:'ti-list-details', label:'Manage Values'},
+      {id:'all-projects', icon:'ti-table', label:'All Projects'}
     ]}
   ],
   member: [
@@ -754,7 +760,7 @@ var PAGE_RENDERERS = {
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
-  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold
+  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects
 };
 
 function pageAllowedForRole(page, role) {
@@ -3361,6 +3367,180 @@ async function callAdminUsersApi(payload) {
   } catch (e) { showToast('Could not reach the server: ' + e.message); return null; }
   if (!res.ok) { showToast(json.error || 'Request failed'); return null; }
   return json;
+}
+
+function pgAllProjects() {
+  tb('All Projects');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access All Projects.</p></div>';
+    return;
+  }
+  var st = allProjectsState;
+
+  var sponsorChoices = [], ownerChoices = [];
+  D.projects.forEach(function(p) {
+    if (p.sponsor && sponsorChoices.indexOf(p.sponsor) < 0) sponsorChoices.push(p.sponsor);
+    if (p.owner && ownerChoices.indexOf(p.owner) < 0) ownerChoices.push(p.owner);
+  });
+  sponsorChoices.sort(); ownerChoices.sort();
+
+  var stageChoices = ['backlog','planned','active','hold','complete'];
+
+  var list = D.projects.slice();
+  if (st.search) {
+    var q = st.search.toLowerCase();
+    list = list.filter(function(p){ return p.name.toLowerCase().indexOf(q) >= 0; });
+  }
+  if (st.filters.category.length) list = list.filter(function(p){ return st.filters.category.some(function(c){ return (p.categories||[]).indexOf(c) >= 0; }); });
+  if (st.filters.businessUnit.length) list = list.filter(function(p){ return st.filters.businessUnit.indexOf(p.businessUnit) >= 0; });
+  if (st.filters.stage.length) list = list.filter(function(p){ return st.filters.stage.indexOf(p.stage) >= 0; });
+  if (st.filters.status.length) list = list.filter(function(p){ return st.filters.status.indexOf(p.status) >= 0; });
+  if (st.filters.phase.length) list = list.filter(function(p){ return st.filters.phase.indexOf(p.phase) >= 0; });
+  if (st.filters.priority.length) list = list.filter(function(p){ return st.filters.priority.indexOf(p.priority) >= 0; });
+  if (st.filters.value.length) list = list.filter(function(p){ return st.filters.value.indexOf(p.value) >= 0; });
+  if (st.filters.sponsor.length) list = list.filter(function(p){ return st.filters.sponsor.indexOf(p.sponsor) >= 0; });
+  if (st.filters.owner.length) list = list.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
+
+  list.sort(function(a,b) {
+    var av = a[st.sort]; var bv = b[st.sort];
+    av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir === 'asc' ? '▲' : '▼') + '</span>'; }
+  function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleAllProjFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
+
+  var visibleIds = list.map(function(p){ return p.id; });
+  var selectedVisibleCount = visibleIds.filter(function(id){ return st.selected[id]; }).length;
+  var allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+  var totalSelected = Object.keys(st.selected).filter(function(id){ return st.selected[id]; }).length;
+
+  var rows = list.map(function(p) {
+    return '<tr>' +
+      '<td><input type="checkbox" ' + (st.selected[p.id] ? 'checked' : '') + ' onchange="toggleAllProjSelect(\'' + p.id + '\', this.checked)"></td>' +
+      '<td class="bold">' + p.name + '</td>' +
+      '<td>' + ((p.categories && p.categories.length) ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.businessUnit || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + stagePill(p.stage) + '</td>' +
+      '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.phase || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.value || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.sponsor || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
+      '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button></td>' +
+      '</tr>';
+  }).join('');
+
+  document.getElementById('content').innerHTML =
+    '<div class="task-filter-bar" style="margin-bottom:12px"><input type="text" id="allproj-search" placeholder="Search projects by name…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onAllProjSearch(this.value)"></div>' +
+    (totalSelected > 0
+      ? '<div class="info-banner info-blue" style="margin-bottom:12px;display:flex;align-items:center;gap:10px"><i class="ti ti-square-check"></i><div>' + totalSelected + ' selected</div>' +
+        '<button class="btn btn-primary" style="margin-left:auto" onclick="openBulkEditModal()"><i class="ti ti-edit"></i> Bulk edit</button>' +
+        '<button class="btn" onclick="clearAllProjSelection()">Clear selection</button></div>'
+      : '') +
+    '<div class="card"><div class="table-wrap"><table><thead><tr>' +
+      '<th><input type="checkbox" ' + (allVisibleSelected ? 'checked' : '') + ' onchange="toggleAllProjSelectAll(this.checked)"></th>' +
+      '<th class="sortable-th" onclick="setAllProjSort(\'name\')">Project ' + arrow('name') + '</th>' +
+      '<th style="position:relative">Category' + filterIcon('category', st.filters.category.length>0) + '</th>' +
+      '<th style="position:relative">Business Unit' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
+      '<th style="position:relative">Stage' + filterIcon('stage', st.filters.stage.length>0) + '</th>' +
+      '<th style="position:relative">Status' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+      '<th style="position:relative">Phase' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
+      '<th style="position:relative">Priority' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th style="position:relative">Value Area' + filterIcon('value', st.filters.value.length>0) + '</th>' +
+      '<th style="position:relative">Sponsor' + filterIcon('sponsor', st.filters.sponsor.length>0) + '</th>' +
+      '<th style="position:relative">Owner' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th></th>' +
+    '</tr></thead><tbody>' + (rows || '<tr><td colspan="12" class="text-muted" style="text-align:center;padding:20px">No projects match these filters</td></tr>') + '</tbody></table></div></div>';
+
+  window.onAllProjSearch = function(v) {
+    st.search = v; pgAllProjects();
+    var el = document.getElementById('allproj-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.setAllProjSort = function(col) {
+    if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; }
+    pgAllProjects();
+  };
+  window.toggleAllProjSelect = function(id, checked) { st.selected[id] = checked; pgAllProjects(); };
+  window.toggleAllProjSelectAll = function(checked) { visibleIds.forEach(function(id){ st.selected[id] = checked; }); pgAllProjects(); };
+  window.clearAllProjSelection = function() { st.selected = {}; pgAllProjects(); };
+
+  window.toggleAllProjFilter = function(col) {
+    var labelMap = { category:'Category', businessUnit:'Business Unit', stage:'Stage', status:'Status', phase:'Phase', priority:'Priority', value:'Value Area', sponsor:'Sponsor', owner:'Owner' };
+    var choicesMap = { category:CATEGORIES, businessUnit:BUSINESS_UNITS, stage:stageChoices, status:STATUSES, phase:PHASES, priority:PRIORITIES, value:VALUE_AREAS, sponsor:sponsorChoices, owner:ownerChoices };
+    openFilterModal(labelMap[col], choicesMap[col],
+      function() { return st.filters[col]; },
+      function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { st.filters[col] = []; },
+      pgAllProjects
+    );
+  };
+
+  window.openBulkEditModal = function() {
+    var selectedIds = Object.keys(st.selected).filter(function(id){ return st.selected[id]; });
+    if (!selectedIds.length) return;
+    var fieldOpts = '<option value="sponsor">Sponsor</option><option value="owner">Owner</option><option value="businessUnit">Business Unit</option>' +
+      '<option value="value">Value Area</option><option value="priority">Priority</option><option value="status">Status</option><option value="phase">Phase</option>';
+    showModal('<div class="modal-title">Bulk edit ' + selectedIds.length + ' project' + (selectedIds.length===1?'':'s') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+      '<div class="form-group"><div class="form-label">Field to update</div><select id="bulk-field" onchange="renderBulkValueInput(this.value)">' + fieldOpts + '</select></div>' +
+      '<div id="bulk-value-container"></div>' +
+      '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="applyBulkEdit(' + JSON.stringify(selectedIds) + ')">Apply</button></div>');
+    window.renderBulkValueInput('sponsor');
+  };
+
+  window.renderBulkValueInput = function(field) {
+    var container = document.getElementById('bulk-value-container');
+    if (!container) return;
+    var html;
+    if (field === 'sponsor') {
+      html = '<div class="form-group"><div class="form-label">New sponsor name</div><input type="text" id="bulk-value-input" placeholder="Sponsor name"></div>';
+    } else if (field === 'owner') {
+      var ownerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
+      html = '<div class="form-group"><div class="form-label">New owner</div><select id="bulk-value-input">' + ownerOpts + '</select></div>';
+    } else {
+      var opts = field === 'businessUnit' ? BUSINESS_UNITS : field === 'value' ? VALUE_AREAS : field === 'priority' ? PRIORITIES : field === 'status' ? STATUSES : PHASES;
+      html = '<div class="form-group"><div class="form-label">New value</div><select id="bulk-value-input">' + opts.map(function(o){ return '<option>' + o + '</option>'; }).join('') + '</select></div>';
+    }
+    container.innerHTML = html;
+  };
+
+  window.applyBulkEdit = async function(selectedIds) {
+    var field = document.getElementById('bulk-field').value;
+    var value = document.getElementById('bulk-value-input').value;
+    var btn = document.querySelector('.modal-footer .btn-primary'); if (btn) btn.disabled = true;
+
+    var columnMap = { sponsor:'sponsor', businessUnit:'business_unit', value:'value_area', priority:'priority', status:'status', phase:'phase' };
+    var ownerResource = null;
+    var updatePayload = {};
+    if (field === 'owner') {
+      ownerResource = resolveResource(value);
+      updatePayload = { owner_id: ownerResource ? ownerResource.id : null, owner_name: value || null };
+    } else {
+      updatePayload[columnMap[field]] = value || null;
+    }
+
+    var failed = 0;
+    for (var i = 0; i < selectedIds.length; i++) {
+      var result = await sb.from('projects').update(updatePayload).eq('id', selectedIds[i]);
+      if (result.error) { failed++; continue; }
+      var proj = D.projects.find(function(x){ return x.id === selectedIds[i]; });
+      if (!proj) continue;
+      if (field === 'owner') { proj.owner = value || ''; proj.ownerId = ownerResource ? ownerResource.id : null; }
+      else if (field === 'businessUnit') proj.businessUnit = value;
+      else if (field === 'value') proj.value = value;
+      else proj[field] = value;
+    }
+
+    closeModal();
+    showToast(failed ? (selectedIds.length - failed) + ' updated, ' + failed + ' failed' : selectedIds.length + ' project' + (selectedIds.length===1?'':'s') + ' updated');
+    st.selected = {};
+    pgAllProjects();
+  };
 }
 
 function pgManageValues() {
