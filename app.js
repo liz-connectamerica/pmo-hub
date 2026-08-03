@@ -2666,9 +2666,12 @@ function validateImportRow(row, profilesByEmail) {
   var ownerEmail = String(row['PM Email'] || '').trim().toLowerCase();
   var ownerResource = ownerEmail ? profilesByEmail[ownerEmail] : null;
 
+  var tagNames = String(row['Tags'] || '').split(',').map(function(t){ return t.trim(); }).filter(Boolean);
+
   return {
     valid: errors.length === 0,
     errors: errors,
+    tags: tagNames,
     record: {
       name: name,
       sponsor: row['Sponsor'] || null,
@@ -2702,6 +2705,7 @@ function renderImportPreview() {
       '<td>' + (v.record.name || '<span class="text-muted">(missing)</span>') + '</td>' +
       '<td>' + (v.record.stage || '') + '</td>' +
       '<td>' + (v.record.owner_name || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (v.tags.length ? v.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td style="color:#A32D2D;font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
       '</tr>';
   }).join('');
@@ -2711,7 +2715,7 @@ function renderImportPreview() {
       '<i class="ti ti-info-circle"></i><div>' + validCount + ' of ' + rows.length + ' rows are ready to import' +
       (validCount < rows.length ? '. Rows with errors will be skipped — fix them in your spreadsheet and re-upload if you want them included.' : '.') +
       '</div></div>' +
-    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>PM</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
+    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>PM</th><th>Tags</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
     (validCount > 0 ? '<button class="btn btn-primary mt-12" id="confirm-import-btn"><i class="ti ti-upload"></i> Import ' + validCount + ' project' + (validCount===1?'':'s') + '</button>' : '');
 
   if (validCount > 0) {
@@ -2724,17 +2728,42 @@ async function runImport() {
   btn.disabled = true; btn.textContent = 'Importing…';
 
   var validated = importState.rows.map(function(r){ return validateImportRow(r, importState.profilesByEmail); });
-  var records = validated.filter(function(v){ return v.valid; }).map(function(v){ return v.record; });
+  var validEntries = validated.filter(function(v){ return v.valid; });
+  var records = validEntries.map(function(v){ return v.record; });
 
-  var result = await sb.from('projects').insert(records);
+  var result = await sb.from('projects').insert(records).select();
   if (result.error) {
     showToast('Import failed: ' + result.error.message);
     btn.disabled = false; btn.textContent = 'Import ' + records.length + ' projects';
     return;
   }
+
+  // Find-or-create each tag mentioned across the import, then link it to
+  // the right project — same behavior as the tag picker elsewhere.
+  var insertedProjects = result.data;
+  var allTagNames = [];
+  validEntries.forEach(function(v){ v.tags.forEach(function(t){ if (allTagNames.indexOf(t) < 0) allTagNames.push(t); }); });
+  var missingTagNames = allTagNames.filter(function(n){ return !D.tags.some(function(t){ return t.name.toLowerCase() === n.toLowerCase(); }); });
+  if (missingTagNames.length) {
+    var createResult = await sb.from('tags').insert(missingTagNames.map(function(n){ return { name: n }; })).select();
+    if (!createResult.error) {
+      createResult.data.forEach(function(t){ D.tags.push({ id: t.id, name: t.name }); });
+      D.tags.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    }
+  }
+  var projectTagRows = [];
+  insertedProjects.forEach(function(pr, i) {
+    validEntries[i].tags.forEach(function(tagName) {
+      var tag = D.tags.find(function(t){ return t.name.toLowerCase() === tagName.toLowerCase(); });
+      if (tag) projectTagRows.push({ project_id: pr.id, tag_id: tag.id });
+    });
+  });
+  if (projectTagRows.length) await sb.from('project_tags').insert(projectTagRows);
+
   showToast(records.length + ' project' + (records.length===1?'':'s') + ' imported');
   importState = { rows: null, profilesByEmail: null };
   await refreshProjects();
+  await refreshTags();
   nav('projects');
 }
 
