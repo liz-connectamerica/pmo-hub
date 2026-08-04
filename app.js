@@ -78,7 +78,7 @@ async function loadRequests() {
       value: r.value_area, impact: r.impact, description: r.description,
       effort: r.effort, cost: r.cost, feedback: r.feedback,
       linkedProject: r.linked_project, rejectedDate: r.rejected_date,
-      businessUnit: r.business_unit, opportunityType: r.opportunity_type, opportunityTypeOther: r.opportunity_type_other,
+      businessUnit: r.business_unit, sponsor: r.sponsor, opportunityType: r.opportunity_type, opportunityTypeOther: r.opportunity_type_other,
       estimatedFrequency: r.estimated_frequency, estimatedType: r.estimated_type, estimatedAmount: r.estimated_amount,
       valueJustification: r.value_justification, startDate: r.start_date, targetEndDate: r.target_end_date,
       editedByName: r.edited_by_name, editedAt: r.edited_at,
@@ -706,6 +706,23 @@ var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], 
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3 };
 var rejectedFilterState = { range:'30' };
 
+function buildQuarterOptions() {
+  var thisYear = new Date().getFullYear();
+  var opts = [];
+  for (var y = thisYear - 1; y <= thisYear + 4; y++) {
+    for (var q = 1; q <= 4; q++) opts.push({ quarter: q, year: y, idx: y * 4 + q, label: 'Q' + q + ' ' + y });
+  }
+  return opts;
+}
+
+function computeStageFromDates(start, end) {
+  if (!start && !end) return 'backlog';
+  if (!start || !end) return 'planned';
+  var today = new Date().toISOString().slice(0, 10);
+  if (start <= today && today <= end) return 'active';
+  return 'planned';
+}
+
 function fmtCost(n) {
   if (!n && n !== 0) return '—';
   return '$' + Number(n).toLocaleString();
@@ -1261,11 +1278,29 @@ function pgRequests() {
   window.switchRTab = function(t) { st.activeTab = t; pgRequests(); };
 }
 
+var reviewFinalizeDrafts = {};
+
+function captureFinalizeDraft(id) {
+  var priorityEl = document.getElementById('rv-priority');
+  if (!priorityEl) return; // finalize section wasn't showing - nothing to capture
+  reviewFinalizeDrafts[id] = {
+    priority: priorityEl.value, value: document.getElementById('rv-value').value,
+    businessUnit: document.getElementById('rv-bu').value,
+    start: document.getElementById('rv-start').value, end: document.getElementById('rv-end').value,
+    quarterStart: document.getElementById('rv-q-start') ? document.getElementById('rv-q-start').value : '',
+    quarterEnd: document.getElementById('rv-q-end') ? document.getElementById('rv-q-end').value : '',
+    categories: Array.from(document.querySelectorAll('.rv-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; }),
+    feedback: document.getElementById('rfb') ? document.getElementById('rfb').value : ''
+  };
+}
+
 function reviewRequest(id) {
   var r = D.requests.find(function(x){ return x.id === id; });
   var canApprove = D.role === 'admin' && r.status === 'Pending';
   var canResubmit = r.status === 'Rejected' && (r.submitterId === D.currentProfile.id || D.role === 'admin');
   var isAdmin = D.role === 'admin';
+  var isOwnPending = r.status === 'Pending' && r.submitterId === D.currentProfile.id;
+  var canEditRequest = isAdmin || isOwnPending;
   var linkedP = r.linkedProject ? D.projects.find(function(p){ return p.id === r.linkedProject; }) : null;
 
   var estimateLabel = r.estimatedType ? 'Estimated ' + r.estimatedType : null;
@@ -1279,7 +1314,7 @@ function reviewRequest(id) {
       '<div style="font-size:16px;font-weight:600;margin-bottom:8px">' + r.title + '</div>' +
       '<div style="display:flex;gap:6px">' + bdg(r.status) + (r.priority ? ' ' + bdg(r.priority) : '') + '</div>' +
     '</div><div style="display:flex;gap:6px">' +
-      (isAdmin ? '<button class="btn btn-sm" onclick="closeModal();openEditRequestModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
+      (canEditRequest ? '<button class="btn btn-sm" onclick="captureFinalizeDraft(\'' + r.id + '\');closeModal();openEditRequestModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
       '<button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button>' +
     '</div></div>' +
     (r.editedByName ? '<div class="info-banner info-blue" style="margin-bottom:12px"><i class="ti ti-info-circle"></i><div>Edited by ' + r.editedByName + ' on ' + fmtDate(r.editedAt) + '</div></div>' : '') +
@@ -1287,6 +1322,7 @@ function reviewRequest(id) {
       '<div><div class="form-label">Submitted by</div>' + r.submitter + '</div>' +
       '<div><div class="form-label">Date</div>' + r.date + '</div>' +
       '<div><div class="form-label">Business Unit</div>' + (r.businessUnit || '—') + '</div>' +
+      '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '—') + '</div>' +
       '<div><div class="form-label">This request is a…</div>' + opportunityDisplay + '</div>' +
       (r.value ? '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + r.value + '</span></div>' : '') +
       estimateDisplay +
@@ -1315,22 +1351,46 @@ function reviewRequest(id) {
   }
 
   if (canApprove) {
-    var buOptsApprove = BUSINESS_UNITS.map(function(v){ return '<option' + (r.businessUnit===v?' selected':'') + '>' + v + '</option>'; }).join('');
-    var priorOptsApprove = PRIORITIES.map(function(p){ return '<option value="' + p + '"' + (r.priority===p?' selected':'') + '>' + p + '</option>'; }).join('');
-    var valOptsApprove = VALUE_AREAS.map(function(v){ return '<option' + (r.value===v?' selected':'') + '>' + v + '</option>'; }).join('');
+    var draft = reviewFinalizeDrafts[r.id] || {};
+    var buOptsApprove = BUSINESS_UNITS.map(function(v){ return '<option' + ((draft.businessUnit||r.businessUnit)===v?' selected':'') + '>' + v + '</option>'; }).join('');
+    var priorOptsApprove = PRIORITIES.map(function(p){ return '<option value="' + p + '"' + ((draft.priority||r.priority)===p?' selected':'') + '>' + p + '</option>'; }).join('');
+    var valOptsApprove = VALUE_AREAS.map(function(v){ return '<option' + ((draft.value||r.value)===v?' selected':'') + '>' + v + '</option>'; }).join('');
+    var catCheckboxes = CATEGORIES.map(function(c){
+      var checked = (draft.categories || []).indexOf(c) >= 0;
+      return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="rv-category-cb" value="' + c + '"' + (checked?' checked':'') + '> ' + c + '</label>';
+    }).join('');
+
+    var qOpts = buildQuarterOptions();
+    var qStartVal = draft.quarterStart ? parseInt(draft.quarterStart) : qOpts[0].idx;
+    var qEndVal = draft.quarterEnd ? parseInt(draft.quarterEnd) : qStartVal;
+    var qStartOpts = qOpts.map(function(o){ return '<option value="' + o.idx + '"' + (o.idx===qStartVal?' selected':'') + '>' + o.label + '</option>'; }).join('');
+    var qEndOpts = qOpts.filter(function(o){ return o.idx >= qStartVal; }).map(function(o){ return '<option value="' + o.idx + '"' + (o.idx===qEndVal?' selected':'') + '>' + o.label + '</option>'; }).join('');
+
     html += '<div class="divider"></div><div class="section-title" style="font-size:14px">Finalize before approving</div>' +
       '<div class="grid-2">' +
         '<div class="form-group"><div class="form-label">Priority *</div><select id="rv-priority"><option value="">— Select —</option>' + priorOptsApprove + '</select></div>' +
         '<div class="form-group"><div class="form-label">Value area *</div><select id="rv-value"><option value="">— Select —</option>' + valOptsApprove + '</select></div>' +
       '</div>' +
       '<div class="form-group"><div class="form-label">Business Unit *</div><select id="rv-bu">' + buOptsApprove + '</select></div>' +
+      '<div class="form-group"><div class="form-label">Categories</div><div>' + catCheckboxes + '</div></div>' +
+      '<div class="form-sub" style="margin:12px 0 4px">If real dates are known, set them below and the project will land in Backlog, Planned, or Active automatically depending on whether the range has already started. Otherwise, an optional target quarter keeps it visible on the Future Planning timeline while it sits in Backlog.</div>' +
       '<div class="grid-2">' +
-        '<div class="form-group"><div class="form-label">Start date *</div><input type="date" id="rv-start" value="' + (r.startDate||'') + '"></div>' +
-        '<div class="form-group"><div class="form-label">Target end date *</div><input type="date" id="rv-end" value="' + (r.targetEndDate||'') + '"></div>' +
+        '<div class="form-group"><div class="form-label">Start date</div><input type="date" id="rv-start" value="' + (draft.start!=null?draft.start:(r.startDate||'')) + '"></div>' +
+        '<div class="form-group"><div class="form-label">Target end date</div><input type="date" id="rv-end" value="' + (draft.end!=null?draft.end:(r.targetEndDate||'')) + '"></div>' +
       '</div>' +
-      '<div class="form-group"><div class="form-label">Feedback to submitter</div><textarea id="rfb" placeholder="Decision rationale…">' + (r.feedback||'') + '</textarea></div>' +
+      '<div class="form-group"><div class="form-label">Target quarter (optional, used only if no dates above)</div>' +
+      '<div class="grid-2"><select id="rv-q-start" onchange="onRvQStartChange()">' + qStartOpts + '</select><select id="rv-q-end">' + qEndOpts + '</select></div></div>' +
+      '<div class="form-group"><div class="form-label">Feedback to submitter</div><textarea id="rfb" placeholder="Decision rationale…">' + (draft.feedback!=null?draft.feedback:(r.feedback||'')) + '</textarea></div>' +
       '<div class="modal-footer"><button class="btn btn-danger" onclick="decideReq(\'' + r.id + '\',\'Rejected\')"><i class="ti ti-x"></i> Reject</button>' +
       '<button class="btn btn-success" onclick="decideReq(\'' + r.id + '\',\'Approved\')"><i class="ti ti-check"></i> Approve</button></div>';
+
+    window.onRvQStartChange = function() {
+      var newStart = parseInt(document.getElementById('rv-q-start').value);
+      var endEl = document.getElementById('rv-q-end');
+      var curEnd = parseInt(endEl.value);
+      var newEnd = curEnd < newStart ? newStart : curEnd;
+      endEl.innerHTML = qOpts.filter(function(o){ return o.idx >= newStart; }).map(function(o){ return '<option value="' + o.idx + '"' + (o.idx===newEnd?' selected':'') + '>' + o.label + '</option>'; }).join('');
+    };
   } else if (canResubmit) {
     html += '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditResubmitModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit &amp; resubmit</button></div>';
   } else {
@@ -1361,6 +1421,7 @@ function openEditRequestModal(id) {
   showModal('<div class="modal-title">Edit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="er2-title" value="' + r.title.replace(/"/g,'&quot;') + '"></div>' +
     '<div class="form-group"><div class="form-label">Business Unit *</div><select id="er2-bu">' + buOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="er2-sponsor" value="' + (r.sponsor||'').replace(/"/g,'&quot;') + '" placeholder="Optional"></div>' +
     '<div class="form-group"><div class="form-label">Description *</div><textarea id="er2-desc" rows="4">' + (r.description||'').replace(/</g,'&lt;') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">This request is a… *</div><select id="er2-opp-type" onchange="onEditReqOppTypeChange()"><option value="">— Select —</option>' + oppOpts + '</select></div>' +
     '<div class="form-group" id="er2-opp-other-row" style="display:' + (showOther?'block':'none') + '"><div class="form-label">Please describe</div><input type="text" id="er2-opp-other" value="' + (r.opportunityTypeOther||'').replace(/"/g,'&quot;') + '"></div>' +
@@ -1414,10 +1475,11 @@ function openEditRequestModal(id) {
     var estAmountRaw = showEst ? document.getElementById('er2-est-amount').value.trim() : '';
 
     var btn = document.getElementById('er2-save'); btn.disabled = true;
-    var editorName = D.currentProfile.display_name;
-    var editedAt = new Date().toISOString();
+    var isSelfEdit = D.currentProfile.id === r.submitterId;
+    var editorName = isSelfEdit ? r.editedByName : D.currentProfile.display_name;
+    var editedAt = isSelfEdit ? r.editedAt : new Date().toISOString();
     var updates = {
-      title: title, business_unit: bu, description: desc, opportunity_type: oppType,
+      title: title, business_unit: bu, sponsor: document.getElementById('er2-sponsor').value.trim() || null, description: desc, opportunity_type: oppType,
       opportunity_type_other: oppType === 'Something else' ? oppOther : null,
       estimated_frequency: showEst ? document.getElementById('er2-est-freq').value : null,
       estimated_type: oppType === 'Revenue opportunity' ? 'Revenue' : oppType === 'Cost savings opportunity' ? 'Savings' : null,
@@ -1438,7 +1500,7 @@ function openEditRequestModal(id) {
       if (teamRows.length) await sb.from('request_team').insert(teamRows);
     }
 
-    r.title = title; r.businessUnit = bu; r.description = desc; r.opportunityType = oppType;
+    r.title = title; r.businessUnit = bu; r.sponsor = updates.sponsor; r.description = desc; r.opportunityType = oppType;
     r.opportunityTypeOther = updates.opportunity_type_other; r.estimatedFrequency = updates.estimated_frequency;
     r.estimatedType = updates.estimated_type; r.estimatedAmount = updates.estimated_amount;
     r.valueJustification = justification; r.tags = selectedTags; r.team = selectedTeam;
@@ -1471,6 +1533,7 @@ function openEditResubmitModal(id) {
     (r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:#FBE7E3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid #993C1D">' + r.feedback + '</div></div>' : '') +
     '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="erq-title" value="' + r.title.replace(/"/g,'&quot;') + '"></div>' +
     '<div class="form-group"><div class="form-label">Business Unit *</div><select id="erq-bu">' + buOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="erq-sponsor" value="' + (r.sponsor||'').replace(/"/g,'&quot;') + '" placeholder="Optional"></div>' +
     '<div class="form-group"><div class="form-label">Description *</div><textarea id="erq-desc" rows="4">' + (r.description||'').replace(/</g,'&lt;') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">This request is a… *</div><select id="erq-opp-type" onchange="onResubmitOppTypeChange()"><option value="">— Select —</option>' + oppOpts + '</select></div>' +
     '<div class="form-group" id="erq-opp-other-row" style="display:' + (showOther?'block':'none') + '"><div class="form-label">Please describe</div><input type="text" id="erq-opp-other" value="' + (r.opportunityTypeOther||'').replace(/"/g,'&quot;') + '"></div>' +
@@ -1537,7 +1600,7 @@ async function resubmitRequest(id, selectedTags, selectedTeam) {
 
   var btn = document.getElementById('erq-save'); btn.disabled = true;
   var updates = {
-    title: title, business_unit: bu, description: desc, opportunity_type: oppType,
+    title: title, business_unit: bu, sponsor: document.getElementById('erq-sponsor').value.trim() || null, description: desc, opportunity_type: oppType,
     opportunity_type_other: oppType === 'Something else' ? oppOther : null,
     estimated_frequency: showEstimate ? document.getElementById('erq-est-freq').value : null,
     estimated_type: oppType === 'Revenue opportunity' ? 'Revenue' : oppType === 'Cost savings opportunity' ? 'Savings' : null,
@@ -1560,7 +1623,7 @@ async function resubmitRequest(id, selectedTags, selectedTeam) {
     if (teamRows.length) await sb.from('request_team').insert(teamRows);
   }
 
-  r.title = title; r.businessUnit = bu; r.description = desc; r.opportunityType = oppType;
+  r.title = title; r.businessUnit = bu; r.sponsor = updates.sponsor; r.description = desc; r.opportunityType = oppType;
   r.opportunityTypeOther = updates.opportunity_type_other; r.estimatedFrequency = updates.estimated_frequency;
   r.estimatedType = updates.estimated_type; r.estimatedAmount = updates.estimated_amount;
   r.valueJustification = justification; r.tags = selectedTags; r.team = selectedTeam;
@@ -1580,18 +1643,32 @@ async function decideReq(id, decision) {
     var priority = document.getElementById('rv-priority').value;
     var valueArea = document.getElementById('rv-value').value;
     var businessUnit = document.getElementById('rv-bu').value;
-    var startDate = document.getElementById('rv-start').value;
-    var endDate = document.getElementById('rv-end').value;
-    if (!priority || !valueArea || !businessUnit || !startDate || !endDate) {
-      showToast('Please fill in Priority, Value Area, Business Unit, Start Date, and Target End Date before approving');
+    var startDate = document.getElementById('rv-start').value || null;
+    var endDate = document.getElementById('rv-end').value || null;
+    if (!priority || !valueArea || !businessUnit) {
+      showToast('Please fill in Priority, Value Area, and Business Unit before approving');
       return;
+    }
+    var selectedCategories = Array.from(document.querySelectorAll('.rv-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
+
+    var newStage = computeStageFromDates(startDate, endDate);
+    var targetQuarter = null, targetYear = null, targetEndQuarter = null, targetEndYear = null;
+    if (newStage === 'backlog') {
+      var qOpts = buildQuarterOptions();
+      var qStartIdx = parseInt(document.getElementById('rv-q-start').value);
+      var qEndIdx = parseInt(document.getElementById('rv-q-end').value);
+      var qStart = qOpts.find(function(o){ return o.idx === qStartIdx; });
+      var qEnd = qOpts.find(function(o){ return o.idx === qEndIdx; });
+      if (qStart) { targetQuarter = qStart.quarter; targetYear = qStart.year; }
+      if (qEnd) { targetEndQuarter = qEnd.quarter; targetEndYear = qEnd.year; }
     }
 
     var projectRecord = {
-      name: r.title, status: 'Not Started', phase: 'Not Started', progress: 0,
-      value_area: valueArea, priority: priority, description: r.description,
-      business_unit: businessUnit, blockers: '', health: 'green', stage: 'planned',
+      name: r.title, status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
+      value_area: valueArea, priority: priority, description: r.description, sponsor: r.sponsor || null,
+      business_unit: businessUnit, blockers: '', health: 'green', stage: newStage,
       planned_start: startDate, start_date: startDate, end_date: endDate,
+      target_quarter: targetQuarter, target_year: targetYear, target_end_quarter: targetEndQuarter, target_end_year: targetEndYear,
       estimated_amount: r.estimatedAmount, estimated_frequency: r.estimatedFrequency, estimated_type: r.estimatedType,
       request_id: r.id
     };
@@ -1611,33 +1688,39 @@ async function decideReq(id, decision) {
       var tagRows = r.tags.map(function(name){ var t = D.tags.find(function(x){ return x.name === name; }); return t ? { project_id: projResult.data.id, tag_id: t.id } : null; }).filter(Boolean);
       if (tagRows.length) await sb.from('project_tags').insert(tagRows);
     }
+    if (selectedCategories.length) {
+      await sb.from('project_categories').insert(selectedCategories.map(function(c){ return { project_id: projResult.data.id, category: c }; }));
+    }
 
+    var reqStatus = newStage === 'backlog' ? 'Backlog' : newStage === 'active' ? 'Active' : 'Planned';
     var reqResult = await sb.from('requests').update({
-      status: 'Planned', feedback: feedbackVal, linked_project: projResult.data.id,
+      status: reqStatus, feedback: feedbackVal, linked_project: projResult.data.id,
       priority: priority, value_area: valueArea, business_unit: businessUnit,
       start_date: startDate, target_end_date: endDate
     }).eq('id', id);
     if (reqResult.error) { showToast('Could not update request: ' + reqResult.error.message); return; }
 
     D.projects.push({
-      id: projResult.data.id, name: r.title, owner:'', ownerId:null, sponsor:'', categories:[], businessUnit:businessUnit,
-      team: r.team ? r.team.slice() : [], teamIds: teamIds, status:'Not Started', phase:'Not Started', progress:0,
+      id: projResult.data.id, name: r.title, owner:'', ownerId:null, sponsor: r.sponsor || '', categories: selectedCategories, businessUnit:businessUnit,
+      team: r.team ? r.team.slice() : [], teamIds: teamIds, status: projectRecord.status, phase:'Not Started', progress:0,
       start: startDate, end: endDate, plannedStart: startDate,
       value: valueArea, priority: priority, description: r.description, blockers:'', health:'green',
-      stage:'planned', requestId:r.id, tags: r.tags ? r.tags.slice() : [], dependencies:[],
+      stage: newStage, requestId:r.id, tags: r.tags ? r.tags.slice() : [], dependencies:[],
       estimatedAmount: r.estimatedAmount, estimatedFrequency: r.estimatedFrequency, estimatedType: r.estimatedType,
-      targetQuarter:null, targetYear:null, targetEndQuarter:null, targetEndYear:null,
+      targetQuarter: targetQuarter, targetYear: targetYear, targetEndQuarter: targetEndQuarter, targetEndYear: targetEndYear,
       holdReason:null, preHoldStage:null, heldAt:null, completedAt:null,
       milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]}, documents:[], docFolders:['General'], docFolderIds:{}
     });
-    r.status = 'Planned'; r.linkedProject = projResult.data.id; r.feedback = feedbackVal;
+    r.status = reqStatus; r.linkedProject = projResult.data.id; r.feedback = feedbackVal;
     r.priority = priority; r.value = valueArea; r.businessUnit = businessUnit; r.startDate = startDate; r.targetEndDate = endDate;
-    addNotif(r.submitter, 'Your request "' + r.title + '" has been approved and scheduled.', 'approved');
+    delete reviewFinalizeDrafts[id];
+    addNotif(r.submitter, 'Your request "' + r.title + '" has been approved' + (newStage === 'backlog' ? ' and added to the backlog.' : newStage === 'active' ? ' and is already underway.' : ' and scheduled.'), 'approved');
   } else if (decision === 'Rejected') {
     var rejectedDate = new Date().toISOString().split('T')[0];
     var result = await sb.from('requests').update({ status: 'Rejected', feedback: feedbackVal, rejected_date: rejectedDate }).eq('id', id);
     if (result.error) { showToast('Could not save: ' + result.error.message); return; }
     r.status = 'Rejected'; r.feedback = feedbackVal; r.rejectedDate = rejectedDate;
+    delete reviewFinalizeDrafts[id];
   }
   closeModal(); showToast(decision === 'Approved' ? 'Approved and scheduled' : 'Request rejected');
   renderNav();
@@ -1783,17 +1866,21 @@ async function scheduleProject(pid) {
   var start = document.getElementById('sch-start').value;
   var end   = document.getElementById('sch-end').value;
   if (!start || !end) { showToast('Please set a start and end date'); return; }
+  var newStage = computeStageFromDates(start, end);
   var newTeamNames = individualResourceNames().filter(function(n){ var el = document.getElementById('schm-' + n.replace(/ /g,'_')); return el && el.checked; });
   var ownerName = document.getElementById('sch-owner').value;
   var ownerResource = resolveResource(ownerName);
 
-  var result = await sb.from('projects').update({
-    planned_start: start, start_date: start, end_date: end, stage: 'planned',
+  var updatePayload = {
+    planned_start: start, start_date: start, end_date: end, stage: newStage,
     owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
-    target_quarter: null, target_year: null
-  }).eq('id', pid);
+    target_quarter: null, target_year: null, target_end_quarter: null, target_end_year: null
+  };
+  if (newStage === 'active') updatePayload.status = 'On Track';
+  var result = await sb.from('projects').update(updatePayload).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-  p.targetQuarter = null; p.targetYear = null;
+  p.targetQuarter = null; p.targetYear = null; p.targetEndQuarter = null; p.targetEndYear = null;
+  if (newStage === 'active') p.status = 'On Track';
 
   var newRealIds = newTeamNames.map(function(n){ return resolveResource(n); }).filter(Boolean).map(function(r){ return r.id; });
   var oldIds = p.teamIds || [];
@@ -1804,7 +1891,7 @@ async function scheduleProject(pid) {
 
   p.team = newTeamNames; p.teamIds = newRealIds;
   p.owner = ownerName; p.ownerId = ownerResource ? ownerResource.id : null;
-  p.plannedStart = start; p.start = start; p.end = end; p.stage = 'planned';
+  p.plannedStart = start; p.start = start; p.end = end; p.stage = newStage;
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) await syncRequestStatus(r.id, { status: 'Planned', linkedProject: pid });
   addNotif(r ? r.submitter : '', 'Great news! "' + p.name + '" has been scheduled to start on ' + start + (p.owner ? '. Owner: ' + p.owner : '') + '.', 'planned');
@@ -1985,7 +2072,6 @@ function pgProjects() {
       '<td class="bold">' + p.name + '</td>' +
       '<td>' + ((p.tags && p.tags.length) ? p.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + stagePill(p.stage) + '</td>' +
       '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.phase || '<span class="text-muted">—</span>') + '</td>' +
       '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:#f0ede8;border-radius:3px;overflow:hidden"><div style="height:100%;width:' + p.progress + '%;background:#534AB7"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
@@ -2003,14 +2089,13 @@ function pgProjects() {
       '<th class="sortable-th" onclick="setActiveProjSort(\'name\')">Project ' + arrow('name') + '</th>' +
       '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
       '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
-      '<th class="sortable-th" onclick="setActiveProjSort(\'stage\')">Stage ' + arrow('stage') + '</th>' +
       '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
       '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'phase\')">Phase ' + arrow('phase') + '</span>' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
       '<th class="sortable-th" onclick="setActiveProjSort(\'progress\')">Progress % ' + arrow('progress') + '</th>' +
       '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
       '<th class="sortable-th" onclick="setActiveProjSort(\'end\')">Target end date ' + arrow('end') + '</th>' +
       '<th></th>' +
-    '</tr></thead><tbody>' + (rows || '<tr><td colspan="11" class="text-muted" style="text-align:center;padding:20px">No active projects match these filters</td></tr>') + '</tbody></table></div></div>';
+    '</tr></thead><tbody>' + (rows || '<tr><td colspan="10" class="text-muted" style="text-align:center;padding:20px">No active projects match these filters</td></tr>') + '</tbody></table></div></div>';
 
   window.onActiveProjectsSearch = function(v) {
     st.search = v; pgProjects();
@@ -3072,10 +3157,10 @@ function openMoveDocModal(pid, idx) {
 function editProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   if (!canEdit(p)) { showToast('You do not have edit access'); return; }
-  var statusOpts = STATUSES.map(function(s){ return '<option' + (p.status===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  var phaseOpts  = PHASES.map(function(s){   return '<option' + (p.phase===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  var priorOpts  = PRIORITIES.map(function(s){ return '<option' + (p.priority===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  var valOpts    = VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
+  var statusOpts = (STATUSES.indexOf(p.status) < 0 ? '<option value="" selected>— Not set —</option>' : '') + STATUSES.map(function(s){ return '<option' + (p.status===s?' selected':'') + '>' + s + '</option>'; }).join('');
+  var phaseOpts  = (PHASES.indexOf(p.phase) < 0 ? '<option value="" selected>— Not set —</option>' : '') + PHASES.map(function(s){   return '<option' + (p.phase===s?' selected':'') + '>' + s + '</option>'; }).join('');
+  var priorOpts  = (PRIORITIES.indexOf(p.priority) < 0 ? '<option value="" selected>— Not set —</option>' : '') + PRIORITIES.map(function(s){ return '<option' + (p.priority===s?' selected':'') + '>' + s + '</option>'; }).join('');
+  var valOpts    = (VALUE_AREAS.indexOf(p.value) < 0 ? '<option value="" selected>— Not set —</option>' : '') + VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var ownerPoolEdit = p.owner && individualResourceNames().indexOf(p.owner) < 0 ? individualResourceNames().concat([p.owner]) : individualResourceNames();
   var ownerOpts     = '<option value="">— None —</option>' + ownerPoolEdit.map(function(n){
     var isInactiveCurrent = p.owner===n && individualResourceNames().indexOf(n) < 0;
@@ -3125,10 +3210,10 @@ async function saveProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   var newVals = {
     name: document.getElementById('ep-name').value,
-    status: document.getElementById('ep-status').value,
-    phase: document.getElementById('ep-phase').value,
-    priority: document.getElementById('ep-priority').value,
-    value_area: document.getElementById('ep-value').value,
+    status: document.getElementById('ep-status').value || null,
+    phase: document.getElementById('ep-phase').value || null,
+    priority: document.getElementById('ep-priority').value || null,
+    value_area: document.getElementById('ep-value').value || null,
     start_date: document.getElementById('ep-start').value || null,
     end_date: document.getElementById('ep-end').value || null,
     progress: parseInt(document.getElementById('ep-progress').value) || 0,
@@ -3143,9 +3228,22 @@ async function saveProject(pid) {
   var ownerResource = pmEl ? resolveResource(pmEl.value) : null;
   if (pmEl) { newVals.owner_id = ownerResource ? ownerResource.id : null; newVals.owner_name = pmEl.value || null; }
 
+  // If this project is still in backlog or planned, editing in real dates should
+  // move it forward automatically, rather than leaving it stranded until someone
+  // separately reschedules or reloads the page.
+  var newStage = p.stage;
+  if (p.stage === 'backlog' || p.stage === 'planned') {
+    newStage = computeStageFromDates(newVals.start_date, newVals.end_date);
+    if (newStage !== p.stage) {
+      newVals.stage = newStage;
+      if (newStage !== 'backlog' && !p.plannedStart) newVals.planned_start = newVals.start_date;
+    }
+  }
+
   var saveBtn = document.querySelector('.modal-footer .btn-primary'); if (saveBtn) saveBtn.disabled = true;
   var result = await sb.from('projects').update(newVals).eq('id', pid).select().single();
   if (result.error) { showToast('Could not save: ' + result.error.message); if (saveBtn) saveBtn.disabled = false; return; }
+  if (newVals.stage) { p.stage = newVals.stage; if (newVals.planned_start) p.plannedStart = newVals.planned_start; }
 
   var catCbs = document.querySelectorAll('.ep-category-cb');
   if (catCbs.length) {
@@ -3475,14 +3573,6 @@ function pgFuturePlanning() {
   window.setFuturePlanningYear = function(year) { futurePlanningSelectedYear = parseInt(year); pgFuturePlanning(); };
   window.setFuturePlanningCategory = function(cat) { futurePlanningCategoryFilter = cat; pgFuturePlanning(); };
 
-  function buildQuarterOptions() {
-    var thisYear = new Date().getFullYear();
-    var opts = [];
-    for (var y = thisYear - 1; y <= thisYear + 4; y++) {
-      for (var q = 1; q <= 4; q++) opts.push({ quarter: q, year: y, idx: y * 4 + q, label: 'Q' + q + ' ' + y });
-    }
-    return opts;
-  }
 
   window.openSetQuarterModal = function(pid) {
     var p = D.projects.find(function(x){ return x.id === pid; });
@@ -4850,6 +4940,7 @@ function pgSubmit() {
     '<div class="section-title mb-16">New project request</div>' +
     '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="f-title" placeholder="e.g. Customer onboarding redesign"></div>' +
     '<div class="form-group"><div class="form-label">Business Unit *</div><select id="f-bu">' + buOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="f-sponsor" placeholder="Optional"></div>' +
     '<div class="form-group"><div class="form-label">Description *</div><div class="form-sub">What is the problem or opportunity?</div><textarea id="f-desc" rows="4" placeholder="Describe the situation and why this project is needed…"></textarea></div>' +
     '<div class="form-group"><div class="form-label">This request is a… *</div><select id="f-opp-type" onchange="onOppTypeChange()">' +
       '<option value="">— Select —</option><option>Revenue opportunity</option><option>Cost savings opportunity</option><option>Something else</option>' +
@@ -4918,6 +5009,7 @@ function pgSubmit() {
   document.getElementById('f-submit').onclick = async function() {
     var title = document.getElementById('f-title').value.trim();
     var bu = document.getElementById('f-bu').value;
+    var sponsor = document.getElementById('f-sponsor').value.trim();
     var desc = document.getElementById('f-desc').value.trim();
     var oppType = document.getElementById('f-opp-type').value;
     var oppOther = document.getElementById('f-opp-other').value.trim();
@@ -4933,7 +5025,7 @@ function pgSubmit() {
     var btn = document.getElementById('f-submit'); btn.disabled = true;
     var record = {
       title: title, submitter_id: D.currentProfile.id, submitter_name: currentUser() || 'Current User',
-      business_unit: bu, description: desc, opportunity_type: oppType,
+      sponsor: sponsor || null, business_unit: bu, description: desc, opportunity_type: oppType,
       opportunity_type_other: oppType === 'Something else' ? oppOther : null,
       estimated_frequency: showEstimate ? document.getElementById('f-est-freq').value : null,
       estimated_type: oppType === 'Revenue opportunity' ? 'Revenue' : oppType === 'Cost savings opportunity' ? 'Savings' : null,
@@ -4956,7 +5048,7 @@ function pgSubmit() {
 
     D.requests.push({
       id: result.data.id, title: title, submitter: record.submitter_name, submitterId: D.currentProfile.id,
-      date: result.data.submitted_at, status: 'Pending', priority: null, value: null,
+      date: result.data.submitted_at, status: 'Pending', priority: null, value: null, sponsor: sponsor || null,
       businessUnit: bu, description: desc, opportunityType: oppType, opportunityTypeOther: record.opportunity_type_other,
       estimatedFrequency: record.estimated_frequency, estimatedType: record.estimated_type, estimatedAmount: record.estimated_amount,
       valueJustification: justification, tags: newTags, team: selectedTeam.slice(), feedback: '', editedByName: null, editedAt: null
