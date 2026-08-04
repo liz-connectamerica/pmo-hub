@@ -3,6 +3,33 @@ var SUPABASE_URL = 'https://mglwdprqbjncnlioifya.supabase.co';
 var SUPABASE_KEY = 'sb_publishable_iEcNnoDk0u7CqoAuh8Kuyg_nDl-QuO3';
 var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// "View as" is a client-side simulation only — the real Supabase session never
+// changes, so a write attempted while viewing as someone else would still be
+// evaluated (and attributed) under the admin's own real identity, not the
+// simulated one. To avoid any misattributed or incorrectly-permitted writes,
+// every mutating call is blocked outright whenever a simulation is active.
+(function() {
+  var realFrom = sb.from.bind(sb);
+  sb.from = function(table) {
+    var builder = realFrom(table);
+    if (!D.viewingAsResourceId) return builder;
+    ['insert', 'update', 'delete', 'upsert'].forEach(function(method) {
+      if (typeof builder[method] !== 'function') return;
+      builder[method] = function() {
+        showToast('Actions are disabled while viewing as another user');
+        var blocked = {
+          select: function(){ return blocked; },
+          eq: function(){ return blocked; },
+          single: function(){ return Promise.resolve({ data: null, error: { message: 'Blocked: read-only while viewing as another user' } }); },
+          then: function(resolve){ resolve({ data: null, error: { message: 'Blocked: read-only while viewing as another user' } }); }
+        };
+        return blocked;
+      };
+    });
+    return builder;
+  };
+})();
+
 // ── Real data loading ─────────────────────────────────────────────────────────
 // Fetches everything project-related from Supabase and reshapes it into the
 // same in-memory shape the rest of the app already expects (D.projects), so
@@ -845,24 +872,13 @@ async function bootAppForUser(skipReload) {
     D.currentProfile.display_name + ' · ' + roleLabel(realRole);
 
   var previewControl = document.getElementById('preview-role-control');
-  var previewBanner = document.getElementById('preview-banner');
-  if (realRole === 'admin') {
-    previewControl.style.display = 'block';
-    document.getElementById('preview-role-select').value = D.previewRole || '';
-  } else {
-    previewControl.style.display = 'none';
-  }
-  if (D.previewRole) {
-    previewBanner.style.display = 'block';
-    previewBanner.innerHTML = '<i class="ti ti-eye"></i> Previewing as ' + roleLabel(D.previewRole);
-  } else {
-    previewBanner.style.display = 'none';
-  }
+  var banner = document.getElementById('viewing-as-banner');
+  var bannerText = document.getElementById('viewing-as-banner-text');
 
-  D.role = D.previewRole || realRole;
+  previewControl.style.display = realRole === 'admin' ? 'block' : 'none';
+
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app-root').style.display = 'flex';
-  renderNav();
 
   if (!skipReload) {
     document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading your projects…</p></div>';
@@ -874,16 +890,49 @@ async function bootAppForUser(skipReload) {
     D.tags = tagData.tags;
     D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; });
     D.resources.forEach(function(r){ r.tags = tagData.resourceTagNames[r.id] || []; });
-    var myResource = D.resources.find(function(r){ return r.userId === D.currentProfile.id; });
-    D.myResourceId = myResource ? myResource.id : null;
     await autoActivatePlannedProjects();
   }
+
+  // Populate the View As list now that D.resources is guaranteed to be loaded.
+  if (realRole === 'admin') {
+    var resourceOpts = '<option value="">My own view</option>' + D.resources
+      .filter(function(r){ return r.type === 'individual'; })
+      .sort(function(a,b){ return a.name.localeCompare(b.name); })
+      .map(function(r){ return '<option value="' + r.id + '"' + (D.viewingAsResourceId === r.id ? ' selected' : '') + '>' + r.name + (r.userId ? '' : ' (no account yet)') + '</option>'; })
+      .join('');
+    document.getElementById('preview-role-select').innerHTML = resourceOpts;
+  }
+
+  // Apply the "view as" override last, so a fresh data reload can never stomp it.
+  var viewingResource = D.viewingAsResourceId ? D.resources.find(function(r){ return r.id === D.viewingAsResourceId; }) : null;
+  if (viewingResource) {
+    banner.style.display = 'flex';
+    bannerText.textContent = 'Viewing as ' + viewingResource.name + ' (Member)' + (viewingResource.userId ? '' : ' — no account yet, this previews what they\'d see once granted access');
+    D.role = 'member';
+    D.myResourceId = viewingResource.id;
+  } else {
+    banner.style.display = 'none';
+    D.role = realRole;
+    var myResource = D.resources.find(function(r){ return r.userId === D.currentProfile.id; });
+    D.myResourceId = myResource ? myResource.id : null;
+  }
+  renderNav();
 
   if (location.hash && location.hash.length > 1) {
     handleRoute();
   } else {
     nav('dashboard');
   }
+}
+
+function setViewAsUser(resourceId) {
+  if (D.currentProfile.role !== 'admin') return; // safety check; UI is already hidden for non-admins
+  D.viewingAsResourceId = resourceId || null;
+  bootAppForUser(true);
+}
+
+function exitViewAs() {
+  setViewAsUser(null);
 }
 
 async function refreshProjects() {
@@ -903,12 +952,6 @@ async function refreshTags() {
   D.tags = tagData.tags;
   D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; });
   D.resources.forEach(function(r){ r.tags = tagData.resourceTagNames[r.id] || []; });
-}
-
-function setPreviewRole(role) {
-  if (D.currentProfile.role !== 'admin') return; // safety check; UI is already hidden for non-admins
-  D.previewRole = role || null;
-  bootAppForUser(true);
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
@@ -1311,9 +1354,13 @@ function pgBacklog() {
   if (st.filters.owner.length) bp = bp.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
 
   bp = bp.slice().sort(function(a,b) {
-    var av = a[st.sort]; var bv = b[st.sort];
-    av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
-    if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    var av, bv;
+    if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+    else {
+      av = a[st.sort]; bv = b[st.sort];
+      av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
+      if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    }
     var cmp = av < bv ? -1 : av > bv ? 1 : 0;
     return st.dir === 'asc' ? cmp : -cmp;
   });
@@ -1474,10 +1521,14 @@ function pgPlanned() {
   if (st.filters.owner.length) pp = pp.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
 
   pp = pp.slice().sort(function(a,b) {
-    var sortKey = st.sort === 'start' ? 'plannedStart' : st.sort;
-    var av = a[sortKey]; var bv = b[sortKey];
-    av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
-    if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    var av, bv;
+    if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+    else {
+      var sortKey = st.sort === 'start' ? 'plannedStart' : st.sort;
+      av = a[sortKey]; bv = b[sortKey];
+      av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
+      if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    }
     var cmp = av < bv ? -1 : av > bv ? 1 : 0;
     return st.dir === 'asc' ? cmp : -cmp;
   });
@@ -1601,9 +1652,13 @@ function pgProjects() {
   if (st.filters.owner.length) ps = ps.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
 
   ps = ps.slice().sort(function(a,b) {
-    var av = a[st.sort]; var bv = b[st.sort];
-    av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
-    if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    var av, bv;
+    if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+    else {
+      av = a[st.sort]; bv = b[st.sort];
+      av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
+      if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    }
     var cmp = av < bv ? -1 : av > bv ? 1 : 0;
     return st.dir === 'asc' ? cmp : -cmp;
   });
@@ -4749,7 +4804,7 @@ async function handleLoginSubmit() {
 async function handleLogout() {
   await sb.auth.signOut();
   D.currentProfile = null;
-  D.previewRole = null;
+  D.viewingAsResourceId = null;
   document.getElementById('app-root').style.display = 'none';
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('auth-email').value = '';
