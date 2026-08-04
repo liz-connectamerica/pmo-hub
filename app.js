@@ -3469,15 +3469,15 @@ function pgAllProjects() {
     '<div class="card"><div class="table-wrap"><table><thead><tr>' +
       '<th><input type="checkbox" ' + (allVisibleSelected ? 'checked' : '') + ' onchange="toggleAllProjSelectAll(this.checked)"></th>' +
       '<th class="sortable-th" onclick="setAllProjSort(\'name\')">Project ' + arrow('name') + '</th>' +
-      '<th style="position:relative">Category' + filterIcon('category', st.filters.category.length>0) + '</th>' +
-      '<th style="position:relative">Business Unit' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
-      '<th style="position:relative">Stage' + filterIcon('stage', st.filters.stage.length>0) + '</th>' +
-      '<th style="position:relative">Status' + filterIcon('status', st.filters.status.length>0) + '</th>' +
-      '<th style="position:relative">Phase' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
-      '<th style="position:relative">Priority' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
-      '<th style="position:relative">Value Area' + filterIcon('value', st.filters.value.length>0) + '</th>' +
-      '<th style="position:relative">Sponsor' + filterIcon('sponsor', st.filters.sponsor.length>0) + '</th>' +
-      '<th style="position:relative">Owner' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'categories\')">Category ' + arrow('categories') + '</span>' + filterIcon('category', st.filters.category.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'stage\')">Stage ' + arrow('stage') + '</span>' + filterIcon('stage', st.filters.stage.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'phase\')">Phase ' + arrow('phase') + '</span>' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'value\')">Value Area ' + arrow('value') + '</span>' + filterIcon('value', st.filters.value.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'sponsor\')">Sponsor ' + arrow('sponsor') + '</span>' + filterIcon('sponsor', st.filters.sponsor.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
       '<th></th>' +
     '</tr></thead><tbody>' + (rows || '<tr><td colspan="12" class="text-muted" style="text-align:center;padding:20px">No projects match these filters</td></tr>') + '</tbody></table></div></div>';
 
@@ -3900,6 +3900,18 @@ function resourceOpenTaskCount(r) {
   return count;
 }
 
+function resourceCombinedProjectIds(r) {
+  var ids = (r.projects || []).slice();
+  var ownedIds = [];
+  D.projects.forEach(function(p){
+    if (p.ownerId === r.id) {
+      ownedIds.push(p.id);
+      if (ids.indexOf(p.id) < 0) ids.push(p.id);
+    }
+  });
+  return { allIds: ids, ownedIds: ownedIds };
+}
+
 function pgResources() {
   tb('Resources', D.role==='admin' ? '<button class="btn btn-primary" onclick="openAddResource()"><i class="ti ti-plus"></i> Add resource</button>' : '');
   var st = resourcesPageState;
@@ -3920,7 +3932,7 @@ function pgResources() {
   }
   list = list.slice().sort(function(a, b) {
     var av, bv;
-    if (st.sort === 'projects') { av = a.projects.length; bv = b.projects.length; }
+    if (st.sort === 'projects') { av = resourceCombinedProjectIds(a).allIds.length; bv = resourceCombinedProjectIds(b).allIds.length; }
     else if (st.sort === 'tasks') { av = resourceOpenTaskCount(a) || 0; bv = resourceOpenTaskCount(b) || 0; }
     else if (st.sort === 'capacity') { av = a.allocated||0; bv = b.allocated||0; }
     else if (st.sort === 'members') { av = (a.members||[]).length; bv = (b.members||[]).length; }
@@ -3933,9 +3945,19 @@ function pgResources() {
   function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
   function projectExpandRow(r, colspan) {
     if (st.expandedId !== r.id) return '';
-    var names = r.projects.map(function(pid){ var p = D.projects.find(function(x){ return x.id===pid; }); return p ? { id:p.id, name:p.name } : null; }).filter(Boolean);
-    var body = names.length
-      ? names.map(function(p){ return '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0"><span>' + p.name + '</span><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button></div>'; }).join('')
+    var combined = resourceCombinedProjectIds(r);
+    var rows = combined.allIds.map(function(pid){
+      var p = D.projects.find(function(x){ return x.id===pid; });
+      if (!p) return null;
+      var isOwner = combined.ownedIds.indexOf(pid) >= 0;
+      return { id:p.id, name:p.name, isOwner:isOwner };
+    }).filter(Boolean);
+    var body = rows.length
+      ? rows.map(function(p){
+          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0">' +
+            '<span>' + p.name + ' <span class="badge ' + (p.isOwner ? 'badge-purple' : 'badge-gray') + '" style="font-size:10px">' + (p.isOwner ? 'Owner' : 'Contributor') + '</span></span>' +
+            '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button></div>';
+        }).join('')
       : '<span class="text-muted">No projects assigned</span>';
     return '<tr><td colspan="' + colspan + '" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
   }
@@ -3947,6 +3969,7 @@ function pgResources() {
       var pct = r.allocated || 0;
       var c = pct>=100?'#E24B4A':pct>=80?'#EF9F27':'#1D9E75';
       var taskCount = resourceOpenTaskCount(r);
+      var combinedCount = resourceCombinedProjectIds(r).allIds.length;
       var linkIcon = r.userId ? '<i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75"></i>' : '<i class="ti ti-link-off" title="Not linked yet" style="color:#ccc"></i>';
       return '<tr>' +
         '<td class="bold">' + (r.firstName||'') + '</td>' +
@@ -3954,7 +3977,7 @@ function pgResources() {
         '<td class="text-muted">' + (r.role||'—') + '</td>' +
         '<td style="text-align:center">' + linkIcon + '</td>' +
         '<td class="text-muted">' + (r.teamName||'—') + '</td>' +
-        '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + r.projects.length + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
+        '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + combinedCount + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
         '<td class="text-muted">' + (taskCount === null ? '—' : taskCount) + '</td>' +
         '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:#f0ede8;border-radius:3px;overflow:hidden"><div style="height:100%;width:' + Math.min(pct,100) + '%;background:' + c + '"></div></div><span class="text-muted" style="font-size:11px;min-width:30px">' + pct + '%</span></div></td>' +
         '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button></td>' +
@@ -3972,11 +3995,12 @@ function pgResources() {
       '<th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   } else {
     var trows = list.map(function(r) {
+      var combinedCount = resourceCombinedProjectIds(r).allIds.length;
       return '<tr>' +
         '<td class="bold">' + r.name + '</td>' +
         '<td class="text-muted">' + (r.managerName||'—') + '</td>' +
         '<td class="text-muted">' + (r.members||[]).length + '</td>' +
-        '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + r.projects.length + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
+        '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + combinedCount + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
         '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button></td>' +
         '</tr>' + projectExpandRow(r, 5);
     }).join('');
