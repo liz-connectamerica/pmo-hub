@@ -715,6 +715,36 @@ function buildQuarterOptions() {
   return opts;
 }
 
+var CHANGE_LOG_FIELDS = {
+  name: 'Project Name', stage: 'Stage', status: 'Status', phase: 'Phase', priority: 'Priority',
+  value: 'Value Area', businessUnit: 'Business Unit', sponsor: 'Sponsor', owner: 'Owner',
+  start: 'Start Date', end: 'Target End Date', progress: 'Progress %', health: 'Health',
+  description: 'Description', blockers: 'Blockers', holdReason: 'Hold Reason'
+};
+
+// Compares a "before" snapshot to an "after" snapshot across every tracked
+// Overview field and logs whichever ones actually changed. Pass before=null
+// to log every present field as a fresh value (used when a project is first
+// created from an approved request).
+async function logProjectChanges(projectId, before, after, source) {
+  var rows = [];
+  Object.keys(CHANGE_LOG_FIELDS).forEach(function(field) {
+    if (!(field in after)) return;
+    var oldVal = before ? before[field] : undefined;
+    var newVal = after[field];
+    var oldNorm = (oldVal == null || oldVal === '') ? null : String(oldVal);
+    var newNorm = (newVal == null || newVal === '') ? null : String(newVal);
+    if (oldNorm === newNorm) return;
+    rows.push({
+      project_id: projectId, field_name: field, field_label: CHANGE_LOG_FIELDS[field],
+      old_value: oldNorm, new_value: newNorm,
+      changed_by_name: D.currentProfile.display_name, source: source
+    });
+  });
+  if (!rows.length) return;
+  await sb.from('project_change_log').insert(rows);
+}
+
 function computeStageFromDates(start, end) {
   if (!start && !end) return 'backlog';
   if (!start || !end) return 'planned';
@@ -1674,6 +1704,10 @@ async function decideReq(id, decision) {
     };
     var projResult = await sb.from('projects').insert(projectRecord).select().single();
     if (projResult.error) { showToast('Could not create project: ' + projResult.error.message); return; }
+    await logProjectChanges(projResult.data.id, null, {
+      name: r.title, stage: newStage, status: projectRecord.status, priority: priority, value: valueArea,
+      businessUnit: businessUnit, sponsor: r.sponsor, start: startDate, end: endDate, description: r.description
+    }, 'request');
 
     var teamIds = [];
     if (r.team && r.team.length) {
@@ -1863,6 +1897,7 @@ function openScheduleModal(pid) {
 
 async function scheduleProject(pid) {
   var p     = D.projects.find(function(x){ return x.id === pid; });
+  var beforeSnapshot = { stage: p.stage, status: p.status, owner: p.owner, start: p.start, end: p.end };
   var start = document.getElementById('sch-start').value;
   var end   = document.getElementById('sch-end').value;
   if (!start || !end) { showToast('Please set a start and end date'); return; }
@@ -1879,6 +1914,9 @@ async function scheduleProject(pid) {
   if (newStage === 'active') updatePayload.status = 'On Track';
   var result = await sb.from('projects').update(updatePayload).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  var afterSnapshot = { stage: newStage, owner: ownerName, start: start, end: end };
+  if (updatePayload.status) afterSnapshot.status = updatePayload.status;
+  await logProjectChanges(pid, beforeSnapshot, afterSnapshot, 'schedule');
   p.targetQuarter = null; p.targetYear = null; p.targetEndQuarter = null; p.targetEndYear = null;
   if (newStage === 'active') p.status = 'On Track';
 
@@ -2020,8 +2058,10 @@ async function autoActivatePlannedProjects() {
 
 async function activateProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
+  var beforeSnapshot = { stage: p.stage, status: p.status };
   var result = await sb.from('projects').update({ stage: 'active', status: 'On Track' }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  await logProjectChanges(pid, beforeSnapshot, { stage: 'active', status: 'On Track' }, 'activate');
   p.stage = 'active'; p.status = 'On Track';
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) await syncRequestStatus(r.id, { status: 'Active' });
@@ -2174,13 +2214,45 @@ function pgCompleted() {
 
 async function reactivateProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
+  var beforeSnapshot = { stage: p.stage, status: p.status };
   var result = await sb.from('projects').update({ stage: 'active', status: 'On Track', completed_at: null }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  await logProjectChanges(pid, beforeSnapshot, { stage: 'active', status: 'On Track' }, 'reactivate');
   p.stage = 'active'; p.status = 'On Track'; p.completedAt = null;
   showToast('"' + p.name + '" re-activated'); renderNav(); pgCompleted();
 }
 
 // ── Project Detail ─────────────────────────────────────────────────────────────
+
+var SOURCE_LABELS = {
+  request: 'From request', edit: 'Edited', schedule: 'Scheduled', activate: 'Activated',
+  hold: 'Put on hold', resume: 'Resumed', complete: 'Marked complete', reactivate: 'Re-activated'
+};
+
+async function loadAndRenderChangeLog(pid) {
+  var result = await sb.from('project_change_log').select('*').eq('project_id', pid);
+  var container = document.getElementById('ptab-content');
+  if (!container) return; // user navigated away from this tab before the fetch finished
+  if (result.error) { container.innerHTML = '<div class="empty-state" style="padding:40px"><p>Could not load change history: ' + result.error.message + '</p></div>'; return; }
+
+  var entries = (result.data || []).slice().sort(function(a,b){ return (b.changed_at||'').localeCompare(a.changed_at||''); });
+  if (!entries.length) { container.innerHTML = '<div class="empty-state" style="padding:40px"><i class="ti ti-history"></i><p>No changes recorded yet</p></div>'; return; }
+
+  container.innerHTML = '<div class="card"><div class="section-title">Change history</div>' +
+    entries.map(function(e) {
+      var oldDisp = e.old_value == null ? '<em style="color:#999">empty</em>' : e.old_value;
+      var newDisp = e.new_value == null ? '<em style="color:#999">empty</em>' : e.new_value;
+      return '<div style="padding:10px 0;border-bottom:1px solid #f0ede8">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+          '<span class="bold" style="font-size:13px">' + e.field_label + '</span>' +
+          '<span class="badge badge-gray" style="font-size:10px">' + (SOURCE_LABELS[e.source] || e.source) + '</span>' +
+        '</div>' +
+        '<div style="font-size:13px;color:#444">' + oldDisp + ' <i class="ti ti-arrow-right" style="color:#999"></i> ' + newDisp + '</div>' +
+        '<div class="text-muted" style="font-size:11px;margin-top:2px">' + e.changed_by_name + ' · ' + fmtDate(e.changed_at) + '</div>' +
+      '</div>';
+    }).join('') +
+  '</div>';
+}
 
 function pgProjectDetail(pid, tab) {
   var p = D.projects.find(function(x){ return x.id === pid; });
@@ -2190,7 +2262,7 @@ function pgProjectDetail(pid, tab) {
   renderNav();
   var editable = canEdit(p);
   var isComplete = p.stage === 'complete';
-  var tbs = ['overview','team','milestones','tasks','raid','documentation'];
+  var tbs = ['overview','team','milestones','tasks','raid','documentation','changelog'];
 
   function sortedMilestones() {
     return p.milestones.slice().sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
@@ -2497,11 +2569,15 @@ function pgProjectDetail(pid, tab) {
         (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddDoc(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add document</button>' : '') +
         (shown.length ? rows : '<div class="empty-state" style="padding:30px"><i class="ti ti-files"></i><p>No documents in this folder</p></div>');
     }
+    if (t === 'changelog') {
+      loadAndRenderChangeLog(p.id);
+      return '<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading change history…</p></div>';
+    }
     return '';
   }
 
   var tabsHtml = tbs.map(function(t) {
-    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t) + '</div>';
+    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t === 'changelog' ? 'Change Log' : t) + '</div>';
   }).join('');
 
   tb(p.name);
@@ -2745,9 +2821,11 @@ async function putOnHold(pid) {
   if (reason == null) return;
   reason = reason.trim();
   if (!reason) { showToast('A hold reason is required'); return; }
+  var beforeSnapshot = { stage: p.stage, holdReason: p.holdReason };
   var heldAt = new Date().toISOString();
   var result = await sb.from('projects').update({ stage: 'hold', hold_reason: reason, pre_hold_stage: p.stage, held_at: heldAt }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  await logProjectChanges(pid, beforeSnapshot, { stage: 'hold', holdReason: reason }, 'hold');
   p.preHoldStage = p.stage; p.stage = 'hold'; p.holdReason = reason; p.heldAt = heldAt;
   closeModal(); showToast('"' + p.name + '" is now on hold'); renderNav();
   if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else if (currentPage === 'hold') pgHold(); else pgDashboard();
@@ -2755,9 +2833,11 @@ async function putOnHold(pid) {
 
 async function resumeFromHold(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
+  var beforeSnapshot = { stage: p.stage, holdReason: p.holdReason };
   var resumeStage = p.preHoldStage || 'planned';
   var result = await sb.from('projects').update({ stage: resumeStage, hold_reason: null, pre_hold_stage: null, held_at: null }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  await logProjectChanges(pid, beforeSnapshot, { stage: resumeStage, holdReason: null }, 'resume');
   p.stage = resumeStage; p.holdReason = null; p.preHoldStage = null; p.heldAt = null;
   closeModal(); showToast('"' + p.name + '" resumed'); renderNav();
   if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else if (currentPage === 'hold') pgHold(); else pgDashboard();
@@ -2765,9 +2845,11 @@ async function resumeFromHold(pid) {
 
 async function markComplete(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
+  var beforeSnapshot = { stage: p.stage, status: p.status, progress: p.progress };
   var completedAt = new Date().toISOString();
   var result = await sb.from('projects').update({ stage: 'complete', status: 'Completed', progress: 100, completed_at: completedAt }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  await logProjectChanges(pid, beforeSnapshot, { stage: 'complete', status: 'Completed', progress: 100 }, 'complete');
   p.stage = 'complete'; p.status = 'Completed'; p.progress = 100; p.completedAt = completedAt;
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) await syncRequestStatus(r.id, { status: 'Active' });
@@ -3208,6 +3290,11 @@ function editProject(pid) {
 
 async function saveProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
+  var beforeSnapshot = {
+    name: p.name, stage: p.stage, status: p.status, phase: p.phase, priority: p.priority, value: p.value,
+    businessUnit: p.businessUnit, sponsor: p.sponsor, owner: p.owner, start: p.start, end: p.end,
+    progress: p.progress, health: p.health, description: p.description, blockers: p.blockers
+  };
   var newVals = {
     name: document.getElementById('ep-name').value,
     status: document.getElementById('ep-status').value || null,
@@ -3244,6 +3331,13 @@ async function saveProject(pid) {
   var result = await sb.from('projects').update(newVals).eq('id', pid).select().single();
   if (result.error) { showToast('Could not save: ' + result.error.message); if (saveBtn) saveBtn.disabled = false; return; }
   if (newVals.stage) { p.stage = newVals.stage; if (newVals.planned_start) p.plannedStart = newVals.planned_start; }
+
+  await logProjectChanges(pid, beforeSnapshot, {
+    name: newVals.name, status: newVals.status, phase: newVals.phase, priority: newVals.priority, value: newVals.value_area,
+    businessUnit: newVals.business_unit, sponsor: newVals.sponsor, owner: newVals.owner_name,
+    start: newVals.start_date, end: newVals.end_date, progress: newVals.progress, health: newVals.health,
+    description: newVals.description, blockers: newVals.blockers, stage: newVals.stage || beforeSnapshot.stage
+  }, 'edit');
 
   var catCbs = document.querySelectorAll('.ep-category-cb');
   if (catCbs.length) {
