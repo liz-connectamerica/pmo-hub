@@ -53,15 +53,37 @@ function groupBy(rows, key) {
 }
 
 async function loadRequests() {
-  var result = await sb.from('requests').select('*');
-  if (result.error) { console.error('loadRequests query failed:', result.error); return []; }
-  return (result.data || []).map(function(r) {
+  var results = await Promise.all([
+    sb.from('requests').select('*'),
+    sb.from('request_tags').select('*'),
+    sb.from('request_team').select('*'),
+    sb.from('tags').select('id, name'),
+    sb.from('resources').select('id, name')
+  ]);
+  for (var i = 0; i < results.length; i++) {
+    if (results[i].error) { console.error('loadRequests query failed:', results[i].error); return []; }
+  }
+  var requestRows = results[0].data || [];
+  var reqTagRows = results[1].data || [];
+  var reqTeamRows = results[2].data || [];
+  var tagNameById = {}; (results[3].data || []).forEach(function(t){ tagNameById[t.id] = t.name; });
+  var resourceNameById = {}; (results[4].data || []).forEach(function(r){ resourceNameById[r.id] = r.name; });
+  var tagsByRequest = groupBy(reqTagRows, 'request_id');
+  var teamByRequest = groupBy(reqTeamRows, 'request_id');
+
+  return requestRows.map(function(r) {
     return {
       id: r.id, title: r.title, submitter: r.submitter_name, submitterId: r.submitter_id,
       dept: r.dept, date: r.submitted_at, status: r.status, priority: r.priority,
       value: r.value_area, impact: r.impact, description: r.description,
       effort: r.effort, cost: r.cost, feedback: r.feedback,
-      linkedProject: r.linked_project, rejectedDate: r.rejected_date
+      linkedProject: r.linked_project, rejectedDate: r.rejected_date,
+      businessUnit: r.business_unit, opportunityType: r.opportunity_type, opportunityTypeOther: r.opportunity_type_other,
+      estimatedFrequency: r.estimated_frequency, estimatedType: r.estimated_type, estimatedAmount: r.estimated_amount,
+      valueJustification: r.value_justification, startDate: r.start_date, targetEndDate: r.target_end_date,
+      editedByName: r.edited_by_name, editedAt: r.edited_at,
+      tags: (tagsByRequest[r.id] || []).map(function(t){ return tagNameById[t.tag_id]; }).filter(Boolean),
+      team: (teamByRequest[r.id] || []).map(function(t){ return resourceNameById[t.resource_id]; }).filter(Boolean)
     };
   });
 }
@@ -299,6 +321,7 @@ async function loadAllProjects() {
       blockers: pr.blockers, health: pr.health, stage: pr.stage, requestId: pr.request_id,
       holdReason: pr.hold_reason, preHoldStage: pr.pre_hold_stage, heldAt: pr.held_at,
       targetQuarter: pr.target_quarter, targetYear: pr.target_year, completedAt: pr.completed_at,
+      targetEndQuarter: pr.target_end_quarter, targetEndYear: pr.target_end_year,
       milestones: milestones, tasks: tasks, raid: raid,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
     };
@@ -453,7 +476,8 @@ function tagFilterBarHtml(activeTags, openFnName) {
   '</div>';
 }
 
-function openTagPicker(currentTagNames, onSave) {
+function openTagPicker(currentTagNames, onSave, allowCreate) {
+  if (allowCreate === undefined) allowCreate = true;
   var selected = currentTagNames.slice();
   var query = '';
   function render() {
@@ -466,7 +490,7 @@ function openTagPicker(currentTagNames, onSave) {
       var dotClass = tagColorClass(t.name);
       return '<label style="display:flex;align-items:center;padding:6px 0;cursor:pointer;font-size:13px"><input type="checkbox" style="margin-right:8px"' + (checked?' checked':'') + ' onchange="window.__tagToggle(\'' + esc + '\')"> <span class="badge ' + dotClass + '" style="padding:2px 8px">' + t.name + '</span></label>';
     }).join('');
-    var createRow = (q && !exactMatch) ? '<div style="padding:8px 0 0;border-top:1px solid #eee;margin-top:6px"><button class="btn btn-sm btn-primary" onclick="window.__tagCreate()"><i class="ti ti-plus"></i> Create "' + query.trim().replace(/"/g,'&quot;') + '"</button></div>' : '';
+    var createRow = (allowCreate && q && !exactMatch) ? '<div style="padding:8px 0 0;border-top:1px solid #eee;margin-top:6px"><button class="btn btn-sm btn-primary" onclick="window.__tagCreate()"><i class="ti ti-plus"></i> Create "' + query.trim().replace(/"/g,'&quot;') + '"</button></div>' : '';
     var selectedChips = selected.length
       ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' + selected.map(function(n){
           var esc = n.replace(/'/g,"\\'");
@@ -476,7 +500,7 @@ function openTagPicker(currentTagNames, onSave) {
     showModal(
       '<div class="modal-title">Tags <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
       selectedChips +
-      '<input type="text" id="tag-search" placeholder="Search or create a tag…" value="' + query.replace(/"/g,'&quot;') + '" oninput="window.__tagSearch(this.value)">' +
+      '<input type="text" id="tag-search" placeholder="' + (allowCreate ? 'Search or create a tag…' : 'Search tags…') + '" value="' + query.replace(/"/g,'&quot;') + '" oninput="window.__tagSearch(this.value)">' +
       '<div style="max-height:220px;overflow-y:auto;margin-top:8px">' + (listHtml || '<span class="text-muted" style="font-size:13px">No matching tags</span>') + '</div>' +
       createRow +
       '<div class="modal-footer"><button class="btn btn-primary" onclick="window.__tagDone()">Done</button></div>'
@@ -491,6 +515,7 @@ function openTagPicker(currentTagNames, onSave) {
     render();
   };
   window.__tagCreate = async function() {
+    if (!allowCreate) return;
     var q = document.getElementById('tag-search').value.trim();
     if (!q) return;
     var result = await sb.from('tags').insert({ name: q }).select().single();
@@ -684,6 +709,11 @@ var rejectedFilterState = { range:'30' };
 function fmtCost(n) {
   if (!n && n !== 0) return '—';
   return '$' + Number(n).toLocaleString();
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
 }
 
 function bdg(s) {
@@ -1148,58 +1178,125 @@ function pgPortfolio() {
 
 // ── Requests ────────────────────────────────────────────────────────────────
 
+var requestsPageState = { activeTab: 'Pending', search: '', sort: 'date', dir: 'desc',
+  filters: { submitter:[], businessUnit:[], priority:[], status:[] }, openFilter: null };
+
 function pgRequests() {
   tb('Requests');
-  var activeTab = 'Pending';
-  var tabs = ['All','Pending','Approved','Backlog','Planned','Active','Rejected','Revoked'];
-  function filtered(t) { return t === 'All' ? D.requests : D.requests.filter(function(r){ return r.status === t; }); }
+  var st = requestsPageState;
+  var tabs = ['All','Pending','Backlog','Planned','Active','Rejected','Revoked'];
+
+  var submitterChoices = [], businessUnitChoices = [];
+  D.requests.forEach(function(r) {
+    if (r.submitter && submitterChoices.indexOf(r.submitter) < 0) submitterChoices.push(r.submitter);
+    if (r.businessUnit && businessUnitChoices.indexOf(r.businessUnit) < 0) businessUnitChoices.push(r.businessUnit);
+  });
+  submitterChoices.sort(); businessUnitChoices.sort();
+  var priorityChoices = PRIORITIES.slice();
+  var statusChoices = ['Pending','Backlog','Planned','Active','Rejected','Revoked'];
+
+  function filtered(t) {
+    var rows = t === 'All' ? D.requests.slice() : D.requests.filter(function(r){ return r.status === t; });
+    if (st.search) { var q = st.search.toLowerCase(); rows = rows.filter(function(r){ return r.title.toLowerCase().indexOf(q) >= 0; }); }
+    if (st.filters.submitter.length) rows = rows.filter(function(r){ return st.filters.submitter.indexOf(r.submitter) >= 0; });
+    if (st.filters.businessUnit.length) rows = rows.filter(function(r){ return st.filters.businessUnit.indexOf(r.businessUnit) >= 0; });
+    if (st.filters.priority.length) rows = rows.filter(function(r){ return st.filters.priority.indexOf(r.priority) >= 0; });
+    if (st.filters.status.length) rows = rows.filter(function(r){ return st.filters.status.indexOf(r.status) >= 0; });
+    rows.sort(function(a,b) {
+      var av, bv;
+      if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+      else { av = a[st.sort]; bv = b[st.sort]; av = (av == null ? '' : av); bv = (bv == null ? '' : bv); if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); } }
+      var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      return st.dir === 'asc' ? cmp : -cmp;
+    });
+    return rows;
+  }
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+  function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleReqFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
+
   function tbl(t) {
     var rows = filtered(t);
-    if (!rows.length) return '<div class="empty-state"><i class="ti ti-inbox"></i><p>No ' + t.toLowerCase() + ' requests</p></div>';
-    return '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Date</th><th>Priority</th><th>Status</th><th></th></tr></thead><tbody>' +
+    if (!rows.length) return '<div class="empty-state"><i class="ti ti-inbox"></i><p>No matching requests</p></div>';
+    return '<div class="table-wrap"><table><thead><tr>' +
+      '<th class="sortable-th" onclick="setReqSort(\'title\')">Title ' + arrow('title') + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setReqSort(\'submitter\')">Submitter ' + arrow('submitter') + '</span>' + filterIcon('submitter', st.filters.submitter.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setReqSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
+      '<th class="sortable-th" onclick="setReqSort(\'date\')">Date ' + arrow('date') + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setReqSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setReqSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+      '<th></th></tr></thead><tbody>' +
       rows.map(function(r) {
-        return '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + r.dept + '</td><td class="text-muted">' + r.date + '</td>' +
-          '<td>' + bdg(r.priority) + '</td><td>' + bdg(r.status) + '</td>' +
+        return '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + (r.businessUnit||'—') + '</td><td class="text-muted">' + r.date + '</td>' +
+          '<td>' + (r.priority ? bdg(r.priority) : '<span class="text-muted">—</span>') + '</td><td>' + bdg(r.status) + '</td>' +
           '<td><button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> ' + (D.role === 'admin' && r.status === 'Pending' ? 'Review' : 'View') + '</button></td></tr>';
       }).join('') + '</tbody></table></div>';
   }
+
   var tabsHtml = tabs.map(function(t) {
     var extra = t === 'Pending' ? ' <span class="badge badge-amber" style="margin-left:4px">' + pendingCount() + '</span>' : '';
-    return '<div class="tab' + (t === activeTab ? ' active' : '') + '" id="rtab-' + t + '" onclick="switchRTab(\'' + t + '\')">' + t + extra + '</div>';
+    return '<div class="tab' + (t === st.activeTab ? ' active' : '') + '" id="rtab-' + t + '" onclick="switchRTab(\'' + t + '\')">' + t + extra + '</div>';
   }).join('');
-  document.getElementById('content').innerHTML = '<div class="tab-bar">' + tabsHtml + '</div><div id="req-body">' + tbl(activeTab) + '</div>';
-  window.switchRTab = function(t) {
-    activeTab = t;
-    tabs.forEach(function(x){ var e = document.getElementById('rtab-' + x); if (e) e.className = 'tab' + (x === t ? ' active' : ''); });
-    document.getElementById('req-body').innerHTML = tbl(t);
+
+  document.getElementById('content').innerHTML =
+    searchBoxHtml(st.search, 'Search requests by title…', 'requests-search', 'onRequestsSearch') +
+    '<div class="tab-bar">' + tabsHtml + '</div><div id="req-body">' + tbl(st.activeTab) + '</div>';
+
+  window.onRequestsSearch = function(v) {
+    st.search = v; pgRequests();
+    var el = document.getElementById('requests-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
+  window.setReqSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgRequests(); };
+  window.toggleReqFilter = function(col) {
+    var labelMap = { submitter:'Submitter', businessUnit:'Business Unit', priority:'Priority', status:'Status' };
+    var choicesMap = { submitter:submitterChoices, businessUnit:businessUnitChoices, priority:priorityChoices, status:statusChoices };
+    openFilterModal(labelMap[col], choicesMap[col],
+      function() { return st.filters[col]; },
+      function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { st.filters[col] = []; },
+      pgRequests
+    );
+  };
+  window.switchRTab = function(t) { st.activeTab = t; pgRequests(); };
 }
 
 function reviewRequest(id) {
   var r = D.requests.find(function(x){ return x.id === id; });
   var canApprove = D.role === 'admin' && r.status === 'Pending';
-  var canBacklog  = D.role === 'admin' && r.status === 'Approved';
   var canResubmit = r.status === 'Rejected' && (r.submitterId === D.currentProfile.id || D.role === 'admin');
-  // find linked project for read-only view
+  var isAdmin = D.role === 'admin';
   var linkedP = r.linkedProject ? D.projects.find(function(p){ return p.id === r.linkedProject; }) : null;
+
+  var estimateLabel = r.estimatedType ? 'Estimated ' + r.estimatedType : null;
+  var estimateDisplay = (isAdmin && r.estimatedAmount != null)
+    ? '<div><div class="form-label">' + estimateLabel + '</div>' + fmtCost(r.estimatedAmount) + (r.estimatedFrequency ? ' / ' + r.estimatedFrequency.toLowerCase() : '') + '</div>'
+    : '';
+  var opportunityDisplay = r.opportunityType === 'Something else' ? (r.opportunityTypeOther || 'Something else') : (r.opportunityType || '—');
 
   var html =
     '<div class="modal-title"><div>' +
       '<div style="font-size:16px;font-weight:600;margin-bottom:8px">' + r.title + '</div>' +
-      '<div style="display:flex;gap:6px">' + bdg(r.status) + ' ' + bdg(r.priority) + '</div>' +
-    '</div><button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+      '<div style="display:flex;gap:6px">' + bdg(r.status) + (r.priority ? ' ' + bdg(r.priority) : '') + '</div>' +
+    '</div><div style="display:flex;gap:6px">' +
+      (isAdmin ? '<button class="btn btn-sm" onclick="closeModal();openEditRequestModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
+      '<button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button>' +
+    '</div></div>' +
+    (r.editedByName ? '<div class="info-banner info-blue" style="margin-bottom:12px"><i class="ti ti-info-circle"></i><div>Edited by ' + r.editedByName + ' on ' + fmtDate(r.editedAt) + '</div></div>' : '') +
     '<div class="grid-2 mb-16">' +
-      '<div><div class="form-label">Submitted by</div>' + r.submitter + ' — ' + r.dept + '</div>' +
+      '<div><div class="form-label">Submitted by</div>' + r.submitter + '</div>' +
       '<div><div class="form-label">Date</div>' + r.date + '</div>' +
-      '<div><div class="form-label">Estimated cost</div>' + fmtCost(r.cost) + '</div>' +
-      '<div><div class="form-label">Effort</div><span class="badge badge-gray">' + r.effort + '</span></div>' +
-      '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + r.value + '</span></div>' +
+      '<div><div class="form-label">Business Unit</div>' + (r.businessUnit || '—') + '</div>' +
+      '<div><div class="form-label">This request is a…</div>' + opportunityDisplay + '</div>' +
+      (r.value ? '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + r.value + '</span></div>' : '') +
+      estimateDisplay +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Description</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + r.description + '</div></div>' +
-    '<div class="form-group"><div class="form-label">Impact &amp; value proposition</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + r.impact + '</div></div>' +
+    '<div class="form-group"><div class="form-label">Description</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + (r.description||'') + '</div></div>' +
+    (r.valueJustification ? '<div class="form-group"><div class="form-label">Value justification</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + r.valueJustification + '</div></div>' : '') +
+    (r.tags && r.tags.length ? '<div class="form-group"><div class="form-label">Tags</div>' + r.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
+    (r.team && r.team.length ? '<div class="form-group"><div class="form-label">Proposed team</div>' + r.team.join(', ') + '</div>' : '') +
     (r.feedback ? '<div class="form-group"><div class="form-label">PMO feedback</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid #534AB7">' + r.feedback + '</div></div>' : '');
 
-  // linked project read-only summary
   if (linkedP) {
     html += '<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="form-label" style="margin-bottom:0">Linked project</div>' +
       (D.role === 'admin' ? '<button class="btn btn-sm" onclick="closeModal();editProject(\'' + linkedP.id + '\')"><i class="ti ti-edit"></i> Edit project</button>' : '') + '</div>' +
@@ -1218,11 +1315,22 @@ function reviewRequest(id) {
   }
 
   if (canApprove) {
-    html += '<div class="form-group" style="margin-top:16px"><div class="form-label">Feedback to submitter</div><textarea id="rfb" placeholder="Decision rationale…">' + r.feedback + '</textarea></div>' +
+    var buOptsApprove = BUSINESS_UNITS.map(function(v){ return '<option' + (r.businessUnit===v?' selected':'') + '>' + v + '</option>'; }).join('');
+    var priorOptsApprove = PRIORITIES.map(function(p){ return '<option value="' + p + '"' + (r.priority===p?' selected':'') + '>' + p + '</option>'; }).join('');
+    var valOptsApprove = VALUE_AREAS.map(function(v){ return '<option' + (r.value===v?' selected':'') + '>' + v + '</option>'; }).join('');
+    html += '<div class="divider"></div><div class="section-title" style="font-size:14px">Finalize before approving</div>' +
+      '<div class="grid-2">' +
+        '<div class="form-group"><div class="form-label">Priority *</div><select id="rv-priority"><option value="">— Select —</option>' + priorOptsApprove + '</select></div>' +
+        '<div class="form-group"><div class="form-label">Value area *</div><select id="rv-value"><option value="">— Select —</option>' + valOptsApprove + '</select></div>' +
+      '</div>' +
+      '<div class="form-group"><div class="form-label">Business Unit *</div><select id="rv-bu">' + buOptsApprove + '</select></div>' +
+      '<div class="grid-2">' +
+        '<div class="form-group"><div class="form-label">Start date *</div><input type="date" id="rv-start" value="' + (r.startDate||'') + '"></div>' +
+        '<div class="form-group"><div class="form-label">Target end date *</div><input type="date" id="rv-end" value="' + (r.targetEndDate||'') + '"></div>' +
+      '</div>' +
+      '<div class="form-group"><div class="form-label">Feedback to submitter</div><textarea id="rfb" placeholder="Decision rationale…">' + (r.feedback||'') + '</textarea></div>' +
       '<div class="modal-footer"><button class="btn btn-danger" onclick="decideReq(\'' + r.id + '\',\'Rejected\')"><i class="ti ti-x"></i> Reject</button>' +
-      '<button class="btn btn-success" onclick="decideReq(\'' + r.id + '\',\'Approved\')"><i class="ti ti-check"></i> Approve — add to backlog</button></div>';
-  } else if (canBacklog) {
-    html += '<div class="modal-footer"><button class="btn btn-primary" onclick="scheduleFromRequest(\'' + r.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule this project</button><button class="btn" onclick="closeModal()">Close</button></div>';
+      '<button class="btn btn-success" onclick="decideReq(\'' + r.id + '\',\'Approved\')"><i class="ti ti-check"></i> Approve</button></div>';
   } else if (canResubmit) {
     html += '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditResubmitModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit &amp; resubmit</button></div>';
   } else {
@@ -1231,61 +1339,233 @@ function reviewRequest(id) {
   showModal(html);
 }
 
-function openEditResubmitModal(id) {
+function openEditRequestModal(id) {
   var r = D.requests.find(function(x){ return x.id === id; });
-  var deptOpts = ['Marketing','Operations','HR','Sales','Product','Finance','Technology'].map(function(d){ return '<option' + (r.dept===d?' selected':'') + '>' + d + '</option>'; }).join('');
-  var priorOpts = ['Critical','High','Medium','Low'].map(function(p){ return '<option' + (r.priority===p?' selected':'') + '>' + p + '</option>'; }).join('');
-  var valOpts = VALUE_AREAS.map(function(v){ return '<option' + (r.value===v?' selected':'') + '>' + v + '</option>'; }).join('');
-  var effortLabels = { S:'S — days', M:'M — weeks', L:'L — 1–3 months', XL:'XL — 3+ months' };
-  var effortOpts = ['S','M','L','XL'].map(function(e){ return '<option value="' + e + '"' + (r.effort===e?' selected':'') + '>' + effortLabels[e] + '</option>'; }).join('');
-  showModal('<div class="modal-title">Edit &amp; resubmit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    (r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:#FBE7E3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid #993C1D">' + r.feedback + '</div></div>' : '') +
-    '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="er-req-title" value="' + r.title.replace(/"/g,'&quot;') + '"></div>' +
-    '<div class="grid-2">' +
-      '<div class="form-group"><div class="form-label">Department</div><select id="er-req-dept">' + deptOpts + '</select></div>' +
-      '<div class="form-group"><div class="form-label">Priority</div><select id="er-req-priority">' + priorOpts + '</select></div>' +
-    '</div><div class="grid-2">' +
-      '<div class="form-group"><div class="form-label">Value area</div><select id="er-req-value">' + valOpts + '</select></div>' +
-      '<div class="form-group"><div class="form-label">Effort</div><select id="er-req-effort">' + effortOpts + '</select></div>' +
+  var buOpts = BUSINESS_UNITS.map(function(v){ return '<option' + (r.businessUnit===v?' selected':'') + '>' + v + '</option>'; }).join('');
+  var oppOpts = ['Revenue opportunity','Cost savings opportunity','Something else'].map(function(o){ return '<option' + (r.opportunityType===o?' selected':'') + '>' + o + '</option>'; }).join('');
+  var showOther = r.opportunityType === 'Something else';
+  var showEstimate = r.opportunityType === 'Revenue opportunity' || r.opportunityType === 'Cost savings opportunity';
+  var estimateLabel = r.opportunityType === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
+  var selectedTags = (r.tags || []).slice();
+  var selectedTeam = (r.team || []).slice();
+
+  function teamOptionsHtml() {
+    var options = individualResourceNames().concat(teamNames());
+    return options.map(function(n) {
+      var isTeam = teamNames().indexOf(n) >= 0;
+      var chk = selectedTeam.indexOf(n) >= 0 ? ' checked' : '';
+      return '<label class="member-check er2-team-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" data-name="' + n.replace(/"/g,'&quot;') + '" onchange="toggleEditReqTeamMember(this)"' + chk + '> ' + n + (isTeam ? ' <i class="ti ti-users" style="color:#185FA5;font-size:11px"></i>' : '') + '</label>';
+    }).join('');
+  }
+
+  showModal('<div class="modal-title">Edit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="er2-title" value="' + r.title.replace(/"/g,'&quot;') + '"></div>' +
+    '<div class="form-group"><div class="form-label">Business Unit *</div><select id="er2-bu">' + buOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Description *</div><textarea id="er2-desc" rows="4">' + (r.description||'').replace(/</g,'&lt;') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">This request is a… *</div><select id="er2-opp-type" onchange="onEditReqOppTypeChange()"><option value="">— Select —</option>' + oppOpts + '</select></div>' +
+    '<div class="form-group" id="er2-opp-other-row" style="display:' + (showOther?'block':'none') + '"><div class="form-label">Please describe</div><input type="text" id="er2-opp-other" value="' + (r.opportunityTypeOther||'').replace(/"/g,'&quot;') + '"></div>' +
+    '<div class="form-group" id="er2-estimate-row" style="display:' + (showEstimate?'block':'none') + '">' +
+      '<div class="form-label" id="er2-estimate-label">' + estimateLabel + '</div>' +
+      '<div class="grid-2"><select id="er2-est-freq"><option' + (r.estimatedFrequency==='Monthly'?' selected':'') + '>Monthly</option><option' + (r.estimatedFrequency==='Annually'?' selected':'') + '>Annually</option></select>' +
+      '<input type="text" id="er2-est-amount" value="' + (r.estimatedAmount!=null?r.estimatedAmount:'') + '" placeholder="$ amount (optional)"></div>' +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Estimated cost ($) *</div><input type="text" id="er-req-cost" value="' + r.cost + '"><div id="er-req-cost-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div></div>' +
-    '<div class="form-group"><div class="form-label">Business description *</div><textarea id="er-req-desc" rows="4">' + r.description.replace(/</g,'&lt;') + '</textarea></div>' +
-    '<div class="form-group"><div class="form-label">Impact &amp; value proposition *</div><textarea id="er-req-impact" rows="3">' + r.impact.replace(/</g,'&lt;') + '</textarea></div>' +
-    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
-    '<button class="btn btn-primary" id="er-req-save"><i class="ti ti-send"></i> Resubmit request</button></div>');
+    '<div class="form-group"><div class="form-label">Value justification</div><textarea id="er2-justification" rows="3">' + (r.valueJustification||'').replace(/</g,'&lt;') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Tags</div><div id="er2-tags-chips" style="margin-bottom:8px">' + (selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>') + '</div><button class="btn btn-sm" onclick="openEditReqTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
+    '<div class="form-group"><div class="form-label">Team</div><input type="text" id="er2-team-search" placeholder="Search people or teams…" oninput="filterEditReqTeamList(this.value)">' +
+      '<div id="er2-team-list" style="max-height:200px;overflow-y:auto;margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px">' + teamOptionsHtml() + '</div></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="er2-save">Save changes</button></div>');
 
-  document.getElementById('er-req-cost').addEventListener('input', function() {
-    this.value = this.value.replace(/[^0-9]/g,'');
-    document.getElementById('er-req-cost-err').style.display = 'none';
-  });
+  window.onEditReqOppTypeChange = function() {
+    var type = document.getElementById('er2-opp-type').value;
+    document.getElementById('er2-opp-other-row').style.display = type === 'Something else' ? 'block' : 'none';
+    var show = type === 'Revenue opportunity' || type === 'Cost savings opportunity';
+    document.getElementById('er2-estimate-row').style.display = show ? 'block' : 'none';
+    if (show) document.getElementById('er2-estimate-label').textContent = type === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
+  };
+  window.filterEditReqTeamList = function(query) {
+    var q = query.trim().toLowerCase();
+    document.querySelectorAll('#er2-team-list .er2-team-row').forEach(function(row) {
+      row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
+    });
+  };
+  window.toggleEditReqTeamMember = function(el) {
+    var name = el.getAttribute('data-name');
+    var i = selectedTeam.indexOf(name);
+    if (el.checked && i < 0) selectedTeam.push(name);
+    else if (!el.checked && i >= 0) selectedTeam.splice(i, 1);
+  };
+  window.openEditReqTagPicker = function() {
+    openTagPicker(selectedTags, function(newTags) {
+      selectedTags = newTags;
+      document.getElementById('er2-tags-chips').innerHTML = selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>';
+    }, false);
+  };
 
-  document.getElementById('er-req-save').onclick = function(){ return resubmitRequest(id); };
+  document.getElementById('er2-save').onclick = async function() {
+    var title = document.getElementById('er2-title').value.trim();
+    var bu = document.getElementById('er2-bu').value;
+    var desc = document.getElementById('er2-desc').value.trim();
+    var oppType = document.getElementById('er2-opp-type').value;
+    var oppOther = document.getElementById('er2-opp-other').value.trim();
+    var justification = document.getElementById('er2-justification').value.trim();
+    if (!title || !bu || !desc || !oppType) { showToast('Please fill in all required fields', 'error'); return; }
+
+    var showEst = oppType === 'Revenue opportunity' || oppType === 'Cost savings opportunity';
+    var estAmountRaw = showEst ? document.getElementById('er2-est-amount').value.trim() : '';
+
+    var btn = document.getElementById('er2-save'); btn.disabled = true;
+    var editorName = D.currentProfile.display_name;
+    var editedAt = new Date().toISOString();
+    var updates = {
+      title: title, business_unit: bu, description: desc, opportunity_type: oppType,
+      opportunity_type_other: oppType === 'Something else' ? oppOther : null,
+      estimated_frequency: showEst ? document.getElementById('er2-est-freq').value : null,
+      estimated_type: oppType === 'Revenue opportunity' ? 'Revenue' : oppType === 'Cost savings opportunity' ? 'Savings' : null,
+      estimated_amount: (showEst && estAmountRaw) ? Number(estAmountRaw) : null,
+      value_justification: justification || null, edited_by_name: editorName, edited_at: editedAt
+    };
+    var result = await sb.from('requests').update(updates).eq('id', id);
+    if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+
+    await sb.from('request_tags').delete().eq('request_id', id);
+    if (selectedTags.length) {
+      var tagRows = selectedTags.map(function(name){ var t = D.tags.find(function(x){ return x.name === name; }); return t ? { request_id: id, tag_id: t.id } : null; }).filter(Boolean);
+      if (tagRows.length) await sb.from('request_tags').insert(tagRows);
+    }
+    await sb.from('request_team').delete().eq('request_id', id);
+    if (selectedTeam.length) {
+      var teamRows = selectedTeam.map(function(name){ var res = resolveResource(name); return res ? { request_id: id, resource_id: res.id } : null; }).filter(Boolean);
+      if (teamRows.length) await sb.from('request_team').insert(teamRows);
+    }
+
+    r.title = title; r.businessUnit = bu; r.description = desc; r.opportunityType = oppType;
+    r.opportunityTypeOther = updates.opportunity_type_other; r.estimatedFrequency = updates.estimated_frequency;
+    r.estimatedType = updates.estimated_type; r.estimatedAmount = updates.estimated_amount;
+    r.valueJustification = justification; r.tags = selectedTags; r.team = selectedTeam;
+    r.editedByName = editorName; r.editedAt = editedAt;
+
+    showToast('Request updated'); closeModal(); reviewRequest(id);
+  };
 }
 
-async function resubmitRequest(id) {
+function openEditResubmitModal(id) {
   var r = D.requests.find(function(x){ return x.id === id; });
-  var title  = document.getElementById('er-req-title').value.trim();
-  var desc   = document.getElementById('er-req-desc').value.trim();
-  var impact = document.getElementById('er-req-impact').value.trim();
-  var costRaw = document.getElementById('er-req-cost').value.trim();
-  var errEl = document.getElementById('er-req-cost-err');
-  if (!title || !desc || !impact) { showToast('Please fill in all required fields', 'error'); return; }
-  if (!costRaw || isNaN(Number(costRaw))) { errEl.style.display = 'block'; return; }
-  errEl.style.display = 'none';
+  var buOpts = BUSINESS_UNITS.map(function(v){ return '<option' + (r.businessUnit===v?' selected':'') + '>' + v + '</option>'; }).join('');
+  var oppOpts = ['Revenue opportunity','Cost savings opportunity','Something else'].map(function(o){ return '<option' + (r.opportunityType===o?' selected':'') + '>' + o + '</option>'; }).join('');
+  var showOther = r.opportunityType === 'Something else';
+  var showEstimate = r.opportunityType === 'Revenue opportunity' || r.opportunityType === 'Cost savings opportunity';
+  var estimateLabel = r.opportunityType === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
+  var selectedTags = (r.tags || []).slice();
+  var selectedTeam = (r.team || []).slice();
 
-  var btn = document.getElementById('er-req-save'); btn.disabled = true;
+  function teamOptionsHtml() {
+    var options = individualResourceNames().concat(teamNames());
+    return options.map(function(n) {
+      var isTeam = teamNames().indexOf(n) >= 0;
+      var chk = selectedTeam.indexOf(n) >= 0 ? ' checked' : '';
+      return '<label class="member-check erq-team-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" data-name="' + n.replace(/"/g,'&quot;') + '" onchange="toggleResubmitTeamMember(this)"' + chk + '> ' + n + (isTeam ? ' <i class="ti ti-users" style="color:#185FA5;font-size:11px"></i>' : '') + '</label>';
+    }).join('');
+  }
+
+  showModal('<div class="modal-title">Edit &amp; resubmit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    (r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:#FBE7E3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid #993C1D">' + r.feedback + '</div></div>' : '') +
+    '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="erq-title" value="' + r.title.replace(/"/g,'&quot;') + '"></div>' +
+    '<div class="form-group"><div class="form-label">Business Unit *</div><select id="erq-bu">' + buOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Description *</div><textarea id="erq-desc" rows="4">' + (r.description||'').replace(/</g,'&lt;') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">This request is a… *</div><select id="erq-opp-type" onchange="onResubmitOppTypeChange()"><option value="">— Select —</option>' + oppOpts + '</select></div>' +
+    '<div class="form-group" id="erq-opp-other-row" style="display:' + (showOther?'block':'none') + '"><div class="form-label">Please describe</div><input type="text" id="erq-opp-other" value="' + (r.opportunityTypeOther||'').replace(/"/g,'&quot;') + '"></div>' +
+    '<div class="form-group" id="erq-estimate-row" style="display:' + (showEstimate?'block':'none') + '">' +
+      '<div class="form-label" id="erq-estimate-label">' + estimateLabel + '</div>' +
+      '<div class="grid-2"><select id="erq-est-freq"><option' + (r.estimatedFrequency==='Monthly'?' selected':'') + '>Monthly</option><option' + (r.estimatedFrequency==='Annually'?' selected':'') + '>Annually</option></select>' +
+      '<input type="text" id="erq-est-amount" value="' + (r.estimatedAmount!=null?r.estimatedAmount:'') + '" placeholder="$ amount (optional)"></div>' +
+      '<div id="erq-est-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
+    '</div>' +
+    '<div class="form-group"><div class="form-label">Value justification</div><textarea id="erq-justification" rows="3">' + (r.valueJustification||'').replace(/</g,'&lt;') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Tags</div><div id="erq-tags-chips" style="margin-bottom:8px">' + (selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>') + '</div><button class="btn btn-sm" onclick="openResubmitTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
+    '<div class="form-group"><div class="form-label">Team</div><input type="text" id="erq-team-search" placeholder="Search people or teams…" oninput="filterResubmitTeamList(this.value)">' +
+      '<div id="erq-team-list" style="max-height:200px;overflow-y:auto;margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px">' + teamOptionsHtml() + '</div></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="erq-save"><i class="ti ti-send"></i> Resubmit request</button></div>');
+
+  window.onResubmitOppTypeChange = function() {
+    var type = document.getElementById('erq-opp-type').value;
+    document.getElementById('erq-opp-other-row').style.display = type === 'Something else' ? 'block' : 'none';
+    var show = type === 'Revenue opportunity' || type === 'Cost savings opportunity';
+    document.getElementById('erq-estimate-row').style.display = show ? 'block' : 'none';
+    if (show) document.getElementById('erq-estimate-label').textContent = type === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
+  };
+  document.getElementById('erq-est-amount').addEventListener('input', function() {
+    this.value = this.value.replace(/[^0-9]/g,'');
+    document.getElementById('erq-est-err').style.display = 'none';
+  });
+  window.filterResubmitTeamList = function(query) {
+    var q = query.trim().toLowerCase();
+    document.querySelectorAll('#erq-team-list .erq-team-row').forEach(function(row) {
+      row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
+    });
+  };
+  window.toggleResubmitTeamMember = function(el) {
+    var name = el.getAttribute('data-name');
+    var i = selectedTeam.indexOf(name);
+    if (el.checked && i < 0) selectedTeam.push(name);
+    else if (!el.checked && i >= 0) selectedTeam.splice(i, 1);
+  };
+  window.openResubmitTagPicker = function() {
+    openTagPicker(selectedTags, function(newTags) {
+      selectedTags = newTags;
+      document.getElementById('erq-tags-chips').innerHTML = selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>';
+    }, false);
+  };
+
+  document.getElementById('erq-save').onclick = function(){ return resubmitRequest(id, selectedTags, selectedTeam); };
+}
+
+async function resubmitRequest(id, selectedTags, selectedTeam) {
+  var r = D.requests.find(function(x){ return x.id === id; });
+  var title = document.getElementById('erq-title').value.trim();
+  var bu = document.getElementById('erq-bu').value;
+  var desc = document.getElementById('erq-desc').value.trim();
+  var oppType = document.getElementById('erq-opp-type').value;
+  var oppOther = document.getElementById('erq-opp-other').value.trim();
+  var justification = document.getElementById('erq-justification').value.trim();
+  if (!title || !bu || !desc || !oppType) { showToast('Please fill in all required fields', 'error'); return; }
+  if (oppType === 'Something else' && !oppOther) { showToast('Please describe the opportunity', 'error'); return; }
+
+  var showEstimate = oppType === 'Revenue opportunity' || oppType === 'Cost savings opportunity';
+  var estAmountRaw = showEstimate ? document.getElementById('erq-est-amount').value.trim() : '';
+  if (estAmountRaw && isNaN(Number(estAmountRaw))) { document.getElementById('erq-est-err').style.display = 'block'; return; }
+
+  var btn = document.getElementById('erq-save'); btn.disabled = true;
   var updates = {
-    title: title, dept: document.getElementById('er-req-dept').value,
-    priority: document.getElementById('er-req-priority').value, value_area: document.getElementById('er-req-value').value,
-    effort: document.getElementById('er-req-effort').value, cost: Number(costRaw),
-    description: desc, impact: impact, status: 'Pending', feedback: null
+    title: title, business_unit: bu, description: desc, opportunity_type: oppType,
+    opportunity_type_other: oppType === 'Something else' ? oppOther : null,
+    estimated_frequency: showEstimate ? document.getElementById('erq-est-freq').value : null,
+    estimated_type: oppType === 'Revenue opportunity' ? 'Revenue' : oppType === 'Cost savings opportunity' ? 'Savings' : null,
+    estimated_amount: (showEstimate && estAmountRaw) ? Number(estAmountRaw) : null,
+    value_justification: justification || null,
+    status: 'Pending', feedback: null, priority: null, value_area: null, start_date: null, target_end_date: null,
+    edited_by_name: null, edited_at: null
   };
   var result = await sb.from('requests').update(updates).eq('id', id);
   if (result.error) { showToast('Could not resubmit: ' + result.error.message); btn.disabled = false; return; }
 
-  r.title = title; r.dept = updates.dept; r.priority = updates.priority; r.value = updates.value_area;
-  r.effort = updates.effort; r.cost = updates.cost; r.description = desc; r.impact = impact;
-  r.status = 'Pending'; r.feedback = '';
+  await sb.from('request_tags').delete().eq('request_id', id);
+  if (selectedTags.length) {
+    var tagRows = selectedTags.map(function(name){ var t = D.tags.find(function(x){ return x.name === name; }); return t ? { request_id: id, tag_id: t.id } : null; }).filter(Boolean);
+    if (tagRows.length) await sb.from('request_tags').insert(tagRows);
+  }
+  await sb.from('request_team').delete().eq('request_id', id);
+  if (selectedTeam.length) {
+    var teamRows = selectedTeam.map(function(name){ var res = resolveResource(name); return res ? { request_id: id, resource_id: res.id } : null; }).filter(Boolean);
+    if (teamRows.length) await sb.from('request_team').insert(teamRows);
+  }
+
+  r.title = title; r.businessUnit = bu; r.description = desc; r.opportunityType = oppType;
+  r.opportunityTypeOther = updates.opportunity_type_other; r.estimatedFrequency = updates.estimated_frequency;
+  r.estimatedType = updates.estimated_type; r.estimatedAmount = updates.estimated_amount;
+  r.valueJustification = justification; r.tags = selectedTags; r.team = selectedTeam;
+  r.status = 'Pending'; r.feedback = ''; r.priority = null; r.value = null;
+  r.startDate = null; r.targetEndDate = null; r.editedByName = null; r.editedAt = null;
 
   showToast('Request resubmitted for review'); closeModal(); renderNav();
   if (currentPage === 'my-requests') pgMyRequests(); else if (currentPage === 'requests') pgRequests();
@@ -1297,44 +1577,73 @@ async function decideReq(id, decision) {
   var feedbackVal = fb ? fb.value : r.feedback;
 
   if (decision === 'Approved') {
+    var priority = document.getElementById('rv-priority').value;
+    var valueArea = document.getElementById('rv-value').value;
+    var businessUnit = document.getElementById('rv-bu').value;
+    var startDate = document.getElementById('rv-start').value;
+    var endDate = document.getElementById('rv-end').value;
+    if (!priority || !valueArea || !businessUnit || !startDate || !endDate) {
+      showToast('Please fill in Priority, Value Area, Business Unit, Start Date, and Target End Date before approving');
+      return;
+    }
+
     var projectRecord = {
       name: r.title, status: 'Not Started', phase: 'Not Started', progress: 0,
-      value_area: r.value, priority: r.priority, description: r.description,
-      blockers: '', health: 'green', stage: 'backlog', request_id: r.id
+      value_area: valueArea, priority: priority, description: r.description,
+      business_unit: businessUnit, blockers: '', health: 'green', stage: 'planned',
+      planned_start: startDate, start_date: startDate, end_date: endDate,
+      estimated_amount: r.estimatedAmount, estimated_frequency: r.estimatedFrequency, estimated_type: r.estimatedType,
+      request_id: r.id
     };
     var projResult = await sb.from('projects').insert(projectRecord).select().single();
     if (projResult.error) { showToast('Could not create project: ' + projResult.error.message); return; }
 
-    var reqResult = await sb.from('requests').update({ status: 'Backlog', feedback: feedbackVal, linked_project: projResult.data.id }).eq('id', id);
+    var teamIds = [];
+    if (r.team && r.team.length) {
+      var teamRows = [];
+      r.team.forEach(function(name){
+        var res = resolveResource(name);
+        if (res) { teamIds.push(res.id); teamRows.push({ project_id: projResult.data.id, resource_id: res.id }); }
+      });
+      if (teamRows.length) await sb.from('resource_projects').insert(teamRows);
+    }
+    if (r.tags && r.tags.length) {
+      var tagRows = r.tags.map(function(name){ var t = D.tags.find(function(x){ return x.name === name; }); return t ? { project_id: projResult.data.id, tag_id: t.id } : null; }).filter(Boolean);
+      if (tagRows.length) await sb.from('project_tags').insert(tagRows);
+    }
+
+    var reqResult = await sb.from('requests').update({
+      status: 'Planned', feedback: feedbackVal, linked_project: projResult.data.id,
+      priority: priority, value_area: valueArea, business_unit: businessUnit,
+      start_date: startDate, target_end_date: endDate
+    }).eq('id', id);
     if (reqResult.error) { showToast('Could not update request: ' + reqResult.error.message); return; }
 
     D.projects.push({
-      id: projResult.data.id, name: r.title, owner:'', ownerId:null, sponsor:'', category:null, businessUnit:null,
-      team:[], teamIds:[], status:'Not Started', phase:'Not Started', progress:0, start:'', end:'',
-      value:r.value, priority:r.priority, description:r.description, blockers:'', health:'green',
-      stage:'backlog', plannedStart:'', requestId:r.id, milestones:[], tasks:[],
-      raid:{risks:[],assumptions:[],issues:[],dependencies:[]}, documents:[], docFolders:['General'], docFolderIds:{}
+      id: projResult.data.id, name: r.title, owner:'', ownerId:null, sponsor:'', categories:[], businessUnit:businessUnit,
+      team: r.team ? r.team.slice() : [], teamIds: teamIds, status:'Not Started', phase:'Not Started', progress:0,
+      start: startDate, end: endDate, plannedStart: startDate,
+      value: valueArea, priority: priority, description: r.description, blockers:'', health:'green',
+      stage:'planned', requestId:r.id, tags: r.tags ? r.tags.slice() : [], dependencies:[],
+      estimatedAmount: r.estimatedAmount, estimatedFrequency: r.estimatedFrequency, estimatedType: r.estimatedType,
+      targetQuarter:null, targetYear:null, targetEndQuarter:null, targetEndYear:null,
+      holdReason:null, preHoldStage:null, heldAt:null, completedAt:null,
+      milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]}, documents:[], docFolders:['General'], docFolderIds:{}
     });
-    r.status = 'Backlog'; r.linkedProject = projResult.data.id; r.feedback = feedbackVal;
-    addNotif(r.submitter, 'Your request "' + r.title + '" has been approved and added to the backlog.', 'approved');
+    r.status = 'Planned'; r.linkedProject = projResult.data.id; r.feedback = feedbackVal;
+    r.priority = priority; r.value = valueArea; r.businessUnit = businessUnit; r.startDate = startDate; r.targetEndDate = endDate;
+    addNotif(r.submitter, 'Your request "' + r.title + '" has been approved and scheduled.', 'approved');
   } else if (decision === 'Rejected') {
     var rejectedDate = new Date().toISOString().split('T')[0];
     var result = await sb.from('requests').update({ status: 'Rejected', feedback: feedbackVal, rejected_date: rejectedDate }).eq('id', id);
     if (result.error) { showToast('Could not save: ' + result.error.message); return; }
     r.status = 'Rejected'; r.feedback = feedbackVal; r.rejectedDate = rejectedDate;
   }
-  closeModal(); showToast(decision === 'Approved' ? 'Approved — added to backlog' : 'Request rejected');
+  closeModal(); showToast(decision === 'Approved' ? 'Approved and scheduled' : 'Request rejected');
   renderNav();
   if (currentPage === 'requests') pgRequests();
-  else if (currentPage === 'backlog') pgBacklog();
+  else if (currentPage === 'planned') pgPlanned();
   else pgDashboard();
-}
-
-function scheduleFromRequest(rid) {
-  var r = D.requests.find(function(x){ return x.id === rid; });
-  closeModal();
-  var p = D.projects.find(function(x){ return x.id === r.linkedProject; }) || D.projects.find(function(x){ return x.requestId === rid; });
-  if (p) openScheduleModal(p.id); else showToast('No linked project found');
 }
 
 // ── Backlog ──────────────────────────────────────────────────────────────────
@@ -3009,6 +3318,15 @@ function pgFuturePlanning() {
     }
     return -1;
   }
+  function quarterIndexClamped(quarter, year) {
+    var idx = quarterIndexOf(quarter, year);
+    if (idx >= 0) return idx;
+    var firstQ = quarters[0], lastQ = quarters[quarters.length - 1];
+    var thisAbs = year * 4 + quarter, firstAbs = firstQ.year * 4 + firstQ.quarter, lastAbs = lastQ.year * 4 + lastQ.quarter;
+    if (thisAbs < firstAbs) return -0.001;
+    if (thisAbs > lastAbs) return quarters.length + 0.001;
+    return null;
+  }
   function quarterPosition(dateStr) {
     var qi = quarterOfDate(dateStr);
     if (!qi) return null;
@@ -3062,8 +3380,14 @@ function pgFuturePlanning() {
       }
     } else if (p.stage === 'backlog') {
       if (p.targetQuarter && p.targetYear) {
-        var idx = quarterIndexOf(p.targetQuarter, p.targetYear);
-        if (idx >= 0) allEntries.push({ project: p, confirmed: false, startPos: idx, endPos: idx + 1 });
+        var startIdx = quarterIndexClamped(p.targetQuarter, p.targetYear);
+        var endQ = p.targetEndQuarter || p.targetQuarter;
+        var endY = p.targetEndYear || p.targetYear;
+        var endIdxRaw = quarterIndexClamped(endQ, endY);
+        var endIdx = (endIdxRaw != null ? endIdxRaw : startIdx) + 1;
+        if (startIdx != null && endIdx > 0 && startIdx < quarters.length) {
+          allEntries.push({ project: p, confirmed: false, startPos: startIdx, endPos: endIdx });
+        }
       } else {
         needsEstimate.push(p);
       }
@@ -3086,7 +3410,12 @@ function pgFuturePlanning() {
       var barStyle = entry.confirmed
         ? 'background:' + (PHASE_COLORS[p.phase] || '#534AB7')
         : 'background:repeating-linear-gradient(45deg,#EFCB8E,#EFCB8E 6px,#FBF0DA 6px,#FBF0DA 12px);border:1px dashed #BA7517;color:#63410A';
-      barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '">' + (entry.confirmed ? (p.phase||'') : 'Estimate') + '</div></div>';
+      var estimateLabel = 'Estimate';
+      if (!entry.confirmed && p.targetQuarter && p.targetYear) {
+        var hasRange = p.targetEndQuarter && p.targetEndYear && (p.targetEndQuarter !== p.targetQuarter || p.targetEndYear !== p.targetYear);
+        estimateLabel = hasRange ? 'Q' + p.targetQuarter + ' \'' + String(p.targetYear).slice(2) + '–Q' + p.targetEndQuarter + ' \'' + String(p.targetEndYear).slice(2) : 'Estimate';
+      }
+      barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '">' + (entry.confirmed ? (p.phase||'') : estimateLabel) + '</div></div>';
     } else {
       barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">Outside this window</span></div>';
     }
@@ -3146,36 +3475,64 @@ function pgFuturePlanning() {
   window.setFuturePlanningYear = function(year) { futurePlanningSelectedYear = parseInt(year); pgFuturePlanning(); };
   window.setFuturePlanningCategory = function(cat) { futurePlanningCategoryFilter = cat; pgFuturePlanning(); };
 
+  function buildQuarterOptions() {
+    var thisYear = new Date().getFullYear();
+    var opts = [];
+    for (var y = thisYear - 1; y <= thisYear + 4; y++) {
+      for (var q = 1; q <= 4; q++) opts.push({ quarter: q, year: y, idx: y * 4 + q, label: 'Q' + q + ' ' + y });
+    }
+    return opts;
+  }
+
   window.openSetQuarterModal = function(pid) {
     var p = D.projects.find(function(x){ return x.id === pid; });
-    var qOpts = [1,2,3,4].map(function(q){ return '<option value="' + q + '"' + (p.targetQuarter===q?' selected':'') + '>Q' + q + '</option>'; }).join('');
-    var thisYear = new Date().getFullYear();
-    var yOpts = '';
-    for (var y = thisYear - 1; y <= thisYear + 4; y++) { yOpts += '<option value="' + y + '"' + (p.targetYear===y?' selected':'') + '>' + y + '</option>'; }
+    var allOpts = buildQuarterOptions();
+    var startIdx = (p.targetQuarter && p.targetYear) ? (p.targetYear * 4 + p.targetQuarter) : allOpts[0].idx;
+    var endIdx = (p.targetEndQuarter && p.targetEndYear) ? (p.targetEndYear * 4 + p.targetEndQuarter) : startIdx;
+
+    function startOptsHtml() {
+      return allOpts.map(function(o){ return '<option value="' + o.idx + '"' + (o.idx === startIdx ? ' selected' : '') + '>' + o.label + '</option>'; }).join('');
+    }
+    function endOptsHtml() {
+      return allOpts.filter(function(o){ return o.idx >= startIdx; }).map(function(o){ return '<option value="' + o.idx + '"' + (o.idx === endIdx ? ' selected' : '') + '>' + o.label + '</option>'; }).join('');
+    }
+
     showModal('<div class="modal-title">Set target quarter <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
       '<div style="font-weight:600;margin-bottom:16px;color:#534AB7">' + p.name + '</div>' +
-      '<div class="grid-2"><div class="form-group"><div class="form-label">Quarter</div><select id="sq-quarter">' + qOpts + '</select></div>' +
-      '<div class="form-group"><div class="form-label">Year</div><select id="sq-year">' + yOpts + '</select></div></div>' +
+      '<div class="form-sub" style="margin-bottom:12px">For work spanning more than one quarter, set an end quarter later than the start — only quarters on or after the start are selectable, so the range is always sequential.</div>' +
+      '<div class="grid-2"><div class="form-group"><div class="form-label">Start quarter</div><select id="sq-start" onchange="onSqStartChange()">' + startOptsHtml() + '</select></div>' +
+      '<div class="form-group"><div class="form-label">End quarter</div><select id="sq-end">' + endOptsHtml() + '</select></div></div>' +
       '<div class="modal-footer">' + (p.targetQuarter ? '<button class="btn btn-danger" onclick="clearTargetQuarter(\'' + pid + '\')">Clear estimate</button>' : '') +
       '<button class="btn" onclick="closeModal()">Cancel</button>' +
       '<button class="btn btn-primary" onclick="saveTargetQuarter(\'' + pid + '\')">Save</button></div>');
+
+    window.onSqStartChange = function() {
+      startIdx = parseInt(document.getElementById('sq-start').value);
+      if (endIdx < startIdx) endIdx = startIdx;
+      document.getElementById('sq-end').innerHTML = endOptsHtml();
+    };
   };
 
   window.saveTargetQuarter = async function(pid) {
     var p = D.projects.find(function(x){ return x.id === pid; });
-    var q = parseInt(document.getElementById('sq-quarter').value);
-    var y = parseInt(document.getElementById('sq-year').value);
-    var result = await sb.from('projects').update({ target_quarter: q, target_year: y }).eq('id', pid);
+    var startIdx = parseInt(document.getElementById('sq-start').value);
+    var endIdx = parseInt(document.getElementById('sq-end').value);
+    var startYear = Math.floor((startIdx - 1) / 4), startQuarter = startIdx - startYear * 4;
+    var endYear = Math.floor((endIdx - 1) / 4), endQuarter = endIdx - endYear * 4;
+    var result = await sb.from('projects').update({
+      target_quarter: startQuarter, target_year: startYear,
+      target_end_quarter: endQuarter, target_end_year: endYear
+    }).eq('id', pid);
     if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-    p.targetQuarter = q; p.targetYear = y;
+    p.targetQuarter = startQuarter; p.targetYear = startYear; p.targetEndQuarter = endQuarter; p.targetEndYear = endYear;
     closeModal(); showToast('Target quarter set'); pgFuturePlanning();
   };
 
   window.clearTargetQuarter = async function(pid) {
     var p = D.projects.find(function(x){ return x.id === pid; });
-    var result = await sb.from('projects').update({ target_quarter: null, target_year: null }).eq('id', pid);
+    var result = await sb.from('projects').update({ target_quarter: null, target_year: null, target_end_quarter: null, target_end_year: null }).eq('id', pid);
     if (result.error) { showToast('Could not clear: ' + result.error.message); return; }
-    p.targetQuarter = null; p.targetYear = null;
+    p.targetQuarter = null; p.targetYear = null; p.targetEndQuarter = null; p.targetEndYear = null;
     closeModal(); showToast('Estimate cleared'); pgFuturePlanning();
   };
 }
@@ -4484,51 +4841,125 @@ async function saveResource(rid) {
 
 function pgSubmit() {
   tb('Submit a Request');
-  var valOpts = VALUE_AREAS.map(function(v){ return '<option>' + v + '</option>'; }).join('');
+  var buOpts = '<option value="">— Select —</option>' + BUSINESS_UNITS.map(function(v){ return '<option>' + v + '</option>'; }).join('');
+  var selectedTags = [];
+  var selectedTeam = [];
+
   document.getElementById('content').innerHTML =
     '<div class="card" style="max-width:660px;margin:0 auto">' +
     '<div class="section-title mb-16">New project request</div>' +
     '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="f-title" placeholder="e.g. Customer onboarding redesign"></div>' +
-    '<div class="grid-2">' +
-      '<div class="form-group"><div class="form-label">Department</div><select id="f-dept"><option>Marketing</option><option>Operations</option><option>HR</option><option>Sales</option><option>Product</option><option>Finance</option><option>Technology</option></select></div>' +
-      '<div class="form-group"><div class="form-label">Priority</div><select id="f-priority"><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></div>' +
-    '</div><div class="grid-2">' +
-      '<div class="form-group"><div class="form-label">Value area</div><select id="f-value">' + valOpts + '</select></div>' +
-      '<div class="form-group"><div class="form-label">Effort</div><select id="f-effort"><option value="S">S — days</option><option value="M">M — weeks</option><option value="L">L — 1–3 months</option><option value="XL">XL — 3+ months</option></select></div>' +
+    '<div class="form-group"><div class="form-label">Business Unit *</div><select id="f-bu">' + buOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Description *</div><div class="form-sub">What is the problem or opportunity?</div><textarea id="f-desc" rows="4" placeholder="Describe the situation and why this project is needed…"></textarea></div>' +
+    '<div class="form-group"><div class="form-label">This request is a… *</div><select id="f-opp-type" onchange="onOppTypeChange()">' +
+      '<option value="">— Select —</option><option>Revenue opportunity</option><option>Cost savings opportunity</option><option>Something else</option>' +
+    '</select></div>' +
+    '<div class="form-group" id="f-opp-other-row" style="display:none"><div class="form-label">Please describe</div><input type="text" id="f-opp-other" placeholder="What kind of opportunity is this?"></div>' +
+    '<div class="form-group" id="f-estimate-row" style="display:none">' +
+      '<div class="form-label" id="f-estimate-label">Estimated</div>' +
+      '<div class="grid-2"><select id="f-est-freq"><option>Monthly</option><option>Annually</option></select>' +
+      '<input type="text" id="f-est-amount" placeholder="$ amount (optional)"></div>' +
+      '<div id="f-est-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Estimated cost ($) *</div><div class="form-sub">Numbers only — do not include $ or commas</div><input type="text" id="f-cost" placeholder="e.g. 50000"><div id="f-cost-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div></div>' +
-    '<div class="form-group"><div class="form-label">Business description *</div><div class="form-sub">What is the problem or opportunity?</div><textarea id="f-desc" rows="4" placeholder="Describe the situation and why this project is needed…"></textarea></div>' +
-    '<div class="form-group"><div class="form-label">Impact &amp; value proposition *</div><div class="form-sub">What measurable outcomes do you expect?</div><textarea id="f-impact" rows="3" placeholder="e.g. Reduce support tickets by 25%, saving ~$80k annually…"></textarea></div>' +
+    '<div class="form-group"><div class="form-label">Value justification</div><div class="form-sub">Why does this matter? This stays with the request and won\'t appear on the project itself.</div><textarea id="f-justification" rows="3" placeholder="e.g. Reduces manual reconciliation time by an estimated 10 hours/week…"></textarea></div>' +
+    '<div class="form-group"><div class="form-label">Tags</div><div id="f-tags-chips" style="margin-bottom:8px"></div><button class="btn btn-sm" onclick="openRequestTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
+    '<div class="form-group"><div class="form-label">Team</div><input type="text" id="f-team-search" placeholder="Search people or teams…" oninput="filterRequestTeamList(this.value)">' +
+      '<div id="f-team-list" style="max-height:200px;overflow-y:auto;margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px">' + requestTeamOptionsHtml([]) + '</div></div>' +
     '<div style="display:flex;justify-content:flex-end"><button class="btn btn-primary" id="f-submit"><i class="ti ti-send"></i> Submit request</button></div></div>';
 
-  document.getElementById('f-cost').addEventListener('input', function() {
-    var v = this.value.replace(/[^0-9]/g,'');
-    this.value = v;
-    document.getElementById('f-cost-err').style.display = 'none';
+  function requestTeamOptionsHtml(selected) {
+    var options = individualResourceNames().concat(teamNames());
+    return options.map(function(n) {
+      var isTeam = teamNames().indexOf(n) >= 0;
+      var chk = selected.indexOf(n) >= 0 ? ' checked' : '';
+      return '<label class="member-check f-team-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" data-name="' + n.replace(/"/g,'&quot;') + '" onchange="toggleRequestTeamMember(this)"' + chk + '> ' + n + (isTeam ? ' <i class="ti ti-users" style="color:#185FA5;font-size:11px"></i>' : '') + '</label>';
+    }).join('');
+  }
+
+  window.onOppTypeChange = function() {
+    var type = document.getElementById('f-opp-type').value;
+    document.getElementById('f-opp-other-row').style.display = type === 'Something else' ? 'block' : 'none';
+    var showEstimate = type === 'Revenue opportunity' || type === 'Cost savings opportunity';
+    document.getElementById('f-estimate-row').style.display = showEstimate ? 'block' : 'none';
+    if (showEstimate) document.getElementById('f-estimate-label').textContent = 'Estimated ' + (type === 'Revenue opportunity' ? 'Revenue' : 'Savings');
+  };
+
+  document.getElementById('f-est-amount').addEventListener('input', function() {
+    this.value = this.value.replace(/[^0-9]/g,'');
+    document.getElementById('f-est-err').style.display = 'none';
   });
 
+  window.filterRequestTeamList = function(query) {
+    var q = query.trim().toLowerCase();
+    document.querySelectorAll('#f-team-list .f-team-row').forEach(function(row) {
+      row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
+    });
+  };
+  window.toggleRequestTeamMember = function(el) {
+    var name = el.getAttribute('data-name');
+    var i = selectedTeam.indexOf(name);
+    if (el.checked && i < 0) selectedTeam.push(name);
+    else if (!el.checked && i >= 0) selectedTeam.splice(i, 1);
+  };
+
+  window.openRequestTagPicker = function() {
+    openTagPicker(selectedTags, function(newTags) {
+      selectedTags = newTags;
+      renderRequestTagChips();
+    }, false);
+  };
+  function renderRequestTagChips() {
+    document.getElementById('f-tags-chips').innerHTML = selectedTags.length
+      ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ')
+      : '<span class="text-muted" style="font-size:13px">No tags selected</span>';
+  }
+  renderRequestTagChips();
+
   document.getElementById('f-submit').onclick = async function() {
-    var title  = document.getElementById('f-title').value.trim();
-    var desc   = document.getElementById('f-desc').value.trim();
-    var impact = document.getElementById('f-impact').value.trim();
-    var costRaw= document.getElementById('f-cost').value.trim();
-    var errEl  = document.getElementById('f-cost-err');
-    if (!title||!desc||!impact) { showToast('Please fill in all required fields','error'); return; }
-    if (!costRaw || isNaN(Number(costRaw)) || costRaw === '') { errEl.style.display='block'; return; }
-    errEl.style.display = 'none';
+    var title = document.getElementById('f-title').value.trim();
+    var bu = document.getElementById('f-bu').value;
+    var desc = document.getElementById('f-desc').value.trim();
+    var oppType = document.getElementById('f-opp-type').value;
+    var oppOther = document.getElementById('f-opp-other').value.trim();
+    var justification = document.getElementById('f-justification').value.trim();
+
+    if (!title || !bu || !desc || !oppType) { showToast('Please fill in all required fields', 'error'); return; }
+    if (oppType === 'Something else' && !oppOther) { showToast('Please describe the opportunity', 'error'); return; }
+
+    var showEstimate = oppType === 'Revenue opportunity' || oppType === 'Cost savings opportunity';
+    var estAmountRaw = showEstimate ? document.getElementById('f-est-amount').value.trim() : '';
+    if (estAmountRaw && isNaN(Number(estAmountRaw))) { document.getElementById('f-est-err').style.display = 'block'; return; }
+
     var btn = document.getElementById('f-submit'); btn.disabled = true;
     var record = {
       title: title, submitter_id: D.currentProfile.id, submitter_name: currentUser() || 'Current User',
-      dept: document.getElementById('f-dept').value, priority: document.getElementById('f-priority').value,
-      value_area: document.getElementById('f-value').value, impact: impact, description: desc,
-      effort: document.getElementById('f-effort').value, cost: Number(costRaw), status: 'Pending'
+      business_unit: bu, description: desc, opportunity_type: oppType,
+      opportunity_type_other: oppType === 'Something else' ? oppOther : null,
+      estimated_frequency: showEstimate ? document.getElementById('f-est-freq').value : null,
+      estimated_type: oppType === 'Revenue opportunity' ? 'Revenue' : oppType === 'Cost savings opportunity' ? 'Savings' : null,
+      estimated_amount: (showEstimate && estAmountRaw) ? Number(estAmountRaw) : null,
+      value_justification: justification || null, status: 'Pending'
     };
     var result = await sb.from('requests').insert(record).select().single();
     if (result.error) { showToast('Could not submit: ' + result.error.message); btn.disabled = false; return; }
+
+    var newTags = [];
+    if (selectedTags.length) {
+      var tagRows = selectedTags.map(function(name){ var t = D.tags.find(function(x){ return x.name === name; }); return t ? { request_id: result.data.id, tag_id: t.id } : null; }).filter(Boolean);
+      if (tagRows.length) await sb.from('request_tags').insert(tagRows);
+      newTags = selectedTags;
+    }
+    if (selectedTeam.length) {
+      var teamRows = selectedTeam.map(function(name){ var r = resolveResource(name); return r ? { request_id: result.data.id, resource_id: r.id } : null; }).filter(Boolean);
+      if (teamRows.length) await sb.from('request_team').insert(teamRows);
+    }
+
     D.requests.push({
       id: result.data.id, title: title, submitter: record.submitter_name, submitterId: D.currentProfile.id,
-      dept: record.dept, date: result.data.submitted_at, status: 'Pending', priority: record.priority,
-      value: record.value_area, impact: impact, description: desc, effort: record.effort, cost: record.cost, feedback: ''
+      date: result.data.submitted_at, status: 'Pending', priority: null, value: null,
+      businessUnit: bu, description: desc, opportunityType: oppType, opportunityTypeOther: record.opportunity_type_other,
+      estimatedFrequency: record.estimated_frequency, estimatedType: record.estimated_type, estimatedAmount: record.estimated_amount,
+      valueJustification: justification, tags: newTags, team: selectedTeam.slice(), feedback: '', editedByName: null, editedAt: null
     });
     showToast('Request submitted successfully');
     renderNav();
@@ -4538,28 +4969,78 @@ function pgSubmit() {
 
 // ── Stakeholder: My Requests ────────────────────────────────────────────────────
 
+var myRequestsState = { search: '', sort: 'date', dir: 'desc', filters: { businessUnit:[], priority:[], status:[] }, openFilter: null };
+
 function pgMyRequests() {
   tb('My Requests');
+  var st = myRequestsState;
   var me = currentUser() || 'Current User';
-  var mine = D.requests.filter(function(r){ return r.submitter === me; });
+  var allMine = D.requests.filter(function(r){ return r.submitter === me; });
   var myNotifs = D.notifications.filter(function(n){ return n.submitter === me; });
+
+  var mine = allMine.slice();
+  if (st.search) { var q = st.search.toLowerCase(); mine = mine.filter(function(r){ return r.title.toLowerCase().indexOf(q) >= 0; }); }
+  if (st.filters.businessUnit.length) mine = mine.filter(function(r){ return st.filters.businessUnit.indexOf(r.businessUnit) >= 0; });
+  if (st.filters.priority.length) mine = mine.filter(function(r){ return st.filters.priority.indexOf(r.priority) >= 0; });
+  if (st.filters.status.length) mine = mine.filter(function(r){ return st.filters.status.indexOf(r.status) >= 0; });
+  mine.sort(function(a,b) {
+    var av, bv;
+    if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+    else { av = a[st.sort]; bv = b[st.sort]; av = (av == null ? '' : av); bv = (bv == null ? '' : bv); if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); } }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+  function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMyReqFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
+  var businessUnitChoices = []; allMine.forEach(function(r){ if (r.businessUnit && businessUnitChoices.indexOf(r.businessUnit) < 0) businessUnitChoices.push(r.businessUnit); }); businessUnitChoices.sort();
+  var priorityChoices = PRIORITIES.slice();
+  var statusChoices = ['Pending','Backlog','Planned','Active','Rejected','Revoked'];
+
   var html = '';
   if (myNotifs.length) html += myNotifs.map(function(n){
     return '<div class="notif-banner"><i class="ti ti-bell" style="font-size:20px;flex-shrink:0"></i><div><div style="font-weight:600;margin-bottom:3px">' + (n.type==='planned'?'Project scheduled':n.type==='approved'?'Request approved':'Update') + '</div>' + n.msg + '</div></div>';
   }).join('');
-  if (!mine.length) { html += '<div class="empty-state"><i class="ti ti-inbox"></i><p>No requests yet</p></div>'; document.getElementById('content').innerHTML = html; return; }
-  html += '<div class="card"><div class="table-wrap"><table><thead><tr><th>Title</th><th>Date</th><th>Priority</th><th>Status</th><th>Cost</th><th>PMO feedback</th><th></th></tr></thead><tbody>' +
-    mine.map(function(r) {
+
+  html += searchBoxHtml(st.search, 'Search requests by title…', 'my-requests-search', 'onMyRequestsSearch');
+
+  if (!allMine.length) { html += '<div class="empty-state"><i class="ti ti-inbox"></i><p>No requests yet</p></div>'; document.getElementById('content').innerHTML = html; return; }
+
+  html += '<div class="card"><div class="table-wrap"><table><thead><tr>' +
+    '<th class="sortable-th" onclick="setMyReqSort(\'title\')">Title ' + arrow('title') + '</th>' +
+    '<th class="sortable-th" style="position:relative"><span onclick="setMyReqSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
+    '<th class="sortable-th" onclick="setMyReqSort(\'date\')">Date ' + arrow('date') + '</th>' +
+    '<th class="sortable-th" style="position:relative"><span onclick="setMyReqSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+    '<th class="sortable-th" style="position:relative"><span onclick="setMyReqSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+    '<th>PMO feedback</th><th></th></tr></thead><tbody>' +
+    (mine.length ? mine.map(function(r) {
       var canRevoke = r.status === 'Pending';
       var linkedP = r.linkedProject ? D.projects.find(function(p){ return p.id === r.linkedProject; }) : null;
-      return '<tr><td class="bold">' + r.title + '</td><td class="text-muted">' + r.date + '</td><td>' + bdg(r.priority) + '</td><td>' + bdg(r.status) + '</td><td class="text-muted">' + fmtCost(r.cost) + '</td>' +
+      return '<tr><td class="bold">' + r.title + '</td><td class="text-muted">' + (r.businessUnit||'—') + '</td><td class="text-muted">' + r.date + '</td><td>' + (r.priority ? bdg(r.priority) : '<span class="text-muted">—</span>') + '</td><td>' + bdg(r.status) + '</td>' +
         '<td style="font-size:12px;color:#777;max-width:180px;word-break:break-word">' + (r.feedback||'—') + '</td>' +
         '<td><div style="display:flex;gap:4px">' +
         (linkedP ? '<button class="btn btn-sm" onclick="viewLinkedProject(\'' + linkedP.id + '\')"><i class="ti ti-eye"></i></button>' : '') +
         (canRevoke ? '<button class="btn btn-sm btn-danger" onclick="revokeRequest(\'' + r.id + '\')"><i class="ti ti-x"></i> Revoke</button>' : '') +
         '</div></td></tr>';
-    }).join('') + '</tbody></table></div></div>';
+    }).join('') : '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px">No requests match these filters</td></tr>') + '</tbody></table></div></div>';
+
   document.getElementById('content').innerHTML = html;
+  window.onMyRequestsSearch = function(v) {
+    st.search = v; pgMyRequests();
+    var el = document.getElementById('my-requests-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.setMyReqSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgMyRequests(); };
+  window.toggleMyReqFilter = function(col) {
+    var labelMap = { businessUnit:'Business Unit', priority:'Priority', status:'Status' };
+    var choicesMap = { businessUnit:businessUnitChoices, priority:priorityChoices, status:statusChoices };
+    openFilterModal(labelMap[col], choicesMap[col],
+      function() { return st.filters[col]; },
+      function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { st.filters[col] = []; },
+      pgMyRequests
+    );
+  };
   window.viewLinkedProject = function(pid) { goToProject(pid); };
   window.revokeRequest = async function(rid) {
     if (!confirm('Revoke this request? It will be removed from the PMO queue.')) return;
