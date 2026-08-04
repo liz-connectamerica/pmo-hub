@@ -271,7 +271,7 @@ async function loadAllProjects() {
       value: pr.value_area, priority: pr.priority, description: pr.description,
       blockers: pr.blockers, health: pr.health, stage: pr.stage, requestId: pr.request_id,
       holdReason: pr.hold_reason, preHoldStage: pr.pre_hold_stage, heldAt: pr.held_at,
-      targetQuarter: pr.target_quarter, targetYear: pr.target_year,
+      targetQuarter: pr.target_quarter, targetYear: pr.target_year, completedAt: pr.completed_at,
       milestones: milestones, tasks: tasks, raid: raid,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
     };
@@ -391,6 +391,28 @@ function dateRangeControlHtml(mode, year, setModeFnName, setYearFnName) {
     '</div>' +
     (mode === 'year' ? '<select onchange="' + setYearFnName + '(this.value)">' + yearOpts + '</select>' : '') +
   '</div>';
+}
+
+function buildCategoryTabs(projects, currentFilter, setFnName) {
+  var categoriesPresent = [];
+  var hasUncategorized = false;
+  projects.forEach(function(p){
+    if (p.categories && p.categories.length) {
+      p.categories.forEach(function(c){ if (categoriesPresent.indexOf(c) < 0) categoriesPresent.push(c); });
+    } else hasUncategorized = true;
+  });
+  var tabList = ['All'].concat(categoriesPresent).concat(hasUncategorized ? ['Uncategorized'] : []);
+  if (tabList.indexOf(currentFilter) < 0) currentFilter = 'All';
+  var html = '<div class="tab-bar" style="margin-bottom:16px">' + tabList.map(function(c) {
+    return '<div class="tab' + (currentFilter === c ? ' active' : '') + '" onclick="' + setFnName + '(\'' + c.replace(/'/g,"\\'") + '\')">' + c + '</div>';
+  }).join('') + '</div>';
+  return { html: html, resolvedFilter: currentFilter };
+}
+
+function projectMatchesCategoryTab(p, cat) {
+  if (cat === 'All') return true;
+  if (cat === 'Uncategorized') return !p.categories || !p.categories.length;
+  return p.categories && p.categories.indexOf(cat) >= 0;
 }
 
 function searchBoxHtml(value, placeholder, id, onInputFnName) {
@@ -609,14 +631,13 @@ var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#
 var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null, tagFilter:[] };
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
 var portfolioTagFilter = [];
-var backlogTagFilter = [];
-var backlogSearch = '';
-var plannedTagFilter = [];
-var plannedSearch = '';
-var activeProjectsTagFilter = [];
-var activeProjectsSearch = '';
-var completedTagFilter = [];
-var completedSearch = '';
+var backlogProjState = { sort:'name', dir:'asc', search:'', category:'All',
+  filters: { tags:[], value:[], priority:[], owner:[] }, openFilter:null };
+var plannedProjState = { sort:'name', dir:'asc', search:'', category:'All',
+  filters: { tags:[], priority:[], owner:[] }, openFilter:null };
+var activeProjState = { sort:'name', dir:'asc', search:'', category:'All',
+  filters: { tags:[], status:[], priority:[], phase:[], owner:[] }, openFilter:null };
+var completedProjState = { sort:'completedAt', dir:'desc', search:'', category:'All', tagFilter:[] };
 var roadmapTagFilter = [];
 var roadmapRangeMode = 'next12'; // 'next12' | 'last12' | 'year'
 var roadmapSelectedYear = new Date().getFullYear();
@@ -1277,39 +1298,74 @@ function scheduleFromRequest(rid) {
 
 function pgBacklog() {
   tb('Backlog');
-  var bp = D.projects.filter(function(p){ return p.stage === 'backlog'; });
-  if (backlogSearch) { var bq = backlogSearch.toLowerCase(); bp = bp.filter(function(p){ return p.name.toLowerCase().indexOf(bq) >= 0; }); }
-  if (backlogTagFilter.length) bp = bp.filter(function(p){ return backlogTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
-  var cards = bp.map(function(p) {
-    return '<div class="project-card">' +
-      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
-        '<div><div class="bold mb-12">' + p.name + '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.priority) + ' ' + badgeIf('badge-purple', p.value) + ' ' + stagePill('backlog') + '</div></div>' +
-        '<div style="display:flex;gap:8px">' +
-          '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
-          (D.role === 'admin' ? '<button class="btn btn-primary" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule</button>' : '') +
-        '</div>' +
-      '</div>' +
-      '<div class="text-muted mt-12">' + (p.description||'') + '</div>' +
-      (p.tags && p.tags.length ? '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
-    '</div>';
+  var st = backlogProjState;
+  var allBacklog = D.projects.filter(function(p){ return p.stage === 'backlog'; });
+  var cat = buildCategoryTabs(allBacklog, st.category, 'setBacklogCategory');
+  st.category = cat.resolvedFilter;
+
+  var bp = allBacklog.filter(function(p){ return projectMatchesCategoryTab(p, st.category); });
+  if (st.search) { var bq = st.search.toLowerCase(); bp = bp.filter(function(p){ return p.name.toLowerCase().indexOf(bq) >= 0; }); }
+  if (st.filters.tags.length) bp = bp.filter(function(p){ return st.filters.tags.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
+  if (st.filters.value.length) bp = bp.filter(function(p){ return st.filters.value.indexOf(p.value) >= 0; });
+  if (st.filters.priority.length) bp = bp.filter(function(p){ return st.filters.priority.indexOf(p.priority) >= 0; });
+  if (st.filters.owner.length) bp = bp.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
+
+  bp = bp.slice().sort(function(a,b) {
+    var av = a[st.sort]; var bv = b[st.sort];
+    av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+  function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleBacklogFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
+
+  var valueChoices = VALUE_AREAS.slice(), priorityChoices = PRIORITIES.slice();
+  var ownerChoices = []; allBacklog.forEach(function(p){ if (p.owner && ownerChoices.indexOf(p.owner) < 0) ownerChoices.push(p.owner); }); ownerChoices.sort();
+  var tagChoices = D.tags.map(function(t){ return t.name; });
+
+  var rows = bp.map(function(p) {
+    return '<tr>' +
+      '<td class="bold">' + p.name + '</td>' +
+      '<td>' + ((p.tags && p.tags.length) ? p.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.value || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
+      '<td style="white-space:nowrap"><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button> ' +
+        (D.role === 'admin' ? '<button class="btn btn-sm btn-primary" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule</button>' : '') +
+      '</td>' +
+      '</tr>';
   }).join('');
+
   document.getElementById('content').innerHTML =
     '<div class="info-banner info-amber"><i class="ti ti-stack-2" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
     '<span>Projects here are <strong>approved</strong> and waiting to be scheduled. Assign a start date to move them to Planned — an Owner can be assigned later.</span></div>' +
-    searchBoxHtml(backlogSearch, 'Search projects by name…', 'backlog-search', 'onBacklogSearch') +
-    tagFilterBarHtml(backlogTagFilter, 'openBacklogTagFilter') +
-    (bp.length ? cards : '<div class="empty-state"><i class="ti ti-stack-2"></i><p>Backlog is clear</p></div>');
+    searchBoxHtml(st.search, 'Search projects by name…', 'backlog-search', 'onBacklogSearch') +
+    cat.html +
+    '<div class="card"><div class="table-wrap"><table><thead><tr>' +
+      '<th class="sortable-th" onclick="setBacklogSort(\'name\')">Project ' + arrow('name') + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setBacklogSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setBacklogSort(\'value\')">Value area ' + arrow('value') + '</span>' + filterIcon('value', st.filters.value.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setBacklogSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setBacklogSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th></th>' +
+    '</tr></thead><tbody>' + (rows || '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:20px">No backlog projects match these filters</td></tr>') + '</tbody></table></div></div>';
+
   window.onBacklogSearch = function(v) {
-    backlogSearch = v; pgBacklog();
+    st.search = v; pgBacklog();
     var el = document.getElementById('backlog-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
-  window.openBacklogTagFilter = function() {
-    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
-      function() { return backlogTagFilter; },
-      function(val) { var i = backlogTagFilter.indexOf(val); if (i>=0) backlogTagFilter.splice(i,1); else backlogTagFilter.push(val); },
-      function() { backlogTagFilter = []; },
+  window.setBacklogCategory = function(c) { st.category = c; pgBacklog(); };
+  window.setBacklogSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgBacklog(); };
+  window.toggleBacklogFilter = function(col) {
+    var labelMap = { tags:'Tags', value:'Value area', priority:'Priority', owner:'Owner' };
+    var choicesMap = { tags:tagChoices, value:valueChoices, priority:priorityChoices, owner:ownerChoices };
+    openFilterModal(labelMap[col], choicesMap[col],
+      function() { return st.filters[col]; },
+      function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { st.filters[col] = []; },
       pgBacklog
     );
   };
@@ -1324,10 +1380,25 @@ function openScheduleModal(pid) {
     var isInactiveCurrent = p.owner === n && individualResourceNames().indexOf(n) < 0;
     return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner === n ? ' selected' : '') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
   }).join('');
-  var memberOpts = individualResourceNames().map(function(n) {
+
+  var projectTagsSch = p.tags || [];
+  function sharesTagSch(name) {
+    if (!projectTagsSch.length) return false;
+    var res2 = D.resources.find(function(r){ return r.name === name; });
+    return !!(res2 && res2.tags && res2.tags.some(function(t){ return projectTagsSch.indexOf(t) >= 0; }));
+  }
+  var memberNames = individualResourceNames().slice().sort(function(a, b) {
+    var aRec = sharesTagSch(a) ? 0 : 1;
+    var bRec = sharesTagSch(b) ? 0 : 1;
+    if (aRec !== bRec) return aRec - bRec;
+    return a.localeCompare(b);
+  });
+  var memberOpts = memberNames.map(function(n) {
     var chk = p.team.indexOf(n) >= 0 ? ' checked' : '';
-    return '<label class="member-check schm-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" id="schm-' + n.replace(/ /g,'_') + '"' + chk + '> ' + n + '</label>';
+    var rec = sharesTagSch(n);
+    return '<label class="member-check schm-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" id="schm-' + n.replace(/ /g,'_') + '"' + chk + '> ' + n + (rec ? ' <span class="badge badge-teal" style="font-size:10px">Recommended</span>' : '') + '</label>';
   }).join('');
+
   var unplannedDeps = (p.dependencies||[]).filter(function(d){ return !(d.start && d.end); });
   var depWarning = unplannedDeps.length
     ? '<div class="info-banner info-amber" style="margin-bottom:16px"><i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
@@ -1337,10 +1408,10 @@ function openScheduleModal(pid) {
     '<div class="modal-title">Schedule project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     depWarning +
     '<div style="font-weight:600;margin-bottom:16px;color:#534AB7">' + p.name + '</div>' +
-    '<div class="form-group"><div class="form-label">Project manager</div><select id="sch-owner">' + ownerOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Team members</div><input type="text" id="schm-search" placeholder="Search people…" oninput="filterSchmList(this.value)"><div id="schm-list" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">' + memberOpts + '</div></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Planned start *</div><input type="date" id="sch-start" value="' + (p.plannedStart||'') + '"></div>' +
     '<div class="form-group"><div class="form-label">Target end *</div><input type="date" id="sch-end" value="' + (p.end||'') + '"></div></div>' +
+    '<div class="form-group"><div class="form-label">Owner</div><select id="sch-owner">' + ownerOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Team members</div><input type="text" id="schm-search" placeholder="Search people…" oninput="filterSchmList(this.value)"><div id="schm-list" style="max-height:240px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;padding-right:4px">' + memberOpts + '</div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" onclick="scheduleProject(\'' + p.id + '\')"><i class="ti ti-calendar-check"></i> Save changes</button></div>', true);
   window.filterSchmList = function(query) {
@@ -1391,55 +1462,85 @@ async function scheduleProject(pid) {
 
 function pgPlanned() {
   tb('Planned projects');
-  var pp = D.projects.filter(function(p){ return p.stage === 'planned'; });
-  if (plannedSearch) { var plq = plannedSearch.toLowerCase(); pp = pp.filter(function(p){ return p.name.toLowerCase().indexOf(plq) >= 0; }); }
-  if (plannedTagFilter.length) pp = pp.filter(function(p){ return plannedTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
+  var st = plannedProjState;
+  var allPlanned = D.projects.filter(function(p){ return p.stage === 'planned'; });
+  var cat = buildCategoryTabs(allPlanned, st.category, 'setPlannedCategory');
+  st.category = cat.resolvedFilter;
+
+  var pp = allPlanned.filter(function(p){ return projectMatchesCategoryTab(p, st.category); });
+  if (st.search) { var plq = st.search.toLowerCase(); pp = pp.filter(function(p){ return p.name.toLowerCase().indexOf(plq) >= 0; }); }
+  if (st.filters.tags.length) pp = pp.filter(function(p){ return st.filters.tags.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
+  if (st.filters.priority.length) pp = pp.filter(function(p){ return st.filters.priority.indexOf(p.priority) >= 0; });
+  if (st.filters.owner.length) pp = pp.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
+
+  pp = pp.slice().sort(function(a,b) {
+    var sortKey = st.sort === 'start' ? 'plannedStart' : st.sort;
+    var av = a[sortKey]; var bv = b[sortKey];
+    av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+
   var today = new Date();
   var in30  = new Date(); in30.setDate(today.getDate() + 30);
 
-  var cards = pp.map(function(p) {
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+  function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();togglePlannedFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
+
+  var priorityChoices = PRIORITIES.slice();
+  var ownerChoices = []; allPlanned.forEach(function(p){ if (p.owner && ownerChoices.indexOf(p.owner) < 0) ownerChoices.push(p.owner); }); ownerChoices.sort();
+  var tagChoices = D.tags.map(function(t){ return t.name; });
+
+  var rows = pp.map(function(p) {
     var startDate = p.plannedStart ? new Date(p.plannedStart) : null;
-    var soonNoOwner  = !p.owner && startDate && startDate <= in30;
-    return '<div class="project-card">' +
-      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
-        '<div><div class="bold mb-12">' + p.name + '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.priority) + ' ' + badgeIf('badge-purple', p.value) + ' ' + stagePill('planned') + '</div></div>' +
-        (D.role === 'admin'
-          ? '<div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">' +
-              '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
-              '<button class="btn btn-success" onclick="activateProject(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Activate</button>' +
-              '<button class="btn btn-sm" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit schedule</button>' +
-            '</div>'
-          : '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>') +
-      '</div>' +
-      '<div class="grid-2 mt-12" style="font-size:13px">' +
-        '<div><span class="text-muted">Start: </span>' + (p.plannedStart||'TBD') + '</div>' +
-        '<div><span class="text-muted">End: </span>' + (p.end||'TBD') + '</div>' +
-        '<div><span class="text-muted">Owner: </span>' + (p.owner || '<em style="color:#777">Not assigned</em>') + '</div>' +
-        '<div><span class="text-muted">Team: </span>' + p.team.length + ' member' + (p.team.length !== 1 ? 's' : '') + '</div>' +
-      '</div>' +
-      (p.tags && p.tags.length ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
-      (soonNoOwner ? '<div class="blocker-note" style="background:#FAEEDA;color:#854F0B;margin-top:10px"><i class="ti ti-alert-triangle"></i> <strong>No Owner assigned</strong> — this project starts within 30 days. Please assign an Owner before activation.</div>' : '') +
-    '</div>';
+    var soonNoOwner = !p.owner && startDate && startDate <= in30;
+    var actionBtns = D.role === 'admin'
+      ? '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button> ' +
+        '<button class="btn btn-sm btn-success" onclick="activateProject(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Activate</button> ' +
+        '<button class="btn btn-sm" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit schedule</button>'
+      : '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>';
+    return '<tr>' +
+      '<td class="bold">' + p.name + '</td>' +
+      '<td>' + ((p.tags && p.tags.length) ? p.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.owner || '<span class="text-muted">—</span>') + (soonNoOwner ? ' <i class="ti ti-alert-triangle" style="color:#BA7517" title="Starts within 30 days, no Owner assigned yet"></i>' : '') + '</td>' +
+      '<td>' + (p.plannedStart || '<span class="text-muted">TBD</span>') + '</td>' +
+      '<td>' + (p.end || '<span class="text-muted">TBD</span>') + '</td>' +
+      '<td style="white-space:nowrap">' + actionBtns + '</td>' +
+      '</tr>';
   }).join('');
 
   var bannerText = 'These projects are <strong>scheduled</strong> with a start date. Activate them when work begins.';
 
   document.getElementById('content').innerHTML =
     '<div class="info-banner info-blue"><i class="ti ti-calendar-event" style="font-size:20px;flex-shrink:0;color:#185FA5"></i><span>' + bannerText + '</span></div>' +
-    searchBoxHtml(plannedSearch, 'Search projects by name…', 'planned-search', 'onPlannedSearch') +
-    tagFilterBarHtml(plannedTagFilter, 'openPlannedTagFilter') +
-    (pp.length ? cards : '<div class="empty-state"><i class="ti ti-calendar-event"></i><p>No planned projects yet</p></div>');
+    searchBoxHtml(st.search, 'Search projects by name…', 'planned-search', 'onPlannedSearch') +
+    cat.html +
+    '<div class="card"><div class="table-wrap"><table><thead><tr>' +
+      '<th class="sortable-th" onclick="setPlannedSort(\'name\')">Project ' + arrow('name') + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setPlannedSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setPlannedSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setPlannedSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th class="sortable-th" onclick="setPlannedSort(\'start\')">Target start date ' + arrow('start') + '</th>' +
+      '<th class="sortable-th" onclick="setPlannedSort(\'end\')">Target end date ' + arrow('end') + '</th>' +
+      '<th></th>' +
+    '</tr></thead><tbody>' + (rows || '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px">No planned projects match these filters</td></tr>') + '</tbody></table></div></div>';
+
   window.onPlannedSearch = function(v) {
-    plannedSearch = v; pgPlanned();
+    st.search = v; pgPlanned();
     var el = document.getElementById('planned-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
-  window.openPlannedTagFilter = function() {
-    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
-      function() { return plannedTagFilter; },
-      function(val) { var i = plannedTagFilter.indexOf(val); if (i>=0) plannedTagFilter.splice(i,1); else plannedTagFilter.push(val); },
-      function() { plannedTagFilter = []; },
+  window.setPlannedCategory = function(c) { st.category = c; pgPlanned(); };
+  window.setPlannedSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgPlanned(); };
+  window.togglePlannedFilter = function(col) {
+    var labelMap = { tags:'Tags', priority:'Priority', owner:'Owner' };
+    var choicesMap = { tags:tagChoices, priority:priorityChoices, owner:ownerChoices };
+    openFilterModal(labelMap[col], choicesMap[col],
+      function() { return st.filters[col]; },
+      function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { st.filters[col] = []; },
       pgPlanned
     );
   };
@@ -1486,40 +1587,81 @@ async function activateProject(pid) {
 function pgProjects() {
   var addBtn = D.role === 'admin' ? '<button class="btn btn-primary" onclick="openNewProjectModal()"><i class="ti ti-plus"></i> New project</button>' : '';
   tb('Active', addBtn);
-  var ps = myProjects().filter(function(p){ return p.stage === 'active'; });
-  if (activeProjectsSearch) { var apq = activeProjectsSearch.toLowerCase(); ps = ps.filter(function(p){ return p.name.toLowerCase().indexOf(apq) >= 0; }); }
-  if (activeProjectsTagFilter.length) ps = ps.filter(function(p){ return activeProjectsTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
-  var cards = ps.map(function(p) {
-    return '<div class="project-card">' +
-      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
-        '<div style="flex:1"><div class="bold mb-12">' + hdot(p.health) + p.name + '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + badgeIf('badge-gray', p.phase) + ' ' + badgeIf('badge-purple', p.value) + '</div></div>' +
-        '<div style="display:flex;gap:8px;flex-shrink:0">' +
-          '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
-          (canEdit(p) ? '<button class="btn btn-sm" onclick="editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
-        '</div>' +
-      '</div>' +
-      '<div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:12px;color:#777;margin-bottom:4px"><span>Progress</span><span>' + p.progress + '%</span></div>' +
-      '<div class="progress-bar"><div class="progress-fill" style="width:' + p.progress + '%"></div></div></div>' +
-      '<div class="grid-2 mt-12" style="font-size:12px;color:#777"><div>Owner: ' + (p.owner||'—') + ' &bull; Due ' + (p.end||'TBD') + '</div><div>' + p.team.length + ' team member' + (p.team.length!==1?'s':'') + '</div></div>' +
-      (p.tags && p.tags.length ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
-      (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
-    '</div>';
+  var st = activeProjState;
+  var allActive = myProjects().filter(function(p){ return p.stage === 'active'; });
+  var cat = buildCategoryTabs(allActive, st.category, 'setActiveProjCategory');
+  st.category = cat.resolvedFilter;
+
+  var ps = allActive.filter(function(p){ return projectMatchesCategoryTab(p, st.category); });
+  if (st.search) { var apq = st.search.toLowerCase(); ps = ps.filter(function(p){ return p.name.toLowerCase().indexOf(apq) >= 0; }); }
+  if (st.filters.tags.length) ps = ps.filter(function(p){ return st.filters.tags.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
+  if (st.filters.status.length) ps = ps.filter(function(p){ return st.filters.status.indexOf(p.status) >= 0; });
+  if (st.filters.priority.length) ps = ps.filter(function(p){ return st.filters.priority.indexOf(p.priority) >= 0; });
+  if (st.filters.phase.length) ps = ps.filter(function(p){ return st.filters.phase.indexOf(p.phase) >= 0; });
+  if (st.filters.owner.length) ps = ps.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
+
+  ps = ps.slice().sort(function(a,b) {
+    var av = a[st.sort]; var bv = b[st.sort];
+    av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+  function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleActiveProjFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
+
+  var statusChoices = STATUSES.slice(), priorityChoices = PRIORITIES.slice(), phaseChoices = PHASES.slice();
+  var ownerChoices = []; allActive.forEach(function(p){ if (p.owner && ownerChoices.indexOf(p.owner) < 0) ownerChoices.push(p.owner); }); ownerChoices.sort();
+  var tagChoices = D.tags.map(function(t){ return t.name; });
+
+  var rows = ps.map(function(p) {
+    return '<tr>' +
+      '<td style="text-align:center">' + hdot(p.health) + '</td>' +
+      '<td class="bold">' + p.name + '</td>' +
+      '<td>' + ((p.tags && p.tags.length) ? p.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + stagePill(p.stage) + '</td>' +
+      '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.phase || '<span class="text-muted">—</span>') + '</td>' +
+      '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:#f0ede8;border-radius:3px;overflow:hidden"><div style="height:100%;width:' + p.progress + '%;background:#534AB7"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
+      '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.end || '<span class="text-muted">TBD</span>') + '</td>' +
+      '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td>' +
+      '</tr>';
   }).join('');
+
   document.getElementById('content').innerHTML =
-    searchBoxHtml(activeProjectsSearch, 'Search projects by name…', 'active-projects-search', 'onActiveProjectsSearch') +
-    tagFilterBarHtml(activeProjectsTagFilter, 'openActiveProjectsTagFilter') +
-    (ps.length ? cards : '<div class="empty-state"><i class="ti ti-briefcase"></i><p>No active projects</p></div>');
+    searchBoxHtml(st.search, 'Search projects by name…', 'active-projects-search', 'onActiveProjectsSearch') +
+    cat.html +
+    '<div class="card"><div class="table-wrap"><table><thead><tr>' +
+      '<th style="text-align:center">Health</th>' +
+      '<th class="sortable-th" onclick="setActiveProjSort(\'name\')">Project ' + arrow('name') + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+      '<th class="sortable-th" onclick="setActiveProjSort(\'stage\')">Stage ' + arrow('stage') + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'phase\')">Phase ' + arrow('phase') + '</span>' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
+      '<th class="sortable-th" onclick="setActiveProjSort(\'progress\')">Progress % ' + arrow('progress') + '</th>' +
+      '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th class="sortable-th" onclick="setActiveProjSort(\'end\')">Target end date ' + arrow('end') + '</th>' +
+      '<th></th>' +
+    '</tr></thead><tbody>' + (rows || '<tr><td colspan="11" class="text-muted" style="text-align:center;padding:20px">No active projects match these filters</td></tr>') + '</tbody></table></div></div>';
+
   window.onActiveProjectsSearch = function(v) {
-    activeProjectsSearch = v; pgProjects();
+    st.search = v; pgProjects();
     var el = document.getElementById('active-projects-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
-  window.openActiveProjectsTagFilter = function() {
-    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
-      function() { return activeProjectsTagFilter; },
-      function(val) { var i = activeProjectsTagFilter.indexOf(val); if (i>=0) activeProjectsTagFilter.splice(i,1); else activeProjectsTagFilter.push(val); },
-      function() { activeProjectsTagFilter = []; },
+  window.setActiveProjCategory = function(c) { st.category = c; pgProjects(); };
+  window.setActiveProjSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgProjects(); };
+  window.toggleActiveProjFilter = function(col) {
+    var labelMap = { tags:'Tags', status:'Status', priority:'Priority', phase:'Phase', owner:'Owner' };
+    var choicesMap = { tags:tagChoices, status:statusChoices, priority:priorityChoices, phase:phaseChoices, owner:ownerChoices };
+    openFilterModal(labelMap[col], choicesMap[col],
+      function() { return st.filters[col]; },
+      function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { st.filters[col] = []; },
       pgProjects
     );
   };
@@ -1529,36 +1671,53 @@ function pgProjects() {
 
 function pgCompleted() {
   tb('Completed projects');
-  var cp = D.projects.filter(function(p){ return p.stage === 'complete'; });
-  if (completedSearch) { var cq = completedSearch.toLowerCase(); cp = cp.filter(function(p){ return p.name.toLowerCase().indexOf(cq) >= 0; }); }
-  if (completedTagFilter.length) cp = cp.filter(function(p){ return completedTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
+  var st = completedProjState;
+  var allCompleted = D.projects.filter(function(p){ return p.stage === 'complete'; });
+  var cat = buildCategoryTabs(allCompleted, st.category, 'setCompletedCategory');
+  st.category = cat.resolvedFilter;
+
+  var cp = allCompleted.filter(function(p){ return projectMatchesCategoryTab(p, st.category); });
+  if (st.search) { var cq = st.search.toLowerCase(); cp = cp.filter(function(p){ return p.name.toLowerCase().indexOf(cq) >= 0; }); }
+  if (st.tagFilter.length) cp = cp.filter(function(p){ return st.tagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
+
+  cp = cp.slice().sort(function(a,b) {
+    var av = a[st.sort]; var bv = b[st.sort];
+    av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+
+  function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—'; }
+
   var rows = cp.map(function(p) {
     return '<tr><td class="bold">' + p.name +
       (p.tags && p.tags.length ? '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
       '</td><td>' + badgeIf('badge-purple', p.value) + '</td>' +
-      '<td>' + bdg(p.priority) + '</td><td class="text-muted">' + (p.owner||'—') + '</td><td class="text-muted">' + (p.end||'—') + '</td>' +
+      '<td>' + bdg(p.priority) + '</td><td class="text-muted">' + (p.owner||'—') + '</td><td class="text-muted">' + fmtDate(p.completedAt) + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
       (D.role === 'admin' ? ' <button class="btn btn-sm" onclick="reactivateProject(\'' + p.id + '\')"><i class="ti ti-refresh"></i> Re-activate</button>' : '') +
       '</td></tr>';
   }).join('');
   document.getElementById('content').innerHTML =
-    searchBoxHtml(completedSearch, 'Search projects by name…', 'completed-search', 'onCompletedSearch') +
-    tagFilterBarHtml(completedTagFilter, 'openCompletedTagFilter') +
+    searchBoxHtml(st.search, 'Search projects by name…', 'completed-search', 'onCompletedSearch') +
+    cat.html +
     (cp.length
       ? '<div class="card"><div class="section-title">Completed projects</div><div class="table-wrap"><table>' +
         '<thead><tr><th>Project</th><th>Value area</th><th>Priority</th><th>Owner</th><th>Completed</th><th></th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table></div></div>'
       : '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No completed projects yet</p></div>');
   window.onCompletedSearch = function(v) {
-    completedSearch = v; pgCompleted();
+    st.search = v; pgCompleted();
     var el = document.getElementById('completed-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
+  window.setCompletedCategory = function(c) { st.category = c; pgCompleted(); };
   window.openCompletedTagFilter = function() {
     openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
-      function() { return completedTagFilter; },
-      function(val) { var i = completedTagFilter.indexOf(val); if (i>=0) completedTagFilter.splice(i,1); else completedTagFilter.push(val); },
-      function() { completedTagFilter = []; },
+      function() { return st.tagFilter; },
+      function(val) { var i = st.tagFilter.indexOf(val); if (i>=0) st.tagFilter.splice(i,1); else st.tagFilter.push(val); },
+      function() { st.tagFilter = []; },
       pgCompleted
     );
   };
@@ -1566,9 +1725,9 @@ function pgCompleted() {
 
 async function reactivateProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  var result = await sb.from('projects').update({ stage: 'active', status: 'On Track' }).eq('id', pid);
+  var result = await sb.from('projects').update({ stage: 'active', status: 'On Track', completed_at: null }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-  p.stage = 'active'; p.status = 'On Track';
+  p.stage = 'active'; p.status = 'On Track'; p.completedAt = null;
   showToast('"' + p.name + '" re-activated'); renderNav(); pgCompleted();
 }
 
@@ -1638,13 +1797,13 @@ function pgProjectDetail(pid, tab) {
         (p.stage === 'hold' ? '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
         '<div class="form-group" style="margin-top:16px"><div class="form-label">Timeline</div>' + timelineHtml() +
         '<button class="btn btn-sm mt-12" onclick="window.switchPTab(\'milestones\')"><i class="ti ti-list"></i> View milestones</button></div>' +
-        (editable && !isComplete ? '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #e8e8e5;display:flex;justify-content:flex-end;gap:8px">' +
+        (editable ? '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #e8e8e5;display:flex;justify-content:flex-end;gap:8px">' +
           '<button class="btn btn-primary" onclick="closeModal();editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit project</button>' +
-          (p.stage === 'hold'
+          (!isComplete ? (p.stage === 'hold'
             ? '<button class="btn btn-success" onclick="resumeFromHold(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Resume</button>'
             : ((p.stage === 'active' || p.stage === 'planned' || p.stage === 'backlog') ? '<button class="btn" onclick="putOnHold(\'' + p.id + '\')"><i class="ti ti-player-pause"></i> Put on hold</button>' : '') +
               '<button class="btn btn-success" onclick="markComplete(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>'
-          ) +
+          ) : '') +
           '</div>' : '');
     }
     if (t === 'team') {
@@ -2157,9 +2316,10 @@ async function resumeFromHold(pid) {
 
 async function markComplete(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  var result = await sb.from('projects').update({ stage: 'complete', status: 'Completed', progress: 100 }).eq('id', pid);
+  var completedAt = new Date().toISOString();
+  var result = await sb.from('projects').update({ stage: 'complete', status: 'Completed', progress: 100, completed_at: completedAt }).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-  p.stage = 'complete'; p.status = 'Completed'; p.progress = 100;
+  p.stage = 'complete'; p.status = 'Completed'; p.progress = 100; p.completedAt = completedAt;
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) await syncRequestStatus(r.id, { status: 'Active' });
   closeModal(); showToast('"' + p.name + '" marked as complete'); renderNav();
@@ -2588,7 +2748,7 @@ function editProject(pid) {
     '<div class="grid-2">' +
     '<div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="ep-sponsor" value="' + (p.sponsor||'') + '"></div>' +
     '<div class="form-group"><div class="form-label">Sponsor email' + (p.sponsorId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : '') + '</div><input type="email" id="ep-sponsor-email" value="' + (p.sponsorEmail||'') + '"></div>' +
-    '<div class="form-group"><div class="form-label">Project manager</div><select id="ep-owner">' + ownerOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Owner</div><select id="ep-owner">' + ownerOpts + '</select></div>' +
     '</div>' +
     '<div class="modal-footer">' +
       (D.role === 'admin' ? '<button class="btn btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
@@ -2670,7 +2830,7 @@ function openNewProjectModal() {
     '<div class="form-group"><div class="form-label">Description</div><textarea id="np-desc" placeholder="What is this project about?"></textarea></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="np-sponsor" placeholder="Sponsor name"></div>' +
     '<div class="form-group"><div class="form-label">Sponsor email</div><input type="email" id="np-sponsor-email" placeholder="name@yourcompany.com"></div>' +
-    '<div class="form-group"><div class="form-label">Project manager</div><select id="np-owner">' + ownerOpts + '</select></div></div>' +
+    '<div class="form-group"><div class="form-label">Owner</div><select id="np-owner">' + ownerOpts + '</select></div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="np-save"><i class="ti ti-plus"></i> Create project</button></div>', true);
   document.getElementById('np-save').onclick = async function() {
@@ -2714,10 +2874,14 @@ function openNewProjectModal() {
 
 var holdTagFilter = [];
 var holdSearch = '';
+var holdCategoryFilter = 'All';
 
 function pgHold() {
   tb('Hold');
   var hp = D.projects.filter(function(p){ return p.stage === 'hold'; });
+  var cat = buildCategoryTabs(hp, holdCategoryFilter, 'setHoldCategory');
+  holdCategoryFilter = cat.resolvedFilter;
+  hp = hp.filter(function(p){ return projectMatchesCategoryTab(p, holdCategoryFilter); });
   if (holdSearch) { var hq = holdSearch.toLowerCase(); hp = hp.filter(function(p){ return p.name.toLowerCase().indexOf(hq) >= 0; }); }
   if (holdTagFilter.length) hp = hp.filter(function(p){ return holdTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   hp = hp.slice().sort(function(a,b){ return (b.heldAt||'').localeCompare(a.heldAt||''); });
@@ -2751,9 +2915,11 @@ function pgHold() {
 
   document.getElementById('content').innerHTML =
     searchBoxHtml(holdSearch, 'Search projects by name…', 'hold-search', 'onHoldSearch') +
+    cat.html +
     tagFilterBarHtml(holdTagFilter, 'openHoldTagFilter') +
     (hp.length ? cards : '<div class="empty-state"><i class="ti ti-player-pause"></i><p>Nothing on hold right now</p></div>');
 
+  window.setHoldCategory = function(c) { holdCategoryFilter = c; pgHold(); };
   window.onHoldSearch = function(v) {
     holdSearch = v; pgHold();
     var el = document.getElementById('hold-search');
