@@ -1316,7 +1316,9 @@ function pgRequests() {
       rows.map(function(r) {
         return '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + (r.businessUnit||'—') + '</td><td class="text-muted">' + r.date + '</td>' +
           '<td>' + (r.priority ? bdg(r.priority) : '<span class="text-muted">—</span>') + '</td><td>' + bdg(r.status) + '</td>' +
-          '<td><button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> ' + (D.role === 'admin' && r.status === 'Pending' ? 'Review' : 'View') + '</button></td></tr>';
+          '<td><button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> ' + (D.role === 'admin' && r.status === 'Pending' ? 'Review' : 'View') + '</button>' +
+            (D.role === 'admin' ? ' <button class="btn btn-sm btn-danger" onclick="deleteRequest(\'' + r.id + '\')"><i class="ti ti-trash"></i></button>' : '') +
+          '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
 
@@ -1385,6 +1387,7 @@ function reviewRequest(id) {
       '<div style="display:flex;gap:6px">' + bdg(r.status) + (r.priority ? ' ' + bdg(r.priority) : '') + '</div>' +
     '</div><div style="display:flex;gap:6px">' +
       (canEditRequest ? '<button class="btn btn-sm" onclick="captureFinalizeDraft(\'' + r.id + '\');closeModal();openEditRequestModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
+      (isAdmin ? '<button class="btn btn-sm btn-danger" onclick="deleteRequest(\'' + r.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
       '<button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button>' +
     '</div></div>' +
     (r.editedByName ? '<div class="info-banner info-blue" style="margin-bottom:12px"><i class="ti ti-info-circle"></i><div>Edited by ' + r.editedByName + ' on ' + fmtDate(r.editedAt) + '</div></div>' : '') +
@@ -1746,6 +1749,22 @@ async function resubmitRequest(id, selectedTags, selectedTeam) {
 
   showToast('Request resubmitted for review'); closeModal(); renderNav();
   if (currentPage === 'my-requests') pgMyRequests(); else if (currentPage === 'requests') pgRequests();
+}
+
+async function deleteRequest(id) {
+  if (D.role !== 'admin') return; // safety check; UI is already hidden for non-admins
+  var r = D.requests.find(function(x){ return x.id === id; });
+  if (!r) return;
+  var linkedP = r.linkedProject ? D.projects.find(function(p){ return p.id === r.linkedProject; }) : null;
+  var msg = 'Delete this request? This cannot be undone.' +
+    (linkedP ? ' Its linked project ("' + linkedP.name + '") will NOT be deleted — it will just no longer be connected to this request.' : '');
+  if (!confirm(msg)) return;
+  var result = await sb.from('requests').delete().eq('id', id);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  D.requests = D.requests.filter(function(x){ return x.id !== id; });
+  if (linkedP) linkedP.requestId = null;
+  closeModal(); showToast('Request deleted'); renderNav();
+  if (currentPage === 'requests') pgRequests(); else if (currentPage === 'my-requests') pgMyRequests();
 }
 
 async function decideReq(id, decision) {
