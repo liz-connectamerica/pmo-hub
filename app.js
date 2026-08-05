@@ -715,6 +715,8 @@ function buildQuarterOptions() {
   return opts;
 }
 
+var STAGE_SORT_RANK = { active: 0, planned: 1, backlog: 2, hold: 3, complete: 4 };
+
 var CHANGE_LOG_FIELDS = {
   name: 'Project Name', stage: 'Stage', status: 'Status', phase: 'Phase', priority: 'Priority',
   value: 'Value Area', businessUnit: 'Business Unit', sponsor: 'Sponsor', owner: 'Owner',
@@ -818,6 +820,7 @@ function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
 // ── Navigation ──────────────────────────────────────────────────────────────
 
 var currentPage = '';
+var projectDetailReferrer = null;
 
 var NAV_DEF = {
   admin: [
@@ -928,6 +931,7 @@ function nav(page) {
 }
 
 function goToProject(pid, tab) {
+  if (currentPage !== 'projectDetail') projectDetailReferrer = currentPage;
   pgProjectDetail(pid, tab || 'overview');
   var targetHash = '#/project/' + pid + '/' + (tab || 'overview');
   if (location.hash !== targetHash) location.hash = targetHash;
@@ -1121,9 +1125,9 @@ function pgDashboard() {
       (displayed.length ? '<div class="table-wrap"><table>' +
       '<thead><tr>' +
         '<th class="sortable-th" onclick="setDashProjSort(\'name\')">Project ' + dArrow('name') + '</th>' +
-        '<th class="sortable-th" style="position:relative"><span onclick="setDashProjSort(\'status\')">Status ' + dArrow('status') + '</span>' + dFilterIcon('fStatus', statusChoicesD) + '</th>' +
+        '<th class="sortable-th"><span onclick="setDashProjSort(\'status\')">Status ' + dArrow('status') + '</span>' + dFilterIcon('fStatus', statusChoicesD) + '</th>' +
         '<th class="sortable-th" onclick="setDashProjSort(\'priority\')">Priority ' + dArrow('priority') + '</th>' +
-        '<th class="sortable-th" style="position:relative"><span onclick="setDashProjSort(\'phase\')">Phase ' + dArrow('phase') + '</span>' + dFilterIcon('fPhase', phaseChoicesD) + '</th>' +
+        '<th class="sortable-th"><span onclick="setDashProjSort(\'phase\')">Phase ' + dArrow('phase') + '</span>' + dFilterIcon('fPhase', phaseChoicesD) + '</th>' +
         '<th class="sortable-th" style="min-width:160px" onclick="setDashProjSort(\'progress\')">Progress ' + dArrow('progress') + '</th>' +
         '<th>Owner</th><th>Blockers</th><th></th></tr></thead>' +
       '<tbody>' + projRows + '</tbody></table></div>'
@@ -1267,11 +1271,11 @@ function pgRequests() {
     if (!rows.length) return '<div class="empty-state"><i class="ti ti-inbox"></i><p>No matching requests</p></div>';
     return '<div class="table-wrap"><table><thead><tr>' +
       '<th class="sortable-th" onclick="setReqSort(\'title\')">Title ' + arrow('title') + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setReqSort(\'submitter\')">Submitter ' + arrow('submitter') + '</span>' + filterIcon('submitter', st.filters.submitter.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setReqSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setReqSort(\'submitter\')">Submitter ' + arrow('submitter') + '</span>' + filterIcon('submitter', st.filters.submitter.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setReqSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
       '<th class="sortable-th" onclick="setReqSort(\'date\')">Date ' + arrow('date') + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setReqSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setReqSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setReqSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setReqSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
       '<th></th></tr></thead><tbody>' +
       rows.map(function(r) {
         return '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + (r.businessUnit||'—') + '</td><td class="text-muted">' + r.date + '</td>' +
@@ -1327,7 +1331,7 @@ function captureFinalizeDraft(id) {
 function reviewRequest(id) {
   var r = D.requests.find(function(x){ return x.id === id; });
   var canApprove = D.role === 'admin' && r.status === 'Pending';
-  var canResubmit = r.status === 'Rejected' && (r.submitterId === D.currentProfile.id || D.role === 'admin');
+  var canResubmit = (r.status === 'Rejected' || r.status === 'Revoked') && (r.submitterId === D.currentProfile.id || D.role === 'admin');
   var isAdmin = D.role === 'admin';
   var isOwnPending = r.status === 'Pending' && r.submitterId === D.currentProfile.id;
   var canEditRequest = isAdmin || isOwnPending;
@@ -1429,15 +1433,25 @@ function reviewRequest(id) {
   showModal(html);
 }
 
-function openEditRequestModal(id) {
+function openEditRequestModal(id, overrides) {
   var r = D.requests.find(function(x){ return x.id === id; });
-  var buOpts = BUSINESS_UNITS.map(function(v){ return '<option' + (r.businessUnit===v?' selected':'') + '>' + v + '</option>'; }).join('');
-  var oppOpts = ['Revenue opportunity','Cost savings opportunity','Something else'].map(function(o){ return '<option' + (r.opportunityType===o?' selected':'') + '>' + o + '</option>'; }).join('');
-  var showOther = r.opportunityType === 'Something else';
-  var showEstimate = r.opportunityType === 'Revenue opportunity' || r.opportunityType === 'Cost savings opportunity';
-  var estimateLabel = r.opportunityType === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
-  var selectedTags = (r.tags || []).slice();
-  var selectedTeam = (r.team || []).slice();
+  var v = overrides || {};
+  var curTitle = 'title' in v ? v.title : r.title;
+  var curBu = 'bu' in v ? v.bu : r.businessUnit;
+  var curSponsor = 'sponsor' in v ? v.sponsor : (r.sponsor || '');
+  var curDesc = 'desc' in v ? v.desc : (r.description || '');
+  var curOppType = 'oppType' in v ? v.oppType : r.opportunityType;
+  var curOppOther = 'oppOther' in v ? v.oppOther : (r.opportunityTypeOther || '');
+  var curEstFreq = 'estFreq' in v ? v.estFreq : r.estimatedFrequency;
+  var curEstAmount = 'estAmount' in v ? v.estAmount : r.estimatedAmount;
+  var curJustification = 'justification' in v ? v.justification : (r.valueJustification || '');
+  var buOpts = BUSINESS_UNITS.map(function(bu){ return '<option' + (curBu===bu?' selected':'') + '>' + bu + '</option>'; }).join('');
+  var oppOpts = ['Revenue opportunity','Cost savings opportunity','Something else'].map(function(o){ return '<option' + (curOppType===o?' selected':'') + '>' + o + '</option>'; }).join('');
+  var showOther = curOppType === 'Something else';
+  var showEstimate = curOppType === 'Revenue opportunity' || curOppType === 'Cost savings opportunity';
+  var estimateLabel = curOppType === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
+  var selectedTags = ('tags' in v ? v.tags : r.tags) || [];
+  var selectedTeam = (('team' in v ? v.team : r.team) || []).slice();
 
   function teamOptionsHtml() {
     var options = individualResourceNames().concat(teamNames());
@@ -1449,18 +1463,18 @@ function openEditRequestModal(id) {
   }
 
   showModal('<div class="modal-title">Edit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="er2-title" value="' + r.title.replace(/"/g,'&quot;') + '"></div>' +
+    '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="er2-title" value="' + curTitle.replace(/"/g,'&quot;') + '"></div>' +
     '<div class="form-group"><div class="form-label">Business Unit *</div><select id="er2-bu">' + buOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="er2-sponsor" value="' + (r.sponsor||'').replace(/"/g,'&quot;') + '" placeholder="Optional"></div>' +
-    '<div class="form-group"><div class="form-label">Description *</div><textarea id="er2-desc" rows="4">' + (r.description||'').replace(/</g,'&lt;') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="er2-sponsor" value="' + curSponsor.replace(/"/g,'&quot;') + '" placeholder="Optional"></div>' +
+    '<div class="form-group"><div class="form-label">Description *</div><textarea id="er2-desc" rows="4">' + curDesc.replace(/</g,'&lt;') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">This request is a… *</div><select id="er2-opp-type" onchange="onEditReqOppTypeChange()"><option value="">— Select —</option>' + oppOpts + '</select></div>' +
-    '<div class="form-group" id="er2-opp-other-row" style="display:' + (showOther?'block':'none') + '"><div class="form-label">Please describe</div><input type="text" id="er2-opp-other" value="' + (r.opportunityTypeOther||'').replace(/"/g,'&quot;') + '"></div>' +
+    '<div class="form-group" id="er2-opp-other-row" style="display:' + (showOther?'block':'none') + '"><div class="form-label">Please describe</div><input type="text" id="er2-opp-other" value="' + curOppOther.replace(/"/g,'&quot;') + '"></div>' +
     '<div class="form-group" id="er2-estimate-row" style="display:' + (showEstimate?'block':'none') + '">' +
       '<div class="form-label" id="er2-estimate-label">' + estimateLabel + '</div>' +
-      '<div class="grid-2"><select id="er2-est-freq"><option' + (r.estimatedFrequency==='Monthly'?' selected':'') + '>Monthly</option><option' + (r.estimatedFrequency==='Annually'?' selected':'') + '>Annually</option></select>' +
-      '<input type="text" id="er2-est-amount" value="' + (r.estimatedAmount!=null?r.estimatedAmount:'') + '" placeholder="$ amount (optional)"></div>' +
+      '<div class="grid-2"><select id="er2-est-freq"><option' + (curEstFreq==='Monthly'?' selected':'') + '>Monthly</option><option' + (curEstFreq==='Annually'?' selected':'') + '>Annually</option></select>' +
+      '<input type="text" id="er2-est-amount" value="' + (curEstAmount!=null?curEstAmount:'') + '" placeholder="$ amount (optional)"></div>' +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Value justification</div><textarea id="er2-justification" rows="3">' + (r.valueJustification||'').replace(/</g,'&lt;') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Value justification</div><textarea id="er2-justification" rows="3">' + curJustification.replace(/</g,'&lt;') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">Tags</div><div id="er2-tags-chips" style="margin-bottom:8px">' + (selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>') + '</div><button class="btn btn-sm" onclick="openEditReqTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
     '<div class="form-group"><div class="form-label">Team</div><input type="text" id="er2-team-search" placeholder="Search people or teams…" oninput="filterEditReqTeamList(this.value)">' +
       '<div id="er2-team-list" style="max-height:200px;overflow-y:auto;margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px">' + teamOptionsHtml() + '</div></div>' +
@@ -1486,9 +1500,21 @@ function openEditRequestModal(id) {
     else if (!el.checked && i >= 0) selectedTeam.splice(i, 1);
   };
   window.openEditReqTagPicker = function() {
+    var captured = {
+      title: document.getElementById('er2-title').value,
+      bu: document.getElementById('er2-bu').value,
+      sponsor: document.getElementById('er2-sponsor').value,
+      desc: document.getElementById('er2-desc').value,
+      oppType: document.getElementById('er2-opp-type').value,
+      oppOther: document.getElementById('er2-opp-other').value,
+      estFreq: document.getElementById('er2-est-freq') ? document.getElementById('er2-est-freq').value : curEstFreq,
+      estAmount: document.getElementById('er2-est-amount') ? document.getElementById('er2-est-amount').value : curEstAmount,
+      justification: document.getElementById('er2-justification').value,
+      team: selectedTeam.slice()
+    };
     openTagPicker(selectedTags, function(newTags) {
-      selectedTags = newTags;
-      document.getElementById('er2-tags-chips').innerHTML = selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>';
+      captured.tags = newTags;
+      openEditRequestModal(id, captured);
     }, false);
   };
 
@@ -1540,15 +1566,25 @@ function openEditRequestModal(id) {
   };
 }
 
-function openEditResubmitModal(id) {
+function openEditResubmitModal(id, overrides) {
   var r = D.requests.find(function(x){ return x.id === id; });
-  var buOpts = BUSINESS_UNITS.map(function(v){ return '<option' + (r.businessUnit===v?' selected':'') + '>' + v + '</option>'; }).join('');
-  var oppOpts = ['Revenue opportunity','Cost savings opportunity','Something else'].map(function(o){ return '<option' + (r.opportunityType===o?' selected':'') + '>' + o + '</option>'; }).join('');
-  var showOther = r.opportunityType === 'Something else';
-  var showEstimate = r.opportunityType === 'Revenue opportunity' || r.opportunityType === 'Cost savings opportunity';
-  var estimateLabel = r.opportunityType === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
-  var selectedTags = (r.tags || []).slice();
-  var selectedTeam = (r.team || []).slice();
+  var v = overrides || {};
+  var curTitle = 'title' in v ? v.title : r.title;
+  var curBu = 'bu' in v ? v.bu : r.businessUnit;
+  var curSponsor = 'sponsor' in v ? v.sponsor : (r.sponsor || '');
+  var curDesc = 'desc' in v ? v.desc : (r.description || '');
+  var curOppType = 'oppType' in v ? v.oppType : r.opportunityType;
+  var curOppOther = 'oppOther' in v ? v.oppOther : (r.opportunityTypeOther || '');
+  var curEstFreq = 'estFreq' in v ? v.estFreq : r.estimatedFrequency;
+  var curEstAmount = 'estAmount' in v ? v.estAmount : r.estimatedAmount;
+  var curJustification = 'justification' in v ? v.justification : (r.valueJustification || '');
+  var buOpts = BUSINESS_UNITS.map(function(bu){ return '<option' + (curBu===bu?' selected':'') + '>' + bu + '</option>'; }).join('');
+  var oppOpts = ['Revenue opportunity','Cost savings opportunity','Something else'].map(function(o){ return '<option' + (curOppType===o?' selected':'') + '>' + o + '</option>'; }).join('');
+  var showOther = curOppType === 'Something else';
+  var showEstimate = curOppType === 'Revenue opportunity' || curOppType === 'Cost savings opportunity';
+  var estimateLabel = curOppType === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
+  var selectedTags = ('tags' in v ? v.tags : r.tags) || [];
+  var selectedTeam = (('team' in v ? v.team : r.team) || []).slice();
 
   function teamOptionsHtml() {
     var options = individualResourceNames().concat(teamNames());
@@ -1561,19 +1597,19 @@ function openEditResubmitModal(id) {
 
   showModal('<div class="modal-title">Edit &amp; resubmit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     (r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:#FBE7E3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid #993C1D">' + r.feedback + '</div></div>' : '') +
-    '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="erq-title" value="' + r.title.replace(/"/g,'&quot;') + '"></div>' +
+    '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="erq-title" value="' + curTitle.replace(/"/g,'&quot;') + '"></div>' +
     '<div class="form-group"><div class="form-label">Business Unit *</div><select id="erq-bu">' + buOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="erq-sponsor" value="' + (r.sponsor||'').replace(/"/g,'&quot;') + '" placeholder="Optional"></div>' +
-    '<div class="form-group"><div class="form-label">Description *</div><textarea id="erq-desc" rows="4">' + (r.description||'').replace(/</g,'&lt;') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="erq-sponsor" value="' + curSponsor.replace(/"/g,'&quot;') + '" placeholder="Optional"></div>' +
+    '<div class="form-group"><div class="form-label">Description *</div><textarea id="erq-desc" rows="4">' + curDesc.replace(/</g,'&lt;') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">This request is a… *</div><select id="erq-opp-type" onchange="onResubmitOppTypeChange()"><option value="">— Select —</option>' + oppOpts + '</select></div>' +
-    '<div class="form-group" id="erq-opp-other-row" style="display:' + (showOther?'block':'none') + '"><div class="form-label">Please describe</div><input type="text" id="erq-opp-other" value="' + (r.opportunityTypeOther||'').replace(/"/g,'&quot;') + '"></div>' +
+    '<div class="form-group" id="erq-opp-other-row" style="display:' + (showOther?'block':'none') + '"><div class="form-label">Please describe</div><input type="text" id="erq-opp-other" value="' + curOppOther.replace(/"/g,'&quot;') + '"></div>' +
     '<div class="form-group" id="erq-estimate-row" style="display:' + (showEstimate?'block':'none') + '">' +
       '<div class="form-label" id="erq-estimate-label">' + estimateLabel + '</div>' +
-      '<div class="grid-2"><select id="erq-est-freq"><option' + (r.estimatedFrequency==='Monthly'?' selected':'') + '>Monthly</option><option' + (r.estimatedFrequency==='Annually'?' selected':'') + '>Annually</option></select>' +
-      '<input type="text" id="erq-est-amount" value="' + (r.estimatedAmount!=null?r.estimatedAmount:'') + '" placeholder="$ amount (optional)"></div>' +
+      '<div class="grid-2"><select id="erq-est-freq"><option' + (curEstFreq==='Monthly'?' selected':'') + '>Monthly</option><option' + (curEstFreq==='Annually'?' selected':'') + '>Annually</option></select>' +
+      '<input type="text" id="erq-est-amount" value="' + (curEstAmount!=null?curEstAmount:'') + '" placeholder="$ amount (optional)"></div>' +
       '<div id="erq-est-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Value justification</div><textarea id="erq-justification" rows="3">' + (r.valueJustification||'').replace(/</g,'&lt;') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Value justification</div><textarea id="erq-justification" rows="3">' + curJustification.replace(/</g,'&lt;') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">Tags</div><div id="erq-tags-chips" style="margin-bottom:8px">' + (selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>') + '</div><button class="btn btn-sm" onclick="openResubmitTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
     '<div class="form-group"><div class="form-label">Team</div><input type="text" id="erq-team-search" placeholder="Search people or teams…" oninput="filterResubmitTeamList(this.value)">' +
       '<div id="erq-team-list" style="max-height:200px;overflow-y:auto;margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px">' + teamOptionsHtml() + '</div></div>' +
@@ -1604,9 +1640,21 @@ function openEditResubmitModal(id) {
     else if (!el.checked && i >= 0) selectedTeam.splice(i, 1);
   };
   window.openResubmitTagPicker = function() {
+    var captured = {
+      title: document.getElementById('erq-title').value,
+      bu: document.getElementById('erq-bu').value,
+      sponsor: document.getElementById('erq-sponsor').value,
+      desc: document.getElementById('erq-desc').value,
+      oppType: document.getElementById('erq-opp-type').value,
+      oppOther: document.getElementById('erq-opp-other').value,
+      estFreq: document.getElementById('erq-est-freq') ? document.getElementById('erq-est-freq').value : curEstFreq,
+      estAmount: document.getElementById('erq-est-amount') ? document.getElementById('erq-est-amount').value : curEstAmount,
+      justification: document.getElementById('erq-justification').value,
+      team: selectedTeam.slice()
+    };
     openTagPicker(selectedTags, function(newTags) {
-      selectedTags = newTags;
-      document.getElementById('erq-tags-chips').innerHTML = selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>';
+      captured.tags = newTags;
+      openEditResubmitModal(id, captured);
     }, false);
   };
 
@@ -1818,10 +1866,10 @@ function pgBacklog() {
     cat.html +
     '<div class="card"><div class="table-wrap"><table><thead><tr>' +
       '<th class="sortable-th" onclick="setBacklogSort(\'name\')">Project ' + arrow('name') + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setBacklogSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setBacklogSort(\'value\')">Value area ' + arrow('value') + '</span>' + filterIcon('value', st.filters.value.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setBacklogSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setBacklogSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setBacklogSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setBacklogSort(\'value\')">Value area ' + arrow('value') + '</span>' + filterIcon('value', st.filters.value.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setBacklogSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setBacklogSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
       '<th></th>' +
     '</tr></thead><tbody>' + (rows || '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:20px">No backlog projects match these filters</td></tr>') + '</tbody></table></div></div>';
 
@@ -2004,9 +2052,9 @@ function pgPlanned() {
     cat.html +
     '<div class="card"><div class="table-wrap"><table><thead><tr>' +
       '<th class="sortable-th" onclick="setPlannedSort(\'name\')">Project ' + arrow('name') + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setPlannedSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setPlannedSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setPlannedSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setPlannedSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setPlannedSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setPlannedSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
       '<th class="sortable-th" onclick="setPlannedSort(\'start\')">Target start date ' + arrow('start') + '</th>' +
       '<th class="sortable-th" onclick="setPlannedSort(\'end\')">Target end date ' + arrow('end') + '</th>' +
       '<th></th>' +
@@ -2127,12 +2175,12 @@ function pgProjects() {
     '<div class="card"><div class="table-wrap"><table><thead><tr>' +
       '<th style="text-align:center">Health</th>' +
       '<th class="sortable-th" onclick="setActiveProjSort(\'name\')">Project ' + arrow('name') + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'phase\')">Phase ' + arrow('phase') + '</span>' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setActiveProjSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setActiveProjSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setActiveProjSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setActiveProjSort(\'phase\')">Phase ' + arrow('phase') + '</span>' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
       '<th class="sortable-th" onclick="setActiveProjSort(\'progress\')">Progress % ' + arrow('progress') + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setActiveProjSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setActiveProjSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
       '<th class="sortable-th" onclick="setActiveProjSort(\'end\')">Target end date ' + arrow('end') + '</th>' +
       '<th></th>' +
     '</tr></thead><tbody>' + (rows || '<tr><td colspan="10" class="text-muted" style="text-align:center;padding:20px">No active projects match these filters</td></tr>') + '</tbody></table></div></div>';
@@ -2462,8 +2510,8 @@ function pgProjectDetail(pid, tab) {
       }).join('');
 
       var header = '<tr><th>Task</th>' +
-        '<th class="sortable-th" style="position:relative"><span onclick="setTaskSort(\'' + p.id + '\',\'assignee\')">Assignee ' + arrow('assignee') + '</span>' + filterIcon('assignee', st.fAssignee.length>0) + '</th>' +
-        '<th class="sortable-th" style="position:relative"><span onclick="setTaskSort(\'' + p.id + '\',\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.fStatus.length>0) + '</th>' +
+        '<th class="sortable-th"><span onclick="setTaskSort(\'' + p.id + '\',\'assignee\')">Assignee ' + arrow('assignee') + '</span>' + filterIcon('assignee', st.fAssignee.length>0) + '</th>' +
+        '<th class="sortable-th"><span onclick="setTaskSort(\'' + p.id + '\',\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.fStatus.length>0) + '</th>' +
         '<th class="sortable-th" onclick="setTaskSort(\'' + p.id + '\',\'due\')">Due ' + arrow('due') + '</th><th></th></tr>';
 
       return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddTask(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add task</button>' : '') +
@@ -3368,7 +3416,8 @@ async function deleteProject(pid) {
   if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
   D.projects = D.projects.filter(function(x){ return x.id !== pid; });
   closeModal(); showToast('Project deleted'); renderNav();
-  if (currentPage === 'projectDetail') nav('projects'); else if (currentPage==='projects') pgProjects(); else pgDashboard();
+  var returnTo = (projectDetailReferrer && projectDetailReferrer !== 'projectDetail') ? projectDetailReferrer : 'dashboard';
+  nav(returnTo);
 }
 
 function openNewProjectModal() {
@@ -3859,10 +3908,10 @@ function pgRoadmap() {
   }).join('');
 
   var msHeader = '<tr>' +
-    '<th class="sortable-th" style="position:relative"><span onclick="setMsSort(\'project\')">Project ' + msArrow('project') + '</span>' + msFilterIcon('fProject', st.fProject.length>0) + '</th>' +
+    '<th class="sortable-th"><span onclick="setMsSort(\'project\')">Project ' + msArrow('project') + '</span>' + msFilterIcon('fProject', st.fProject.length>0) + '</th>' +
     '<th class="sortable-th" onclick="setMsSort(\'milestone\')">Milestone ' + msArrow('milestone') + '</th>' +
     '<th class="sortable-th" onclick="setMsSort(\'due\')">Due ' + msArrow('due') + '</th>' +
-    '<th class="sortable-th" style="position:relative"><span onclick="setMsSort(\'status\')">Status ' + msArrow('status') + '</span>' + msFilterIcon('fStatus', st.fStatus.length>0) + '</th>' +
+    '<th class="sortable-th"><span onclick="setMsSort(\'status\')">Status ' + msArrow('status') + '</span>' + msFilterIcon('fStatus', st.fStatus.length>0) + '</th>' +
     '</tr>';
   document.getElementById('content').innerHTML =
     dateRangeControlHtml(roadmapRangeMode, roadmapSelectedYear, 'setRoadmapRangeMode', 'setRoadmapYear') +
@@ -4231,15 +4280,15 @@ function pgAllProjects() {
     '<div class="card"><div class="table-wrap"><table><thead><tr>' +
       '<th><input type="checkbox" ' + (allVisibleSelected ? 'checked' : '') + ' onchange="toggleAllProjSelectAll(this.checked)"></th>' +
       '<th class="sortable-th" onclick="setAllProjSort(\'name\')">Project ' + arrow('name') + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'categories\')">Category ' + arrow('categories') + '</span>' + filterIcon('category', st.filters.category.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'stage\')">Stage ' + arrow('stage') + '</span>' + filterIcon('stage', st.filters.stage.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'phase\')">Phase ' + arrow('phase') + '</span>' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'value\')">Value Area ' + arrow('value') + '</span>' + filterIcon('value', st.filters.value.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'sponsor\')">Sponsor ' + arrow('sponsor') + '</span>' + filterIcon('sponsor', st.filters.sponsor.length>0) + '</th>' +
-      '<th class="sortable-th" style="position:relative"><span onclick="setAllProjSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'categories\')">Category ' + arrow('categories') + '</span>' + filterIcon('category', st.filters.category.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'stage\')">Stage ' + arrow('stage') + '</span>' + filterIcon('stage', st.filters.stage.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'phase\')">Phase ' + arrow('phase') + '</span>' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'value\')">Value Area ' + arrow('value') + '</span>' + filterIcon('value', st.filters.value.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'sponsor\')">Sponsor ' + arrow('sponsor') + '</span>' + filterIcon('sponsor', st.filters.sponsor.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
       '<th></th>' +
     '</tr></thead><tbody>' + (rows || '<tr><td colspan="12" class="text-muted" style="text-align:center;padding:20px">No projects match these filters</td></tr>') + '</tbody></table></div></div>';
 
@@ -4440,12 +4489,13 @@ function pgAdminTags() {
   }
   var expandedTagId = tagAdminState.expandedId;
   var rows = D.tags.map(function(t) {
-    var projectsWithTag = D.projects.filter(function(p){ return (p.tags||[]).indexOf(t.name) >= 0; });
+    var projectsWithTag = D.projects.filter(function(p){ return (p.tags||[]).indexOf(t.name) >= 0; })
+      .slice().sort(function(a,b){ return (STAGE_SORT_RANK[a.stage]!=null?STAGE_SORT_RANK[a.stage]:9) - (STAGE_SORT_RANK[b.stage]!=null?STAGE_SORT_RANK[b.stage]:9); });
     var resourcesWithTag = D.resources.filter(function(r){ return (r.tags||[]).indexOf(t.name) >= 0; });
     var usageCount = projectsWithTag.length + resourcesWithTag.length;
     var expandRow = '';
     if (expandedTagId === t.id) {
-      var projLinks = projectsWithTag.map(function(p){ return '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>' + p.name + ' <span class="text-muted" style="font-size:11px">(project)</span></span><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button></div>'; }).join('');
+      var projLinks = projectsWithTag.map(function(p){ return '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>' + p.name + ' ' + stagePill(p.stage) + '</span><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button></div>'; }).join('');
       var resLinks = resourcesWithTag.map(function(r){ return '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>' + r.name + ' <span class="text-muted" style="font-size:11px">(resource)</span></span><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-eye"></i></button></div>'; }).join('');
       var body = (projLinks + resLinks) || '<span class="text-muted" style="font-size:13px">Not currently used anywhere</span>';
       expandRow = '<tr><td colspan="3" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
@@ -4712,12 +4762,13 @@ function pgResources() {
       var p = D.projects.find(function(x){ return x.id===pid; });
       if (!p) return null;
       var isOwner = combined.ownedIds.indexOf(pid) >= 0;
-      return { id:p.id, name:p.name, isOwner:isOwner };
+      return { id:p.id, name:p.name, stage:p.stage, isOwner:isOwner };
     }).filter(Boolean);
+    rows.sort(function(a,b){ return (STAGE_SORT_RANK[a.stage]!=null?STAGE_SORT_RANK[a.stage]:9) - (STAGE_SORT_RANK[b.stage]!=null?STAGE_SORT_RANK[b.stage]:9); });
     var body = rows.length
       ? rows.map(function(p){
           return '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0">' +
-            '<span>' + p.name + ' <span class="badge ' + (p.isOwner ? 'badge-purple' : 'badge-gray') + '" style="font-size:10px">' + (p.isOwner ? 'Owner' : 'Contributor') + '</span></span>' +
+            '<span>' + p.name + ' ' + stagePill(p.stage) + ' <span class="badge ' + (p.isOwner ? 'badge-purple' : 'badge-gray') + '" style="font-size:10px">' + (p.isOwner ? 'Owner' : 'Contributor') + '</span></span>' +
             '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button></div>';
         }).join('')
       : '<span class="text-muted">No projects assigned</span>';
@@ -5194,10 +5245,10 @@ function pgMyRequests() {
 
   html += '<div class="card"><div class="table-wrap"><table><thead><tr>' +
     '<th class="sortable-th" onclick="setMyReqSort(\'title\')">Title ' + arrow('title') + '</th>' +
-    '<th class="sortable-th" style="position:relative"><span onclick="setMyReqSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
+    '<th class="sortable-th"><span onclick="setMyReqSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
     '<th class="sortable-th" onclick="setMyReqSort(\'date\')">Date ' + arrow('date') + '</th>' +
-    '<th class="sortable-th" style="position:relative"><span onclick="setMyReqSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
-    '<th class="sortable-th" style="position:relative"><span onclick="setMyReqSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+    '<th class="sortable-th"><span onclick="setMyReqSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+    '<th class="sortable-th"><span onclick="setMyReqSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
     '<th>PMO feedback</th><th></th></tr></thead><tbody>' +
     (mine.length ? mine.map(function(r) {
       var canRevoke = r.status === 'Pending';
@@ -5205,7 +5256,8 @@ function pgMyRequests() {
       return '<tr><td class="bold">' + r.title + '</td><td class="text-muted">' + (r.businessUnit||'—') + '</td><td class="text-muted">' + r.date + '</td><td>' + (r.priority ? bdg(r.priority) : '<span class="text-muted">—</span>') + '</td><td>' + bdg(r.status) + '</td>' +
         '<td style="font-size:12px;color:#777;max-width:180px;word-break:break-word">' + (r.feedback||'—') + '</td>' +
         '<td><div style="display:flex;gap:4px">' +
-        (linkedP ? '<button class="btn btn-sm" onclick="viewLinkedProject(\'' + linkedP.id + '\')"><i class="ti ti-eye"></i></button>' : '') +
+        '<button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> Details</button>' +
+        (linkedP ? '<button class="btn btn-sm" onclick="viewLinkedProject(\'' + linkedP.id + '\')"><i class="ti ti-external-link"></i></button>' : '') +
         (canRevoke ? '<button class="btn btn-sm btn-danger" onclick="revokeRequest(\'' + r.id + '\')"><i class="ti ti-x"></i> Revoke</button>' : '') +
         '</div></td></tr>';
     }).join('') : '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px">No requests match these filters</td></tr>') + '</tbody></table></div></div>';
@@ -5351,8 +5403,8 @@ function pgMyTasks() {
       ? (displayed.length
         ? '<div class="table-wrap"><table><thead><tr>' +
           '<th class="sortable-th" onclick="setMyTasksSort(\'task\')">Task ' + arrow('task') + '</th>' +
-          '<th class="sortable-th" style="position:relative"><span onclick="setMyTasksSort(\'project\')">Project ' + arrow('project') + '</span>' + filterIcon('fProject', projectChoices) + '</th>' +
-          '<th class="sortable-th" style="position:relative"><span onclick="setMyTasksSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('fStatus', statusChoices) + '</th>' +
+          '<th class="sortable-th"><span onclick="setMyTasksSort(\'project\')">Project ' + arrow('project') + '</span>' + filterIcon('fProject', projectChoices) + '</th>' +
+          '<th class="sortable-th"><span onclick="setMyTasksSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('fStatus', statusChoices) + '</th>' +
           '<th class="sortable-th" onclick="setMyTasksSort(\'due\')">Due ' + arrow('due') + '</th><th></th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table></div>'
         : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No tasks match your search/filters</p></div>')
