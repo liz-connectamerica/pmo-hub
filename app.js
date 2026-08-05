@@ -3739,7 +3739,7 @@ function pgFuturePlanning() {
       missingSchedule.push(p);
     }
   });
-  allEntries.sort(function(a,b){ return a.startPos - b.startPos; });
+  allEntries.sort(function(a,b){ return a.endPos - b.endPos; });
 
   function timelineRow(entry) {
     var p = entry.project;
@@ -3921,6 +3921,12 @@ function pgRoadmap() {
   }
   var visibleProjects = roadmapCategoryFilter === 'All' ? all : all.filter(function(p){ return projectMatchesCategory(p, roadmapCategoryFilter); });
   if (roadmapTagFilter.length) visibleProjects = visibleProjects.filter(function(p){ return roadmapTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
+  visibleProjects = visibleProjects.slice().sort(function(a,b){
+    if (!a.end && !b.end) return 0;
+    if (!a.end) return 1;
+    if (!b.end) return -1;
+    return a.end < b.end ? -1 : a.end > b.end ? 1 : 0;
+  });
 
   function projectBarRow(p) {
     var startOffset = monthsFromWindowStart(p.start);
