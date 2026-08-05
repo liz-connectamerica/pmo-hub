@@ -48,8 +48,8 @@
       <div id="current-user-display" style="font-size:13px;font-weight:500;margin-bottom:4px"></div>
       <div id="preview-role-control" style="display:none;margin-bottom:8px">
         <div class="role-label">View as</div>
-        <select class="role-select" id="preview-role-select" onchange="setViewAsUser(this.value)">
-          <option value="">My own view</option>
+        <select class="role-select" id="preview-role-select" onchange="onViewAsSelectChange(this.value)">
+          <option value="">My View</option>
         </select>
       </div>
       <button class="btn btn-sm" id="change-password-btn" style="width:100%;justify-content:center;margin-bottom:6px">

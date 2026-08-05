@@ -12,7 +12,7 @@ var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   var realFrom = sb.from.bind(sb);
   sb.from = function(table) {
     var builder = realFrom(table);
-    if (!D.viewingAsResourceId) return builder;
+    if (!D.viewingAsMode) return builder;
     ['insert', 'update', 'delete', 'upsert'].forEach(function(method) {
       if (typeof builder[method] !== 'function') return;
       builder[method] = function() {
@@ -857,6 +857,7 @@ var NAV_DEF = {
     { s:'Projects', items:[
       {id:'projects',  icon:'ti-briefcase',      label:'Active'},
       {id:'planned',   icon:'ti-calendar-event', label:'Planned'},
+      {id:'backlog',   icon:'ti-stack-2',        label:'Backlog',         badge:'backlog'},
       {id:'hold',      icon:'ti-player-pause',   label:'Hold'},
       {id:'completed', icon:'ti-circle-check',   label:'Completed'},
       {id:'resources', icon:'ti-users',          label:'Resources'}
@@ -976,21 +977,28 @@ async function bootAppForUser(skipReload) {
 
   // Populate the View As list now that D.resources is guaranteed to be loaded.
   if (realRole === 'admin') {
-    var resourceOpts = '<option value="">My own view</option>' + D.resources
-      .filter(function(r){ return r.type === 'individual'; })
-      .sort(function(a,b){ return a.name.localeCompare(b.name); })
-      .map(function(r){ return '<option value="' + r.id + '"' + (D.viewingAsResourceId === r.id ? ' selected' : '') + '>' + r.name + (r.userId ? '' : ' (no account yet)') + '</option>'; })
-      .join('');
-    document.getElementById('preview-role-select').innerHTML = resourceOpts;
+    var specificResource = D.viewingAsMode === 'resource' && D.viewingAsResourceId
+      ? D.resources.find(function(r){ return r.id === D.viewingAsResourceId; }) : null;
+    var opts = '<option value=""' + (!D.viewingAsMode ? ' selected' : '') + '>My View</option>' +
+      '<option value="member"' + (D.viewingAsMode === 'member' ? ' selected' : '') + '>Member</option>';
+    if (specificResource) opts += '<option value="resource" selected>' + specificResource.name + '</option>';
+    opts += '<option value="specific">Specific User…</option>';
+    document.getElementById('preview-role-select').innerHTML = opts;
   }
 
   // Apply the "view as" override last, so a fresh data reload can never stomp it.
-  var viewingResource = D.viewingAsResourceId ? D.resources.find(function(r){ return r.id === D.viewingAsResourceId; }) : null;
+  var viewingResource = (D.viewingAsMode === 'resource' && D.viewingAsResourceId)
+    ? D.resources.find(function(r){ return r.id === D.viewingAsResourceId; }) : null;
   if (viewingResource) {
     banner.style.display = 'flex';
     bannerText.textContent = 'Viewing as ' + viewingResource.name + ' (Member)' + (viewingResource.userId ? '' : ' — no account yet, this previews what they\'d see once granted access');
     D.role = 'member';
     D.myResourceId = viewingResource.id;
+  } else if (D.viewingAsMode === 'member') {
+    banner.style.display = 'flex';
+    bannerText.textContent = 'Viewing as a Member (generic — no specific person or assignments)';
+    D.role = 'member';
+    D.myResourceId = null;
   } else {
     banner.style.display = 'none';
     D.role = realRole;
@@ -1006,14 +1014,42 @@ async function bootAppForUser(skipReload) {
   }
 }
 
-function setViewAsUser(resourceId) {
+function setViewAsMode(mode, resourceId) {
   if (D.currentProfile.role !== 'admin') return; // safety check; UI is already hidden for non-admins
-  D.viewingAsResourceId = resourceId || null;
+  D.viewingAsMode = mode || null;
+  D.viewingAsResourceId = mode === 'resource' ? (resourceId || null) : null;
   bootAppForUser(true);
 }
 
 function exitViewAs() {
-  setViewAsUser(null);
+  setViewAsMode(null, null);
+}
+
+function onViewAsSelectChange(val) {
+  if (val === 'specific') { openViewAsUserSearchModal(); return; }
+  if (val === '') { setViewAsMode(null, null); return; }
+  if (val === 'member') { setViewAsMode('member', null); return; }
+  if (val === 'resource') return; // already viewing this specific person; selecting it again is a no-op
+}
+
+function openViewAsUserSearchModal() {
+  var people = D.resources.filter(function(r){ return r.type === 'individual'; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+  function render(query) {
+    var q = (query || '').trim().toLowerCase();
+    var matches = people.filter(function(r){ return r.name.toLowerCase().indexOf(q) >= 0; });
+    var listHtml = matches.map(function(r) {
+      return '<div class="member-check" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:6px 4px" onclick="setViewAsMode(\'resource\',\'' + r.id + '\')">' +
+        '<span>' + r.name + (r.userId ? '' : ' <span class="text-muted" style="font-size:11px">(no account yet)</span>') + '</span>' +
+        '<i class="ti ti-chevron-right" style="color:#ccc"></i></div>';
+    }).join('');
+    showModal('<div class="modal-title">View as specific user <button class="btn btn-sm" onclick="closeModal();bootAppForUser(true)"><i class="ti ti-x"></i></button></div>' +
+      '<input type="text" id="vau-search" placeholder="Search people…" value="' + query.replace(/"/g,'&quot;') + '" oninput="window.__vauSearch(this.value)">' +
+      '<div style="max-height:260px;overflow-y:auto;margin-top:8px">' + (listHtml || '<span class="text-muted" style="font-size:13px">No matching people</span>') + '</div>');
+    var el = document.getElementById('vau-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  }
+  window.__vauSearch = function(v) { render(v); };
+  render('');
 }
 
 async function refreshProjects() {
@@ -3327,7 +3363,7 @@ function editProject(pid) {
     '<div class="grid-2">' +
     '<div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="ep-sponsor" value="' + (p.sponsor||'') + '"></div>' +
     '<div class="form-group"><div class="form-label">Sponsor email' + (p.sponsorId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : '') + '</div><input type="email" id="ep-sponsor-email" value="' + (p.sponsorEmail||'') + '"></div>' +
-    '<div class="form-group"><div class="form-label">Owner</div><select id="ep-owner">' + ownerOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Owner</div>' + (D.role === 'admin' ? '<select id="ep-owner">' + ownerOpts + '</select>' : '<div style="padding:8px 0;color:#444">' + (p.owner || '—') + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the owner</div></div>') + '</div>' +
     '</div>' +
     '<div class="modal-footer">' +
       (D.role === 'admin' ? '<button class="btn btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
@@ -5524,6 +5560,7 @@ async function handleLogout() {
   await sb.auth.signOut();
   D.currentProfile = null;
   D.viewingAsResourceId = null;
+  D.viewingAsMode = null;
   document.getElementById('app-root').style.display = 'none';
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('auth-email').value = '';
