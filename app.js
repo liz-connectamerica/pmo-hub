@@ -322,6 +322,7 @@ async function loadAllProjects() {
       holdReason: pr.hold_reason, preHoldStage: pr.pre_hold_stage, heldAt: pr.held_at,
       targetQuarter: pr.target_quarter, targetYear: pr.target_year, completedAt: pr.completed_at,
       targetEndQuarter: pr.target_end_quarter, targetEndYear: pr.target_end_year,
+      deliveryMethodology: pr.delivery_methodology, projectNumber: pr.project_number, createdAt: pr.created_at,
       milestones: milestones, tasks: tasks, raid: raid,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
     };
@@ -721,7 +722,7 @@ var CHANGE_LOG_FIELDS = {
   name: 'Project Name', stage: 'Stage', status: 'Status', phase: 'Phase', priority: 'Priority',
   value: 'Value Area', businessUnit: 'Business Unit', sponsor: 'Sponsor', owner: 'Owner',
   start: 'Start Date', end: 'Target End Date', progress: 'Progress %', health: 'Health',
-  description: 'Description', blockers: 'Blockers', holdReason: 'Hold Reason'
+  description: 'Description', blockers: 'Blockers', holdReason: 'Hold Reason', deliveryMethodology: 'Delivery Methodology'
 };
 
 // Compares a "before" snapshot to an "after" snapshot across every tracked
@@ -1846,6 +1847,7 @@ async function decideReq(id, decision) {
       estimatedAmount: r.estimatedAmount, estimatedFrequency: r.estimatedFrequency, estimatedType: r.estimatedType,
       targetQuarter: targetQuarter, targetYear: targetYear, targetEndQuarter: targetEndQuarter, targetEndYear: targetEndYear,
       holdReason:null, preHoldStage:null, heldAt:null, completedAt:null,
+      deliveryMethodology: null, projectNumber: projResult.data.project_number, createdAt: projResult.data.created_at,
       milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]}, documents:[], docFolders:['General'], docFolderIds:{}
     });
     r.status = reqStatus; r.linkedProject = projResult.data.id; r.feedback = feedbackVal;
@@ -2332,6 +2334,38 @@ var SOURCE_LABELS = {
   hold: 'Put on hold', resume: 'Resumed', complete: 'Marked complete', reactivate: 'Re-activated'
 };
 
+function renderMetadataStatic(p, editable) {
+  var linkedReq = p.requestId ? D.requests.find(function(r){ return r.id === p.requestId; }) : null;
+  return '<div class="card">' +
+    (editable ? '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-sm" onclick="editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit</button></div>' : '') +
+    '<div class="grid-2 mb-16">' +
+      '<div><div class="form-label">Project ID</div><span class="text-muted">#' + (p.projectNumber || '—') + '</span></div>' +
+      '<div><div class="form-label">Value area</div>' + badgeIf('badge-purple', p.value) + '</div>' +
+      '<div><div class="form-label">Category</div>' + (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Business unit</div>' + (p.businessUnit || '—') + '</div>' +
+      '<div><div class="form-label">Delivery methodology</div>' + (p.deliveryMethodology ? '<span class="badge badge-gray">' + p.deliveryMethodology + '</span>' : '<span class="text-muted">Not selected</span>') + '</div>' +
+      '<div><div class="form-label">Linked request</div>' + (linkedReq ? '<button class="btn btn-sm" onclick="reviewRequest(\'' + linkedReq.id + '\')"><i class="ti ti-eye"></i> ' + linkedReq.title + '</button>' : '<span class="text-muted">—</span>') + '</div>' +
+    '</div>' +
+    '<div class="divider"></div>' +
+    '<div class="grid-2">' +
+      '<div><div class="form-label">Created</div>' + fmtDate(p.createdAt) + '</div>' +
+      '<div id="pmeta-last-edited"><div class="form-label">Last edited</div><span class="text-muted">Loading…</span></div>' +
+    '</div>' +
+  '</div>';
+}
+
+async function loadAndRenderMetadata(pid) {
+  var result = await sb.from('project_change_log').select('*').eq('project_id', pid);
+  var el = document.getElementById('pmeta-last-edited');
+  if (!el) return; // user navigated away from this tab before the fetch finished
+  if (result.error || !result.data || !result.data.length) {
+    el.innerHTML = '<div class="form-label">Last edited</div><span class="text-muted">No changes recorded yet</span>';
+    return;
+  }
+  var latest = result.data.slice().sort(function(a,b){ return (b.changed_at||'').localeCompare(a.changed_at||''); })[0];
+  el.innerHTML = '<div class="form-label">Last edited</div>' + fmtDate(latest.changed_at) + ' <span class="text-muted">by ' + latest.changed_by_name + '</span>';
+}
+
 async function loadAndRenderChangeLog(pid) {
   var result = await sb.from('project_change_log').select('*').eq('project_id', pid);
   var container = document.getElementById('ptab-content');
@@ -2365,7 +2399,7 @@ function pgProjectDetail(pid, tab) {
   renderNav();
   var editable = canEdit(p);
   var isComplete = p.stage === 'complete';
-  var tbs = ['overview','team','milestones','tasks','raid','documentation','changelog'];
+  var tbs = ['overview','team','milestones','tasks','raid','documentation','metadata','changelog'];
 
   function sortedMilestones() {
     return p.milestones.slice().sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
@@ -2388,12 +2422,9 @@ function pgProjectDetail(pid, tab) {
         '<div><div class="form-label">Status</div>' + bdg(p.status) + '</div>' +
         '<div><div class="form-label">Phase</div>' + badgeIf('badge-gray', p.phase) + '</div>' +
         '<div><div class="form-label">Priority</div>' + bdg(p.priority) + '</div>' +
-        '<div><div class="form-label">Value area</div>' + badgeIf('badge-purple', p.value) + '</div>' +
         '<div><div class="form-label">Progress</div><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></div>' +
         '<div><div class="form-label">Start</div>' + (p.start||'—') + '</div>' +
         '<div><div class="form-label">Target end</div>' + (p.end||'—') + '</div>' +
-        '<div><div class="form-label">Category</div>' + (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</div>' +
-        '<div><div class="form-label">Business unit</div>' + (p.businessUnit || '—') + '</div>' +
         '</div>' +
         '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'') + '</div></div>' +
         '<div class="grid-2 mb-16">' +
@@ -2671,6 +2702,10 @@ function pgProjectDetail(pid, tab) {
         '<div class="doc-folder-bar">' + folderChips + '</div>' +
         (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddDoc(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add document</button>' : '') +
         (shown.length ? rows : '<div class="empty-state" style="padding:30px"><i class="ti ti-files"></i><p>No documents in this folder</p></div>');
+    }
+    if (t === 'metadata') {
+      loadAndRenderMetadata(p.id);
+      return renderMetadataStatic(p, editable);
     }
     if (t === 'changelog') {
       loadAndRenderChangeLog(p.id);
@@ -3369,6 +3404,7 @@ function editProject(pid) {
       '<div class="form-group"><div class="form-label">Phase</div><select id="ep-phase">' + phaseOpts + '</select></div>' +
       '<div class="form-group"><div class="form-label">Priority</div><select id="ep-priority">' + priorOpts + '</select></div>' +
       '<div class="form-group"><div class="form-label">Value area</div><select id="ep-value">' + valOpts + '</select></div>' +
+      '<div class="form-group"><div class="form-label">Delivery methodology</div><select id="ep-methodology"><option value=""' + (!p.deliveryMethodology?' selected':'') + '>Not selected</option><option' + (p.deliveryMethodology==='Agile'?' selected':'') + '>Agile</option><option' + (p.deliveryMethodology==='Waterfall'?' selected':'') + '>Waterfall</option><option' + (p.deliveryMethodology==='Hybrid'?' selected':'') + '>Hybrid</option></select></div>' +
       '<div class="form-group"><div class="form-label">Start date</div><input type="date" id="ep-start" value="' + p.start + '"></div>' +
       '<div class="form-group"><div class="form-label">Target end</div><input type="date" id="ep-end" value="' + p.end + '"></div>' +
       '<div class="form-group"><div class="form-label">Progress (%)</div><input type="number" id="ep-progress" value="' + p.progress + '" min="0" max="100"></div>' +
@@ -3396,7 +3432,8 @@ async function saveProject(pid) {
   var beforeSnapshot = {
     name: p.name, stage: p.stage, status: p.status, phase: p.phase, priority: p.priority, value: p.value,
     businessUnit: p.businessUnit, sponsor: p.sponsor, owner: p.owner, start: p.start, end: p.end,
-    progress: p.progress, health: p.health, description: p.description, blockers: p.blockers
+    progress: p.progress, health: p.health, description: p.description, blockers: p.blockers,
+    deliveryMethodology: p.deliveryMethodology
   };
   var newVals = {
     name: document.getElementById('ep-name').value,
@@ -3404,6 +3441,7 @@ async function saveProject(pid) {
     phase: document.getElementById('ep-phase').value || null,
     priority: document.getElementById('ep-priority').value || null,
     value_area: document.getElementById('ep-value').value || null,
+    delivery_methodology: document.getElementById('ep-methodology').value || null,
     start_date: document.getElementById('ep-start').value || null,
     end_date: document.getElementById('ep-end').value || null,
     progress: parseInt(document.getElementById('ep-progress').value) || 0,
@@ -3439,7 +3477,8 @@ async function saveProject(pid) {
     name: newVals.name, status: newVals.status, phase: newVals.phase, priority: newVals.priority, value: newVals.value_area,
     businessUnit: newVals.business_unit, sponsor: newVals.sponsor, owner: newVals.owner_name,
     start: newVals.start_date, end: newVals.end_date, progress: newVals.progress, health: newVals.health,
-    description: newVals.description, blockers: newVals.blockers, stage: newVals.stage || beforeSnapshot.stage
+    description: newVals.description, blockers: newVals.blockers, stage: newVals.stage || beforeSnapshot.stage,
+    deliveryMethodology: newVals.delivery_methodology
   }, 'edit');
 
   var catCbs = document.querySelectorAll('.ep-category-cb');
@@ -3455,6 +3494,7 @@ async function saveProject(pid) {
 
   p.name = newVals.name; p.status = newVals.status; p.phase = newVals.phase; p.priority = newVals.priority;
   p.value = newVals.value_area; p.start = newVals.start_date; p.end = newVals.end_date; p.progress = newVals.progress;
+  p.deliveryMethodology = newVals.delivery_methodology;
   p.health = newVals.health; p.description = newVals.description; p.blockers = newVals.blockers;
   if (buEl) p.businessUnit = newVals.business_unit;
   if (spEl) p.sponsor = newVals.sponsor;
@@ -3486,6 +3526,7 @@ function openNewProjectModal() {
     '<div class="grid-2"><div class="form-group"><div class="form-label">Value area</div><select id="np-value">' + valOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Priority</div><select id="np-priority">' + priorOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Business unit</div><select id="np-bu">' + buOpts + '</select></div></div>' +
+    '<div class="form-group"><div class="form-label">Delivery methodology</div><select id="np-methodology"><option value="" selected>Not selected</option><option>Agile</option><option>Waterfall</option><option>Hybrid</option></select></div>' +
     '<div class="form-group"><div class="form-label">Categories</div><div>' + catCheckboxesNew + '</div></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="np-desc" placeholder="What is this project about?"></textarea></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="np-sponsor" placeholder="Sponsor name"></div>' +
@@ -3507,6 +3548,7 @@ function openNewProjectModal() {
       name: name, owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
       sponsor: sponsorName || null, sponsor_email: sponsorEmail || null,
       business_unit: document.getElementById('np-bu').value || null,
+      delivery_methodology: document.getElementById('np-methodology').value || null,
       status: 'Not Started', phase: 'Not Started', progress: 0,
       value_area: document.getElementById('np-value').value, priority: document.getElementById('np-priority').value,
       description: document.getElementById('np-desc').value, blockers: '', health: 'green', stage: 'active'
@@ -3515,6 +3557,11 @@ function openNewProjectModal() {
     if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
 
     if (selectedCats.length) await sb.from('project_categories').insert(selectedCats.map(function(c){ return { project_id: result.data.id, category: c }; }));
+    await logProjectChanges(result.data.id, null, {
+      name: name, stage: 'active', status: 'Not Started', priority: record.priority, value: record.value_area,
+      businessUnit: record.business_unit, sponsor: sponsorName, owner: ownerName, description: record.description,
+      deliveryMethodology: record.delivery_methodology
+    }, 'edit');
 
     D.projects.push({
       id: result.data.id, name:name, owner:ownerName, ownerId: ownerResource?ownerResource.id:null,
@@ -3523,6 +3570,7 @@ function openNewProjectModal() {
       status:'Not Started', phase:'Not Started', progress:0, start:'', end:'',
       value:record.value_area, priority:record.priority, description:record.description,
       blockers:'', health:'green', stage:'active', plannedStart:'', requestId:'',
+      deliveryMethodology: record.delivery_methodology, projectNumber: result.data.project_number, createdAt: result.data.created_at,
       milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]},
       documents:[], docFolders:['General'], docFolderIds:{}
     });
