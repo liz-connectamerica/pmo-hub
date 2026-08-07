@@ -3527,6 +3527,9 @@ function openNewProjectModal() {
     '<div class="form-group"><div class="form-label">Priority</div><select id="np-priority">' + priorOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Business unit</div><select id="np-bu">' + buOpts + '</select></div></div>' +
     '<div class="form-group"><div class="form-label">Delivery methodology</div><select id="np-methodology"><option value="" selected>Not selected</option><option>Agile</option><option>Waterfall</option><option>Hybrid</option></select></div>' +
+    '<div class="form-sub" style="margin:4px 0">Leave dates blank for a backlog item, or set them now if the timeline is already known — the stage is set automatically based on whether the range has started.</div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">Start date</div><input type="date" id="np-start"></div>' +
+    '<div class="form-group"><div class="form-label">Target end date</div><input type="date" id="np-end"></div></div>' +
     '<div class="form-group"><div class="form-label">Categories</div><div>' + catCheckboxesNew + '</div></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="np-desc" placeholder="What is this project about?"></textarea></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="np-sponsor" placeholder="Sponsor name"></div>' +
@@ -3544,37 +3547,42 @@ function openNewProjectModal() {
     var btn = document.getElementById('np-save'); btn.disabled = true;
 
     var selectedCats = Array.from(document.querySelectorAll('.np-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
+    var startDate = document.getElementById('np-start').value || null;
+    var endDate = document.getElementById('np-end').value || null;
+    var newStage = computeStageFromDates(startDate, endDate);
     var record = {
       name: name, owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
       sponsor: sponsorName || null, sponsor_email: sponsorEmail || null,
       business_unit: document.getElementById('np-bu').value || null,
       delivery_methodology: document.getElementById('np-methodology').value || null,
-      status: 'Not Started', phase: 'Not Started', progress: 0,
+      status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
       value_area: document.getElementById('np-value').value, priority: document.getElementById('np-priority').value,
-      description: document.getElementById('np-desc').value, blockers: '', health: 'green', stage: 'active'
+      description: document.getElementById('np-desc').value, blockers: '', health: 'green', stage: newStage,
+      start_date: startDate, end_date: endDate, planned_start: newStage !== 'backlog' ? startDate : null
     };
     var result = await sb.from('projects').insert(record).select().single();
     if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
 
     if (selectedCats.length) await sb.from('project_categories').insert(selectedCats.map(function(c){ return { project_id: result.data.id, category: c }; }));
     await logProjectChanges(result.data.id, null, {
-      name: name, stage: 'active', status: 'Not Started', priority: record.priority, value: record.value_area,
+      name: name, stage: newStage, status: record.status, priority: record.priority, value: record.value_area,
       businessUnit: record.business_unit, sponsor: sponsorName, owner: ownerName, description: record.description,
-      deliveryMethodology: record.delivery_methodology
+      deliveryMethodology: record.delivery_methodology, start: startDate, end: endDate
     }, 'edit');
 
     D.projects.push({
       id: result.data.id, name:name, owner:ownerName, ownerId: ownerResource?ownerResource.id:null,
       sponsor:sponsorName, sponsorEmail:sponsorEmail, sponsorId: result.data.sponsor_id,
       categories:selectedCats, businessUnit:record.business_unit, team:[], teamIds:[],
-      status:'Not Started', phase:'Not Started', progress:0, start:'', end:'',
+      status:record.status, phase:'Not Started', progress:0, start:startDate||'', end:endDate||'',
       value:record.value_area, priority:record.priority, description:record.description,
-      blockers:'', health:'green', stage:'active', plannedStart:'', requestId:'',
+      blockers:'', health:'green', stage:newStage, plannedStart:record.planned_start||'', requestId:'',
       deliveryMethodology: record.delivery_methodology, projectNumber: result.data.project_number, createdAt: result.data.created_at,
       milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]},
       documents:[], docFolders:['General'], docFolderIds:{}
     });
-    closeModal(); showToast('Project created'); pgProjects();
+    closeModal(); showToast('Project created');
+    if (newStage === 'active') pgProjects(); else if (newStage === 'planned') pgPlanned(); else pgBacklog();
   };
 }
 
