@@ -758,6 +758,48 @@ async function logProjectChanges(projectId, before, after, source) {
   await sb.from('project_change_log').insert(rows);
 }
 
+function teamPickerHtml(prefix, toggleFnName, selectedNames) {
+  var individuals = individualResourceNames();
+  var teams = D.resources.filter(function(r){ return r.type === 'team'; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
+
+  var individualRows = individuals.map(function(n) {
+    var chk = selectedNames.indexOf(n) >= 0 ? ' checked' : '';
+    return '<label class="member-check ' + prefix + '-team-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" data-name="' + n.replace(/"/g,'&quot;') + '" onchange="' + toggleFnName + '(this)"' + chk + '> ' + n + '</label>';
+  }).join('');
+
+  var teamRows = teams.map(function(t) {
+    var chk = selectedNames.indexOf(t.name) >= 0 ? ' checked' : '';
+    return '<label class="member-check ' + prefix + '-team-row" data-name="' + t.name.toLowerCase() + '" style="display:flex;justify-content:space-between;align-items:center;grid-column:1 / -1">' +
+      '<span><input type="checkbox" data-name="' + t.name.replace(/"/g,'&quot;') + '" onchange="' + toggleFnName + '(this)"' + chk + '> ' + t.name + '</span>' +
+      (t.managerName ? '<span class="text-muted" style="font-size:11px">Manager: ' + t.managerName + '</span>' : '') +
+    '</label>';
+  }).join('');
+
+  return '<div class="form-group"><div class="form-label">Team</div>' +
+    '<div class="tab-bar" style="margin-bottom:8px">' +
+      '<div class="tab active" id="' + prefix + '-team-tab-individual" onclick="switchTeamPickerTab(\'' + prefix + '\',\'individual\')">Individual</div>' +
+      '<div class="tab" id="' + prefix + '-team-tab-team" onclick="switchTeamPickerTab(\'' + prefix + '\',\'team\')">Team</div>' +
+    '</div>' +
+    '<input type="text" id="' + prefix + '-team-search" placeholder="Search…" oninput="filterTeamPickerList(\'' + prefix + '\', this.value)">' +
+    '<div id="' + prefix + '-team-list-individual" style="max-height:200px;overflow-y:auto;margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px">' + (individualRows || '<span class="text-muted" style="font-size:13px">No individuals available</span>') + '</div>' +
+    '<div id="' + prefix + '-team-list-team" style="max-height:200px;overflow-y:auto;margin-top:8px;display:none;grid-template-columns:1fr;gap:6px">' + (teamRows || '<span class="text-muted" style="font-size:13px">No teams available</span>') + '</div>' +
+  '</div>';
+}
+
+window.switchTeamPickerTab = function(prefix, tab) {
+  document.getElementById(prefix + '-team-tab-individual').className = 'tab' + (tab === 'individual' ? ' active' : '');
+  document.getElementById(prefix + '-team-tab-team').className = 'tab' + (tab === 'team' ? ' active' : '');
+  document.getElementById(prefix + '-team-list-individual').style.display = tab === 'individual' ? 'grid' : 'none';
+  document.getElementById(prefix + '-team-list-team').style.display = tab === 'team' ? 'grid' : 'none';
+};
+
+window.filterTeamPickerList = function(prefix, query) {
+  var q = query.trim().toLowerCase();
+  document.querySelectorAll('#' + prefix + '-team-list-individual .' + prefix + '-team-row, #' + prefix + '-team-list-team .' + prefix + '-team-row').forEach(function(row) {
+    row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
+  });
+};
+
 var CONFIDENCE_LEVELS = ['Rough guess','Somewhat confident','High confidence'];
 function confidenceOptsHtml(selected) {
   return '<option value="">— Confidence —</option>' + CONFIDENCE_LEVELS.map(function(c){ return '<option' + (selected===c?' selected':'') + '>' + c + '</option>'; }).join('');
@@ -1526,20 +1568,11 @@ function openEditRequestModal(id, overrides) {
         '<input type="text" id="er2-est-amount" value="' + (curEstAmount!=null?curEstAmount:'') + '" placeholder="$ amount (optional)"></div>' +
         '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="er2-value-confidence">' + confidenceOptsHtml(curValueConfidence) + '</select></div>' +
       '</div>' +
+      '<div class="form-group"><div class="form-label">Value justification</div><div class="form-sub">How did you arrive at the estimated value?</div><textarea id="er2-justification" rows="3">' + curJustification.replace(/</g,'&lt;') + '</textarea></div>' +
       '<div class="form-group"><div class="form-label">Cost estimate</div>' +
         '<div class="grid-2"><input type="text" id="er2-cost-amount" value="' + (curCostAmount!=null?curCostAmount:'') + '" placeholder="$ amount (optional)"><select id="er2-cost-confidence">' + confidenceOptsHtml(curCostConfidence) + '</select></div>' +
-      '</div>' +
-      '<div class="form-group"><div class="form-label">Value justification</div><textarea id="er2-justification" rows="3">' + curJustification.replace(/</g,'&lt;') + '</textarea></div>'
+      '</div>'
     : '<div class="form-group"><div class="form-label">What\'s the expected value? *</div><textarea id="er2-value-desc" rows="3">' + curOppOther.replace(/</g,'&lt;') + '</textarea></div>';
-
-  function teamOptionsHtml() {
-    var options = individualResourceNames().concat(teamNames());
-    return options.map(function(n) {
-      var isTeam = teamNames().indexOf(n) >= 0;
-      var chk = selectedTeam.indexOf(n) >= 0 ? ' checked' : '';
-      return '<label class="member-check er2-team-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" data-name="' + n.replace(/"/g,'&quot;') + '" onchange="toggleEditReqTeamMember(this)"' + chk + '> ' + n + (isTeam ? ' <i class="ti ti-users" style="color:#185FA5;font-size:11px"></i>' : '') + '</label>';
-    }).join('');
-  }
 
   showModal('<div class="modal-title">Edit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="er2-title" value="' + curTitle.replace(/"/g,'&quot;') + '"></div>' +
@@ -1548,20 +1581,13 @@ function openEditRequestModal(id, overrides) {
     '<div class="form-group"><div class="form-label">Description *</div><textarea id="er2-desc" rows="4">' + curDesc.replace(/</g,'&lt;') + '</textarea></div>' +
     valueSectionHtml +
     '<div class="form-group"><div class="form-label">Tags</div><div id="er2-tags-chips" style="margin-bottom:8px">' + (selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>') + '</div><button class="btn btn-sm" onclick="openEditReqTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
-    '<div class="form-group"><div class="form-label">Team</div><input type="text" id="er2-team-search" placeholder="Search people or teams…" oninput="filterEditReqTeamList(this.value)">' +
-      '<div id="er2-team-list" style="max-height:200px;overflow-y:auto;margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px">' + teamOptionsHtml() + '</div></div>' +
+    teamPickerHtml('er2', 'toggleEditReqTeamMember', selectedTeam) +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="er2-save">Save changes</button></div>');
 
   window.onEditReqOppTypeChange = function() {
     var type = document.getElementById('er2-opp-type').value;
     document.getElementById('er2-estimate-row').style.display = type ? 'block' : 'none';
     if (type) document.getElementById('er2-estimate-label').textContent = type === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
-  };
-  window.filterEditReqTeamList = function(query) {
-    var q = query.trim().toLowerCase();
-    document.querySelectorAll('#er2-team-list .er2-team-row').forEach(function(row) {
-      row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
-    });
   };
   window.toggleEditReqTeamMember = function(el) {
     var name = el.getAttribute('data-name');
@@ -1713,21 +1739,12 @@ function openEditResubmitModal(id, overrides) {
         '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="erq-value-confidence">' + confidenceOptsHtml(curValueConfidence) + '</select></div>' +
         '<div id="erq-est-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
       '</div>' +
+      '<div class="form-group"><div class="form-label">Value justification</div><div class="form-sub">How did you arrive at the estimated value?</div><textarea id="erq-justification" rows="3">' + curJustification.replace(/</g,'&lt;') + '</textarea></div>' +
       '<div class="form-group"><div class="form-label">Cost estimate</div>' +
         '<div class="grid-2"><input type="text" id="erq-cost-amount" value="' + (curCostAmount!=null?curCostAmount:'') + '" placeholder="$ amount (optional)"><select id="erq-cost-confidence">' + confidenceOptsHtml(curCostConfidence) + '</select></div>' +
         '<div id="erq-cost-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
-      '</div>' +
-      '<div class="form-group"><div class="form-label">Value justification</div><textarea id="erq-justification" rows="3">' + curJustification.replace(/</g,'&lt;') + '</textarea></div>'
+      '</div>'
     : '<div class="form-group"><div class="form-label">What\'s the expected value? *</div><textarea id="erq-value-desc" rows="3">' + curOppOther.replace(/</g,'&lt;') + '</textarea></div>';
-
-  function teamOptionsHtml() {
-    var options = individualResourceNames().concat(teamNames());
-    return options.map(function(n) {
-      var isTeam = teamNames().indexOf(n) >= 0;
-      var chk = selectedTeam.indexOf(n) >= 0 ? ' checked' : '';
-      return '<label class="member-check erq-team-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" data-name="' + n.replace(/"/g,'&quot;') + '" onchange="toggleResubmitTeamMember(this)"' + chk + '> ' + n + (isTeam ? ' <i class="ti ti-users" style="color:#185FA5;font-size:11px"></i>' : '') + '</label>';
-    }).join('');
-  }
 
   showModal('<div class="modal-title">Edit &amp; resubmit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     (r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:#FBE7E3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid #993C1D">' + r.feedback + '</div></div>' : '') +
@@ -1737,8 +1754,7 @@ function openEditResubmitModal(id, overrides) {
     '<div class="form-group"><div class="form-label">Description *</div><textarea id="erq-desc" rows="4">' + curDesc.replace(/</g,'&lt;') + '</textarea></div>' +
     valueSectionHtml +
     '<div class="form-group"><div class="form-label">Tags</div><div id="erq-tags-chips" style="margin-bottom:8px">' + (selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>') + '</div><button class="btn btn-sm" onclick="openResubmitTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
-    '<div class="form-group"><div class="form-label">Team</div><input type="text" id="erq-team-search" placeholder="Search people or teams…" oninput="filterResubmitTeamList(this.value)">' +
-      '<div id="erq-team-list" style="max-height:200px;overflow-y:auto;margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px">' + teamOptionsHtml() + '</div></div>' +
+    teamPickerHtml('erq', 'toggleResubmitTeamMember', selectedTeam) +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="erq-save"><i class="ti ti-send"></i> Resubmit request</button></div>');
 
@@ -1757,12 +1773,6 @@ function openEditResubmitModal(id, overrides) {
       document.getElementById('erq-cost-err').style.display = 'none';
     });
   }
-  window.filterResubmitTeamList = function(query) {
-    var q = query.trim().toLowerCase();
-    document.querySelectorAll('#erq-team-list .erq-team-row').forEach(function(row) {
-      row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
-    });
-  };
   window.toggleResubmitTeamMember = function(el) {
     var name = el.getAttribute('data-name');
     var i = selectedTeam.indexOf(name);
@@ -5350,11 +5360,11 @@ function pgSubmit() {
         '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="f-value-confidence">' + confidenceOptsHtml() + '</select></div>' +
         '<div id="f-est-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
       '</div>' +
+      '<div class="form-group"><div class="form-label">Value justification</div><div class="form-sub">How did you arrive at the estimated value?</div><textarea id="f-justification" rows="3" placeholder="e.g. Reduces manual reconciliation time by an estimated 10 hours/week…"></textarea></div>' +
       '<div class="form-group"><div class="form-label">Cost estimate</div><div class="form-sub">What might this cost to deliver? Optional — a rough number is fine.</div>' +
         '<div class="grid-2"><input type="text" id="f-cost-amount" placeholder="$ amount (optional)"><select id="f-cost-confidence">' + confidenceOptsHtml() + '</select></div>' +
         '<div id="f-cost-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
-      '</div>' +
-      '<div class="form-group"><div class="form-label">Value justification</div><div class="form-sub">Why does this matter? This stays with the request and won\'t appear on the project itself.</div><textarea id="f-justification" rows="3" placeholder="e.g. Reduces manual reconciliation time by an estimated 10 hours/week…"></textarea></div>'
+      '</div>'
     : '<div class="form-group"><div class="form-label">What\'s the expected value? *</div><div class="form-sub">Describe the benefit in your own words.</div><textarea id="f-value-desc" rows="3" placeholder="e.g. Saves the team several hours a week on manual reconciliation"></textarea></div>';
 
   document.getElementById('content').innerHTML =
@@ -5366,18 +5376,8 @@ function pgSubmit() {
     '<div class="form-group"><div class="form-label">Description *</div><div class="form-sub">What is the problem or opportunity?</div><textarea id="f-desc" rows="4" placeholder="Describe the situation and why this project is needed…"></textarea></div>' +
     valueSectionHtml +
     '<div class="form-group"><div class="form-label">Tags</div><div id="f-tags-chips" style="margin-bottom:8px"></div><button class="btn btn-sm" onclick="openRequestTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
-    '<div class="form-group"><div class="form-label">Team</div><input type="text" id="f-team-search" placeholder="Search people or teams…" oninput="filterRequestTeamList(this.value)">' +
-      '<div id="f-team-list" style="max-height:200px;overflow-y:auto;margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px">' + requestTeamOptionsHtml([]) + '</div></div>' +
+    teamPickerHtml('f', 'toggleRequestTeamMember', []) +
     '<div style="display:flex;justify-content:flex-end"><button class="btn btn-primary" id="f-submit"><i class="ti ti-send"></i> Submit request</button></div></div>';
-
-  function requestTeamOptionsHtml(selected) {
-    var options = individualResourceNames().concat(teamNames());
-    return options.map(function(n) {
-      var isTeam = teamNames().indexOf(n) >= 0;
-      var chk = selected.indexOf(n) >= 0 ? ' checked' : '';
-      return '<label class="member-check f-team-row" data-name="' + n.toLowerCase() + '"><input type="checkbox" data-name="' + n.replace(/"/g,'&quot;') + '" onchange="toggleRequestTeamMember(this)"' + chk + '> ' + n + (isTeam ? ' <i class="ti ti-users" style="color:#185FA5;font-size:11px"></i>' : '') + '</label>';
-    }).join('');
-  }
 
   window.onOppTypeChange = function() {
     var type = document.getElementById('f-opp-type').value;
@@ -5396,12 +5396,6 @@ function pgSubmit() {
     });
   }
 
-  window.filterRequestTeamList = function(query) {
-    var q = query.trim().toLowerCase();
-    document.querySelectorAll('#f-team-list .f-team-row').forEach(function(row) {
-      row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
-    });
-  };
   window.toggleRequestTeamMember = function(el) {
     var name = el.getAttribute('data-name');
     var i = selectedTeam.indexOf(name);
