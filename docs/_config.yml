@@ -1,0 +1,7 @@
+title: PMO Hub Documentation
+description: User and admin guides for PMO Hub
+theme: minima
+show_excerpts: false
+header_pages:
+  - user-guide.md
+  - admin-guide.md
