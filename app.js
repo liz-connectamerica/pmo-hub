@@ -323,7 +323,7 @@ async function loadAllProjects() {
       holdReason: pr.hold_reason, preHoldStage: pr.pre_hold_stage, heldAt: pr.held_at,
       targetQuarter: pr.target_quarter, targetYear: pr.target_year, completedAt: pr.completed_at,
       targetEndQuarter: pr.target_end_quarter, targetEndYear: pr.target_end_year,
-      deliveryMethodology: pr.delivery_methodology, projectNumber: pr.project_number, createdAt: pr.created_at,
+      deliveryMethodology: pr.delivery_methodology, projectNumber: pr.project_number, createdAt: pr.created_at, tshirtSize: pr.tshirt_size,
       estimatedAmount: pr.estimated_amount, estimatedFrequency: pr.estimated_frequency, estimatedType: pr.estimated_type,
       valueConfidence: pr.value_confidence, costEstimate: pr.cost_estimate, costConfidence: pr.cost_confidence,
       milestones: milestones, tasks: tasks, raid: raid,
@@ -379,6 +379,14 @@ function canEdit(p) {
 // financial detail" permission exists, this is the only place that needs to change.
 function canViewFinancials() {
   return D.role === 'admin';
+}
+
+// Admin can always edit a project's financial detail. A non-admin owner can
+// only do so if they personally have financial-view permission - once the
+// real per-user permission exists, this composes correctly with no changes
+// needed here.
+function canEditProjectFinancials(p) {
+  return canViewFinancials() && canEdit(p);
 }
 
 async function ensureOnTeam(p, res) {
@@ -714,7 +722,7 @@ var allProjectsState = {
 };
 var tagAdminState = { expandedId: null };
 var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
-var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3 };
+var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
 var rejectedFilterState = { range:'30' };
 
 function buildQuarterOptions() {
@@ -732,7 +740,8 @@ var CHANGE_LOG_FIELDS = {
   name: 'Project Name', stage: 'Stage', status: 'Status', phase: 'Phase', priority: 'Priority',
   value: 'Value Area', businessUnit: 'Business Unit', sponsor: 'Sponsor', owner: 'Owner',
   start: 'Start Date', end: 'Target End Date', progress: 'Progress %', health: 'Health',
-  description: 'Description', blockers: 'Blockers', holdReason: 'Hold Reason', deliveryMethodology: 'Delivery Methodology'
+  description: 'Description', blockers: 'Blockers', holdReason: 'Hold Reason', deliveryMethodology: 'Delivery Methodology',
+  tshirtSize: 'T-shirt Size'
 };
 
 // Compares a "before" snapshot to an "after" snapshot across every tracked
@@ -830,7 +839,7 @@ function bdg(s) {
     'Pending':'badge-amber','Approved':'badge-teal','Rejected':'badge-red','Backlog':'badge-amber','Active':'badge-teal','Planned':'badge-blue','Revoked':'badge-gray',
     'Done':'badge-teal','In Progress':'badge-purple','To Do':'badge-gray',
     'Open':'badge-red','Closed':'badge-teal',
-    'Critical':'badge-red','High':'badge-coral','Medium':'badge-amber','Low':'badge-blue'
+    'Critical':'badge-red','High':'badge-coral','Medium':'badge-amber','Low':'badge-blue','Needs prioritization':'badge-gray'
   };
   return '<span class="badge ' + (map[s] || 'badge-gray') + '">' + s + '</span>';
 }
@@ -1416,6 +1425,7 @@ function captureFinalizeDraft(id) {
   reviewFinalizeDrafts[id] = {
     priority: priorityEl.value, value: document.getElementById('rv-value').value,
     businessUnit: document.getElementById('rv-bu').value,
+    tshirtSize: document.getElementById('rv-tshirt').value,
     start: document.getElementById('rv-start').value, end: document.getElementById('rv-end').value,
     quarterStart: document.getElementById('rv-q-start') ? document.getElementById('rv-q-start').value : '',
     quarterEnd: document.getElementById('rv-q-end') ? document.getElementById('rv-q-end').value : '',
@@ -1458,13 +1468,15 @@ function reviewRequest(id) {
       '<div><div class="form-label">Date</div>' + r.date + '</div>' +
       '<div><div class="form-label">Business Unit</div>' + (r.businessUnit || '—') + '</div>' +
       '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '—') + '</div>' +
+    '</div>' +
+    '<div class="form-group"><div class="form-label">Description</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + (r.description||'') + '</div></div>' +
+    '<div class="grid-2 mb-16">' +
       '<div><div class="form-label">Value type</div>' + opportunityDisplay + '</div>' +
       (r.value ? '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + r.value + '</span></div>' : '') +
       estimateDisplay +
-      costDisplay +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Description</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + (r.description||'') + '</div></div>' +
     (r.valueJustification && canFinancials ? '<div class="form-group"><div class="form-label">Value justification</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + r.valueJustification + '</div></div>' : '') +
+    (costDisplay ? '<div class="mb-16">' + costDisplay + '</div>' : '') +
     (r.tags && r.tags.length ? '<div class="form-group"><div class="form-label">Tags</div>' + r.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
     (r.team && r.team.length ? '<div class="form-group"><div class="form-label">Proposed team</div>' + r.team.join(', ') + '</div>' : '') +
     (r.feedback ? '<div class="form-group"><div class="form-label">PMO feedback</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid #534AB7">' + r.feedback + '</div></div>' : '');
@@ -1489,7 +1501,10 @@ function reviewRequest(id) {
   if (canApprove) {
     var draft = reviewFinalizeDrafts[r.id] || {};
     var buOptsApprove = BUSINESS_UNITS.map(function(v){ return '<option' + ((draft.businessUnit||r.businessUnit)===v?' selected':'') + '>' + v + '</option>'; }).join('');
-    var priorOptsApprove = PRIORITIES.map(function(p){ return '<option value="' + p + '"' + ((draft.priority||r.priority)===p?' selected':'') + '>' + p + '</option>'; }).join('');
+    var curPriorityApprove = draft.priority || r.priority || 'Needs prioritization';
+    var priorOptsApprove = PRIORITIES.map(function(p){ return '<option value="' + p + '"' + (curPriorityApprove===p?' selected':'') + '>' + p + '</option>'; }).join('');
+    var curTshirtApprove = 'tshirtSize' in draft ? draft.tshirtSize : (r.tshirtSize || '');
+    var tshirtOptsApprove = '<option value="">— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option' + (curTshirtApprove===s?' selected':'') + '>' + s + '</option>'; }).join('');
     var valOptsApprove = VALUE_AREAS.map(function(v){ return '<option' + ((draft.value||r.value)===v?' selected':'') + '>' + v + '</option>'; }).join('');
     var catCheckboxes = CATEGORIES.map(function(c){
       var checked = (draft.categories || []).indexOf(c) >= 0;
@@ -1504,10 +1519,13 @@ function reviewRequest(id) {
 
     html += '<div class="divider"></div><div class="section-title" style="font-size:14px">Finalize before approving</div>' +
       '<div class="grid-2">' +
-        '<div class="form-group"><div class="form-label">Priority *</div><select id="rv-priority"><option value="">— Select —</option>' + priorOptsApprove + '</select></div>' +
+        '<div class="form-group"><div class="form-label">Priority *</div><select id="rv-priority">' + priorOptsApprove + '</select></div>' +
         '<div class="form-group"><div class="form-label">Value area *</div><select id="rv-value"><option value="">— Select —</option>' + valOptsApprove + '</select></div>' +
       '</div>' +
-      '<div class="form-group"><div class="form-label">Business Unit *</div><select id="rv-bu">' + buOptsApprove + '</select></div>' +
+      '<div class="grid-2">' +
+        '<div class="form-group"><div class="form-label">Business Unit *</div><select id="rv-bu">' + buOptsApprove + '</select></div>' +
+        '<div class="form-group"><div class="form-label">T-shirt size</div><select id="rv-tshirt">' + tshirtOptsApprove + '</select></div>' +
+      '</div>' +
       '<div class="form-group"><div class="form-label">Categories</div><div>' + catCheckboxes + '</div></div>' +
       '<div class="form-sub" style="margin:12px 0 4px">If real dates are known, set them below and the project will land in Backlog, Planned, or Active automatically depending on whether the range has already started. Otherwise, an optional target quarter keeps it visible on the Future Planning timeline while it sits in Backlog.</div>' +
       '<div class="grid-2">' +
@@ -1918,6 +1936,7 @@ async function decideReq(id, decision) {
     var priority = document.getElementById('rv-priority').value;
     var valueArea = document.getElementById('rv-value').value;
     var businessUnit = document.getElementById('rv-bu').value;
+    var tshirtSize = document.getElementById('rv-tshirt').value || null;
     var startDate = document.getElementById('rv-start').value || null;
     var endDate = document.getElementById('rv-end').value || null;
     if (!priority || !valueArea || !businessUnit) {
@@ -1941,7 +1960,7 @@ async function decideReq(id, decision) {
     var projectRecord = {
       name: r.title, status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
       value_area: valueArea, priority: priority, description: r.description, sponsor: r.sponsor || null,
-      business_unit: businessUnit, blockers: '', health: 'green', stage: newStage,
+      business_unit: businessUnit, tshirt_size: tshirtSize, blockers: '', health: 'green', stage: newStage,
       planned_start: startDate, start_date: startDate, end_date: endDate,
       target_quarter: targetQuarter, target_year: targetYear, target_end_quarter: targetEndQuarter, target_end_year: targetEndYear,
       estimated_amount: r.estimatedAmount, estimated_frequency: r.estimatedFrequency, estimated_type: r.estimatedType,
@@ -1952,7 +1971,8 @@ async function decideReq(id, decision) {
     if (projResult.error) { showToast('Could not create project: ' + projResult.error.message); return; }
     await logProjectChanges(projResult.data.id, null, {
       name: r.title, stage: newStage, status: projectRecord.status, priority: priority, value: valueArea,
-      businessUnit: businessUnit, sponsor: r.sponsor, start: startDate, end: endDate, description: r.description
+      businessUnit: businessUnit, sponsor: r.sponsor, start: startDate, end: endDate, description: r.description,
+      tshirtSize: tshirtSize
     }, 'request');
 
     var teamIds = [];
@@ -1984,7 +2004,7 @@ async function decideReq(id, decision) {
       id: projResult.data.id, name: r.title, owner:'', ownerId:null, sponsor: r.sponsor || '', categories: selectedCategories, businessUnit:businessUnit,
       team: r.team ? r.team.slice() : [], teamIds: teamIds, status: projectRecord.status, phase:'Not Started', progress:0,
       start: startDate, end: endDate, plannedStart: startDate,
-      value: valueArea, priority: priority, description: r.description, blockers:'', health:'green',
+      value: valueArea, priority: priority, description: r.description, blockers:'', health:'green', tshirtSize: tshirtSize,
       stage: newStage, requestId:r.id, tags: r.tags ? r.tags.slice() : [], dependencies:[],
       estimatedAmount: r.estimatedAmount, estimatedFrequency: r.estimatedFrequency, estimatedType: r.estimatedType,
       valueConfidence: r.valueConfidence, costEstimate: r.costEstimate, costConfidence: r.costConfidence,
@@ -2477,14 +2497,72 @@ var SOURCE_LABELS = {
   hold: 'Put on hold', resume: 'Resumed', complete: 'Marked complete', reactivate: 'Re-activated'
 };
 
+function openEditProjectFinancialsModal(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!canEditProjectFinancials(p)) return; // safety check; UI is already hidden otherwise
+  showModal('<div class="modal-title">Edit financial detail <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-sub" style="margin-bottom:12px">Not visible to anyone without financial-view permission, anywhere in the app.</div>' +
+    '<div class="form-group"><div class="form-label">This is a…</div><select id="epf-type"><option value="">— Not set —</option><option value="Revenue"' + (p.estimatedType==='Revenue'?' selected':'') + '>Revenue opportunity</option><option value="Savings"' + (p.estimatedType==='Savings'?' selected':'') + '>Cost savings opportunity</option></select></div>' +
+    '<div class="grid-2"><select id="epf-freq"><option' + (p.estimatedFrequency==='Monthly'?' selected':'') + '>Monthly</option><option' + (p.estimatedFrequency==='Annually'?' selected':'') + '>Annually</option></select>' +
+    '<input type="text" id="epf-amount" value="' + (p.estimatedAmount!=null?p.estimatedAmount:'') + '" placeholder="$ amount (optional)"></div>' +
+    '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="epf-value-confidence">' + confidenceOptsHtml(p.valueConfidence) + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Cost estimate</div>' +
+      '<div class="grid-2"><input type="text" id="epf-cost-amount" value="' + (p.costEstimate!=null?p.costEstimate:'') + '" placeholder="$ amount (optional)"><select id="epf-cost-confidence">' + confidenceOptsHtml(p.costConfidence) + '</select></div>' +
+    '</div>' +
+    '<div id="epf-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter valid numbers (digits only)</div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="epf-save">Save changes</button></div>');
+
+  ['epf-amount','epf-cost-amount'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', function() {
+      this.value = this.value.replace(/[^0-9]/g,'');
+      document.getElementById('epf-err').style.display = 'none';
+    });
+  });
+
+  document.getElementById('epf-save').onclick = async function() {
+    var estType = document.getElementById('epf-type').value || null;
+    var estAmountRaw = document.getElementById('epf-amount').value.trim();
+    var costAmountRaw = document.getElementById('epf-cost-amount').value.trim();
+    if ((estAmountRaw && isNaN(Number(estAmountRaw))) || (costAmountRaw && isNaN(Number(costAmountRaw)))) {
+      document.getElementById('epf-err').style.display = 'block'; return;
+    }
+    var btn = document.getElementById('epf-save'); btn.disabled = true;
+    var updates = {
+      estimated_type: estType,
+      estimated_frequency: estType ? document.getElementById('epf-freq').value : null,
+      estimated_amount: estAmountRaw ? Number(estAmountRaw) : null,
+      value_confidence: document.getElementById('epf-value-confidence').value || null,
+      cost_estimate: costAmountRaw ? Number(costAmountRaw) : null,
+      cost_confidence: document.getElementById('epf-cost-confidence').value || null
+    };
+    // Deliberately not logged via logProjectChanges: the general Change Log tab
+    // is visible to anyone who can see the project, regardless of financial
+    // permission, so logging dollar figures there would leak them.
+    var result = await sb.from('projects').update(updates).eq('id', pid);
+    if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+    p.estimatedType = updates.estimated_type; p.estimatedFrequency = updates.estimated_frequency;
+    p.estimatedAmount = updates.estimated_amount; p.valueConfidence = updates.value_confidence;
+    p.costEstimate = updates.cost_estimate; p.costConfidence = updates.cost_confidence;
+    showToast('Financial detail updated'); closeModal();
+    if (currentPage === 'projectDetail') pgProjectDetail(pid, 'metadata');
+  };
+}
+
 function renderMetadataStatic(p, editable) {
   var linkedReq = p.requestId ? D.requests.find(function(r){ return r.id === p.requestId; }) : null;
+  var canEditFin = canEditProjectFinancials(p);
   var financialsHtml = '';
-  if (canViewFinancials() && (p.estimatedAmount != null || p.costEstimate != null)) {
-    financialsHtml = '<div class="divider"></div><div class="section-title" style="font-size:14px">Financial detail</div><div class="grid-2 mb-16">' +
-      (p.estimatedAmount != null ? '<div><div class="form-label">Estimated ' + (p.estimatedType||'value') + '</div>' + fmtCost(p.estimatedAmount) + (p.estimatedFrequency ? ' / ' + p.estimatedFrequency.toLowerCase() : '') + (p.valueConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.valueConfidence + '</span>' : '') + '</div>' : '') +
-      (p.costEstimate != null ? '<div><div class="form-label">Cost estimate</div>' + fmtCost(p.costEstimate) + (p.costConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.costConfidence + '</span>' : '') + '</div>' : '') +
-    '</div>';
+  if (canViewFinancials()) {
+    var hasFinData = p.estimatedAmount != null || p.costEstimate != null;
+    financialsHtml = '<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="section-title" style="font-size:14px;margin-bottom:0">Financial detail</div>' +
+      (canEditFin ? '<button class="btn btn-sm" onclick="openEditProjectFinancialsModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit financials</button>' : '') +
+    '</div>' +
+    (hasFinData
+      ? '<div class="grid-2 mb-16">' +
+          (p.estimatedAmount != null ? '<div><div class="form-label">Estimated ' + (p.estimatedType||'value') + '</div>' + fmtCost(p.estimatedAmount) + (p.estimatedFrequency ? ' / ' + p.estimatedFrequency.toLowerCase() : '') + (p.valueConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.valueConfidence + '</span>' : '') + '</div>' : '') +
+          (p.costEstimate != null ? '<div><div class="form-label">Cost estimate</div>' + fmtCost(p.costEstimate) + (p.costConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.costConfidence + '</span>' : '') + '</div>' : '') +
+        '</div>'
+      : '<div class="text-muted" style="font-size:13px;margin-bottom:12px">No financial detail recorded yet</div>');
   }
   return '<div class="card">' +
     (editable ? '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-sm" onclick="editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit</button></div>' : '') +
@@ -2494,6 +2572,7 @@ function renderMetadataStatic(p, editable) {
       '<div><div class="form-label">Category</div>' + (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Business unit</div>' + (p.businessUnit || '—') + '</div>' +
       '<div><div class="form-label">Delivery methodology</div>' + (p.deliveryMethodology ? '<span class="badge badge-gray">' + p.deliveryMethodology + '</span>' : '<span class="text-muted">Not selected</span>') + '</div>' +
+      '<div><div class="form-label">T-shirt size</div>' + (p.tshirtSize ? '<span class="badge badge-gray">' + p.tshirtSize + '</span>' : '<span class="text-muted">Not sized</span>') + '</div>' +
       '<div><div class="form-label">Linked request</div>' + (linkedReq ? '<button class="btn btn-sm" onclick="reviewRequest(\'' + linkedReq.id + '\')"><i class="ti ti-eye"></i> ' + linkedReq.title + '</button>' : '<span class="text-muted">—</span>') + '</div>' +
     '</div>' +
     financialsHtml +
@@ -3556,6 +3635,7 @@ function editProject(pid) {
       '<div class="form-group"><div class="form-label">Priority</div><select id="ep-priority">' + priorOpts + '</select></div>' +
       '<div class="form-group"><div class="form-label">Value area</div><select id="ep-value">' + valOpts + '</select></div>' +
       '<div class="form-group"><div class="form-label">Delivery methodology</div><select id="ep-methodology"><option value=""' + (!p.deliveryMethodology?' selected':'') + '>Not selected</option><option' + (p.deliveryMethodology==='Agile'?' selected':'') + '>Agile</option><option' + (p.deliveryMethodology==='Waterfall'?' selected':'') + '>Waterfall</option><option' + (p.deliveryMethodology==='Hybrid'?' selected':'') + '>Hybrid</option></select></div>' +
+      '<div class="form-group"><div class="form-label">T-shirt size</div><select id="ep-tshirt"><option value=""' + (!p.tshirtSize?' selected':'') + '>— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option' + (p.tshirtSize===s?' selected':'') + '>' + s + '</option>'; }).join('') + '</select></div>' +
       '<div class="form-group"><div class="form-label">Start date</div><input type="date" id="ep-start" value="' + p.start + '"></div>' +
       '<div class="form-group"><div class="form-label">Target end</div><input type="date" id="ep-end" value="' + p.end + '"></div>' +
       '<div class="form-group"><div class="form-label">Progress (%)</div><input type="number" id="ep-progress" value="' + p.progress + '" min="0" max="100"></div>' +
@@ -3584,7 +3664,7 @@ async function saveProject(pid) {
     name: p.name, stage: p.stage, status: p.status, phase: p.phase, priority: p.priority, value: p.value,
     businessUnit: p.businessUnit, sponsor: p.sponsor, owner: p.owner, start: p.start, end: p.end,
     progress: p.progress, health: p.health, description: p.description, blockers: p.blockers,
-    deliveryMethodology: p.deliveryMethodology
+    deliveryMethodology: p.deliveryMethodology, tshirtSize: p.tshirtSize
   };
   var newVals = {
     name: document.getElementById('ep-name').value,
@@ -3593,6 +3673,7 @@ async function saveProject(pid) {
     priority: document.getElementById('ep-priority').value || null,
     value_area: document.getElementById('ep-value').value || null,
     delivery_methodology: document.getElementById('ep-methodology').value || null,
+    tshirt_size: document.getElementById('ep-tshirt').value || null,
     start_date: document.getElementById('ep-start').value || null,
     end_date: document.getElementById('ep-end').value || null,
     progress: parseInt(document.getElementById('ep-progress').value) || 0,
@@ -3629,7 +3710,7 @@ async function saveProject(pid) {
     businessUnit: newVals.business_unit, sponsor: newVals.sponsor, owner: newVals.owner_name,
     start: newVals.start_date, end: newVals.end_date, progress: newVals.progress, health: newVals.health,
     description: newVals.description, blockers: newVals.blockers, stage: newVals.stage || beforeSnapshot.stage,
-    deliveryMethodology: newVals.delivery_methodology
+    deliveryMethodology: newVals.delivery_methodology, tshirtSize: newVals.tshirt_size
   }, 'edit');
 
   var catCbs = document.querySelectorAll('.ep-category-cb');
@@ -3646,6 +3727,7 @@ async function saveProject(pid) {
   p.name = newVals.name; p.status = newVals.status; p.phase = newVals.phase; p.priority = newVals.priority;
   p.value = newVals.value_area; p.start = newVals.start_date; p.end = newVals.end_date; p.progress = newVals.progress;
   p.deliveryMethodology = newVals.delivery_methodology;
+  p.tshirtSize = newVals.tshirt_size;
   p.health = newVals.health; p.description = newVals.description; p.blockers = newVals.blockers;
   if (buEl) p.businessUnit = newVals.business_unit;
   if (spEl) p.sponsor = newVals.sponsor;
