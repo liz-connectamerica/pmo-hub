@@ -169,7 +169,6 @@ async function loadResources() {
     var out = {
       id: r.id, name: r.name, role: r.title, type: r.type,
       firstName: r.first_name, lastName: r.last_name,
-      allocated: r.allocated_pct, nonProjectCapacity: r.non_project_capacity,
       projects: projectIds, email: r.email, userId: r.user_id
     };
     if (r.type === 'team') {
@@ -419,6 +418,23 @@ function tagColorClass(name) {
 }
 function tagBadge(name) {
   return '<span class="badge ' + tagColorClass(name) + '">' + name + '</span>';
+}
+
+// A project "occupies time" either via real dates (active/planned) or a
+// rough quarter estimate (backlog) - anything else (hold/complete, or
+// missing both) isn't placeable on a timeline and returns null.
+function projectTimeRange(p) {
+  if ((p.stage === 'active' || p.stage === 'planned') && p.start && p.end) {
+    return { start: new Date(p.start+'T00:00:00'), end: new Date(p.end+'T00:00:00') };
+  }
+  if (p.stage === 'backlog' && p.targetQuarter && p.targetYear) {
+    var eq = p.targetEndQuarter || p.targetQuarter, ey = p.targetEndYear || p.targetYear;
+    return {
+      start: new Date(p.targetYear, (p.targetQuarter-1)*3, 1),
+      end: new Date(ey, (eq-1)*3 + 3, 0) // last day of end quarter's last month
+    };
+  }
+  return null;
 }
 
 // Reusable 12-month-window computation, shared by Roadmap and (eventually)
@@ -713,6 +729,7 @@ var roadmapCategoryFilter = 'All';
 var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#534AB7', 'Build':'#1D9E75', 'Testing':'#EF9F27', 'Deployment':'#D85A30', 'Monitor':'#993556' };
 var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null, tagFilter:[] };
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
+var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null };
 var portfolioTagFilter = [];
 var prioritizeBacklogState = { category:'All', dragPid:null };
 var backlogProjState = { sort:'name', dir:'asc', search:'', category:'All',
@@ -910,8 +927,11 @@ var NAV_DEF = {
       {id:'planned',  icon:'ti-calendar-event', label:'Planned'},
       {id:'backlog',  icon:'ti-stack-2',        label:'Backlog',         badge:'backlog'},
       {id:'hold',     icon:'ti-player-pause',   label:'Hold'},
-      {id:'completed',icon:'ti-circle-check',   label:'Completed'},
-      {id:'resources',icon:'ti-users',          label:'Resources'}
+      {id:'completed',icon:'ti-circle-check',   label:'Completed'}
+    ]},
+    { s:'Resources', items:[
+      {id:'resources', icon:'ti-users', label:'Resources'},
+      {id:'capacity',  icon:'ti-gauge', label:'Capacity'}
     ]},
     { s:'Intake',   items:[{id:'requests',icon:'ti-inbox',label:'Requests',badge:'pending'}] },
     { s:'My Requests', items:[
@@ -940,8 +960,11 @@ var NAV_DEF = {
       {id:'planned',   icon:'ti-calendar-event', label:'Planned'},
       {id:'backlog',   icon:'ti-stack-2',        label:'Backlog',         badge:'backlog'},
       {id:'hold',      icon:'ti-player-pause',   label:'Hold'},
-      {id:'completed', icon:'ti-circle-check',   label:'Completed'},
-      {id:'resources', icon:'ti-users',          label:'Resources'}
+      {id:'completed', icon:'ti-circle-check',   label:'Completed'}
+    ]},
+    { s:'Resources', items:[
+      {id:'resources', icon:'ti-users', label:'Resources'},
+      {id:'capacity',  icon:'ti-gauge', label:'Capacity'}
     ]},
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
@@ -955,8 +978,7 @@ function renderNav() {
   if (hasAssignedWork()) {
     defs = defs.concat([{ s:'My Work', items:[
       {id:'my-projects', icon:'ti-briefcase',   label:'My Projects'},
-      {id:'my-tasks',    icon:'ti-check',       label:'My Tasks', badge:'my-tasks'},
-      {id:'my-capacity', icon:'ti-adjustments', label:'My Capacity'}
+      {id:'my-tasks',    icon:'ti-check',       label:'My Tasks', badge:'my-tasks'}
     ]}]);
   }
   var h = '';
@@ -977,13 +999,13 @@ var PAGE_RENDERERS = {
   backlog:pgBacklog, planned:pgPlanned, projects:pgProjects,
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
-  'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
+  'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks,
   'import-projects':pgImportProjects, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
-  'prioritize-backlog':pgPrioritizeBacklog
+  'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity
 };
 
 function pageAllowedForRole(page, role) {
-  if (page === 'my-projects' || page === 'my-tasks' || page === 'my-capacity') {
+  if (page === 'my-projects' || page === 'my-tasks') {
     return hasAssignedWork();
   }
   var defs = NAV_DEF[role] || [];
@@ -5361,8 +5383,6 @@ function pgResources() {
   var st = resourcesPageState;
   var individuals = D.resources.filter(function(r){ return r.type === 'individual'; });
   var teams = D.resources.filter(function(r){ return r.type === 'team'; });
-  var over = individuals.filter(function(r){ return r.allocated>=100; }).length;
-  var warn = individuals.filter(function(r){ return r.allocated>=80 && r.allocated<100; }).length;
 
   var list = st.tab === 'individual' ? individuals : teams;
   if (st.search) {
@@ -5378,7 +5398,6 @@ function pgResources() {
     var av, bv;
     if (st.sort === 'projects') { av = resourceCombinedProjectIds(a).allIds.length; bv = resourceCombinedProjectIds(b).allIds.length; }
     else if (st.sort === 'tasks') { av = resourceOpenTaskCount(a) || 0; bv = resourceOpenTaskCount(b) || 0; }
-    else if (st.sort === 'capacity') { av = a.allocated||0; bv = b.allocated||0; }
     else if (st.sort === 'members') { av = (a.members||[]).length; bv = (b.members||[]).length; }
     else { av = (a[st.sort]||'').toString().toLowerCase(); bv = (b[st.sort]||'').toString().toLowerCase(); }
     if (av < bv) return st.dir === 'asc' ? -1 : 1;
@@ -5411,8 +5430,6 @@ function pgResources() {
   var tableHtml;
   if (st.tab === 'individual') {
     var rows = list.map(function(r) {
-      var pct = r.allocated || 0;
-      var c = pct>=100?'#E24B4A':pct>=80?'#EF9F27':'#1D9E75';
       var taskCount = resourceOpenTaskCount(r);
       var combinedCount = resourceCombinedProjectIds(r).allIds.length;
       var linkIcon = r.userId ? '<i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75"></i>' : '<i class="ti ti-link-off" title="Not linked yet" style="color:#ccc"></i>';
@@ -5424,9 +5441,8 @@ function pgResources() {
         '<td class="text-muted">' + (r.teamName||'—') + '</td>' +
         '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + combinedCount + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
         '<td class="text-muted">' + (taskCount === null ? '—' : taskCount) + '</td>' +
-        '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:#f0ede8;border-radius:3px;overflow:hidden"><div style="height:100%;width:' + Math.min(pct,100) + '%;background:' + c + '"></div></div><span class="text-muted" style="font-size:11px;min-width:30px">' + pct + '%</span></div></td>' +
         '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button></td>' +
-        '</tr>' + projectExpandRow(r, 9);
+        '</tr>' + projectExpandRow(r, 8);
     }).join('');
     tableHtml = '<table><thead><tr>' +
       '<th class="sortable-th" onclick="setResourceSort(\'firstName\')">First name ' + arrow('firstName') + '</th>' +
@@ -5436,7 +5452,6 @@ function pgResources() {
       '<th class="sortable-th" onclick="setResourceSort(\'teamName\')">Team ' + arrow('teamName') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'projects\')">Projects ' + arrow('projects') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'tasks\')">Open tasks ' + arrow('tasks') + '</th>' +
-      '<th class="sortable-th" onclick="setResourceSort(\'capacity\')">Capacity ' + arrow('capacity') + '</th>' +
       '<th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   } else {
     var trows = list.map(function(r) {
@@ -5458,11 +5473,7 @@ function pgResources() {
   }
 
   document.getElementById('content').innerHTML =
-    '<div class="grid-3 mb-16">' +
-      '<div class="metric"><div class="metric-label">Total resources</div><div class="metric-value">' + D.resources.length + '</div><div class="metric-sub">' + teams.length + ' teams, ' + individuals.length + ' individuals</div></div>' +
-      '<div class="metric"><div class="metric-label">At capacity</div><div class="metric-value" style="color:#A32D2D">' + over + '</div></div>' +
-      '<div class="metric"><div class="metric-label">Near capacity</div><div class="metric-value" style="color:#854F0B">' + warn + '</div></div>' +
-    '</div>' +
+    '<div class="metric mb-16" style="max-width:240px"><div class="metric-label">Total resources</div><div class="metric-value">' + D.resources.length + '</div><div class="metric-sub">' + teams.length + ' teams, ' + individuals.length + ' individuals</div></div>' +
     '<div class="tab-bar" style="margin-bottom:16px">' +
       '<div class="tab' + (st.tab==='individual'?' active':'') + '" onclick="setResourceTab(\'individual\')">Individuals <span class="badge badge-gray">' + individuals.length + '</span></div>' +
       '<div class="tab' + (st.tab==='team'?' active':'') + '" onclick="setResourceTab(\'team\')">Teams <span class="badge badge-gray">' + teams.length + '</span></div>' +
@@ -5481,6 +5492,166 @@ function pgResources() {
     resourcesPageState.search = val;
     pgResources();
     var el = document.getElementById('res-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+}
+
+// ── Capacity ─────────────────────────────────────────────────────────────────
+
+// A resource's "placed" projects - the subset of resourceCombinedProjectIds()
+// that actually has a time range (via projectTimeRange), i.e. what can show
+// up on the timeline at all. Hold/complete/no-estimate projects are real
+// assignments but aren't placeable, so they're excluded here rather than
+// counted as if they had a time slot.
+function resourcePlacedProjects(r) {
+  return resourceCombinedProjectIds(r).allIds
+    .map(function(id){ return D.projects.find(function(p){ return p.id === id; }); })
+    .filter(Boolean)
+    .map(function(p){ return { project: p, range: projectTimeRange(p) }; })
+    .filter(function(x){ return x.range; });
+}
+
+function capacityMonthBuckets(windowStart, windowMonths) {
+  var months = [];
+  for (var i = 0; i < windowMonths; i++) {
+    var d = new Date(windowStart.getFullYear(), windowStart.getMonth() + i, 1);
+    var next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    months.push({ start: d, end: next, label: d.toLocaleString('en-US', { month: 'short' }) + (d.getMonth() === 0 ? " '" + String(d.getFullYear()).slice(2) : '') });
+  }
+  return months;
+}
+
+function capacityHeatCellHtml(count, monthLabel) {
+  var bg = count === 0 ? '#f0ede8' : count === 1 ? '#BFE3D3' : count === 2 ? '#F5CE8B' : '#F0A7A3';
+  var fg = count === 0 ? '#999' : '#3a3a3a';
+  return '<div class="cap-heat-cell" style="background:' + bg + ';color:' + fg + '" title="' + monthLabel + ': ' + count + ' project' + (count===1?'':'s') + '">' + (count || '') + '</div>';
+}
+
+// Fractional month-index position of a date within the window, for placing a
+// project bar on the expanded detail Gantt (mirrors pgFuturePlanning's
+// quarterPosition, but written fresh since that one's a private closure).
+function capacityMonthPos(d, windowStart) {
+  var daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return (d.getFullYear() - windowStart.getFullYear()) * 12 + (d.getMonth() - windowStart.getMonth()) + (d.getDate() - 1) / daysInMonth;
+}
+
+function capacityDetailBarHtml(entry, windowStart, totalMonths) {
+  var p = entry.project, range = entry.range;
+  var startPos = capacityMonthPos(range.start, windowStart);
+  var endPos = capacityMonthPos(range.end, windowStart) + 0.05;
+  var clampedStart = Math.max(0, startPos), clampedEnd = Math.min(totalMonths, endPos);
+  var viewBtn = '<button class="btn btn-sm" style="padding:1px 5px;margin-right:4px" title="View project" onclick="event.stopPropagation();goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button>';
+  if (clampedEnd <= 0 || clampedStart >= totalMonths) {
+    return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + viewBtn + p.name + '</div><div class="tl-wrap"><span class="text-muted" style="font-size:11px;padding-left:8px">Outside this window</span></div></div>';
+  }
+  var isEstimate = p.stage === 'backlog';
+  var widthPct = Math.max(0.5, clampedEnd - clampedStart) / totalMonths * 100;
+  var leftPct = clampedStart / totalMonths * 100;
+  var barStyle = isEstimate
+    ? 'background:repeating-linear-gradient(45deg,#EFCB8E,#EFCB8E 6px,#FBF0DA 6px,#FBF0DA 12px);border:1px dashed #BA7517;color:#63410A'
+    : 'background:' + (PHASE_COLORS[p.phase] || '#534AB7');
+  return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + viewBtn + p.name + '</div>' +
+    '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '">' + (isEstimate ? 'Estimate' : (p.phase||'')) + '</div></div></div>';
+}
+
+function capacityResourceRowHtml(r, months, windowStart, indent) {
+  var placed = resourcePlacedProjects(r);
+  var combinedTotal = resourceCombinedProjectIds(r).allIds.length;
+  var unplacedCount = combinedTotal - placed.length;
+  var cells = months.map(function(m) {
+    var count = placed.filter(function(x){ return x.range.end >= m.start && x.range.start < m.end; }).length;
+    return capacityHeatCellHtml(count, m.label);
+  }).join('');
+  var expanded = capacityPageState.expandedId === r.id;
+  var detail = '';
+  if (expanded) {
+    var bars = placed.map(function(x){ return capacityDetailBarHtml(x, windowStart, months.length); }).join('');
+    detail = '<div style="padding:10px 0 4px 0">' +
+      (bars || '<span class="text-muted" style="font-size:12px">No placed projects in this window</span>') +
+      (unplacedCount > 0 ? '<div class="text-muted" style="font-size:11px;margin-top:6px">+' + unplacedCount + ' more assigned but not shown (on hold, completed, or missing a schedule/estimate)</div>' : '') +
+      '</div>';
+  }
+  // Indent lives inside the fixed-width label (padding, not margin) so the
+  // heat-track columns stay aligned with the month header regardless of
+  // nesting depth - shifting the whole row would offset it from the header.
+  return '<div class="tl-row" style="cursor:pointer" onclick="toggleCapacityExpand(\'' + r.id + '\')">' +
+    '<div class="tl-label" style="padding-left:' + (indent||0) + 'px" title="' + r.name + '"><i class="ti ' + (expanded ? 'ti-chevron-down' : 'ti-chevron-right') + '"></i> ' + r.name + '</div>' +
+    '<div class="cap-heat-track">' + cells + '</div>' +
+  '</div>' + detail;
+}
+
+function pgCapacity() {
+  tb('Capacity');
+  var st = capacityPageState;
+  var window_ = computeDateWindow(st.dateMode, st.dateYear);
+  var months = capacityMonthBuckets(window_.windowStart, window_.windowMonths);
+
+  function matchesSearch(r, extraFields) {
+    if (!st.search) return true;
+    var q = st.search.toLowerCase();
+    var fields = [r.name, r.role].concat(extraFields||[]);
+    return fields.some(function(f){ return (f||'').toLowerCase().indexOf(q) >= 0; });
+  }
+
+  function sortedByLoad(list, tiebreakKey) {
+    return list.map(function(r){ return { r:r, count: resourcePlacedProjects(r).length }; })
+      .sort(function(a,b){
+        if (b.count !== a.count) return b.count - a.count;
+        return (a.r[tiebreakKey]||'').localeCompare(b.r[tiebreakKey]||'');
+      })
+      .map(function(x){ return x.r; });
+  }
+
+  var monthHeaderHtml = '<div style="display:flex;gap:12px;margin-bottom:10px"><div style="width:190px;min-width:190px"></div><div class="cap-heat-track">' +
+    months.map(function(m){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + m.label + '</div>'; }).join('') +
+    '</div></div>';
+
+  var legendHtml = '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:#666">' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#f0ede8;display:inline-block"></span>Free</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#BFE3D3;display:inline-block"></span>1 project</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#F5CE8B;display:inline-block"></span>2 projects</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#F0A7A3;display:inline-block"></span>3+ projects</div>' +
+  '</div>';
+
+  var bodyHtml;
+  if (st.tab === 'individual') {
+    var individuals = sortedByLoad(D.resources.filter(function(r){ return r.type === 'individual' && matchesSearch(r, [r.teamName]); }), 'lastName');
+    bodyHtml = individuals.length
+      ? individuals.map(function(r){ return capacityResourceRowHtml(r, months, window_.windowStart, 0); }).join('')
+      : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No individuals match your search</p></div>';
+  } else {
+    var teams = sortedByLoad(D.resources.filter(function(r){ return r.type === 'team' && matchesSearch(r, [r.managerName]); }), 'name');
+    bodyHtml = teams.length
+      ? teams.map(function(team) {
+          var memberResources = (team.memberIds||[]).map(function(id){ return D.resources.find(function(r){ return r.id === id; }); }).filter(Boolean);
+          var members = sortedByLoad(memberResources, 'lastName');
+          return '<div class="cap-team-group">' +
+            capacityResourceRowHtml(team, months, window_.windowStart, 0) +
+            members.map(function(m){ return capacityResourceRowHtml(m, months, window_.windowStart, 24); }).join('') +
+          '</div>';
+        }).join('')
+      : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No teams match your search</p></div>';
+  }
+
+  document.getElementById('content').innerHTML =
+    dateRangeControlHtml(st.dateMode, st.dateYear, 'setCapacityDateMode', 'setCapacityDateYear') +
+    '<div class="tab-bar" style="margin-bottom:16px">' +
+      '<div class="tab' + (st.tab==='individual'?' active':'') + '" onclick="setCapacityTab(\'individual\')">Individuals</div>' +
+      '<div class="tab' + (st.tab==='team'?' active':'') + '" onclick="setCapacityTab(\'team\')">Teams</div>' +
+    '</div>' +
+    '<div class="card">' +
+    '<div class="task-filter-bar" style="margin-bottom:16px"><input type="text" id="cap-search" placeholder="Search…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onCapacitySearch(this.value)"></div>' +
+    legendHtml + monthHeaderHtml + bodyHtml +
+    '</div>';
+
+  window.setCapacityTab = function(t) { st.tab = t; st.expandedId = null; pgCapacity(); };
+  window.setCapacityDateMode = function(m) { st.dateMode = m; pgCapacity(); };
+  window.setCapacityDateYear = function(y) { st.dateYear = parseInt(y); pgCapacity(); };
+  window.toggleCapacityExpand = function(rid) { st.expandedId = st.expandedId === rid ? null : rid; pgCapacity(); };
+  window.onCapacitySearch = function(val) {
+    st.search = val;
+    pgCapacity();
+    var el = document.getElementById('cap-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
 }
@@ -5507,10 +5678,7 @@ function openAddResource() {
         '<div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="nr-role" placeholder="e.g. Backend Dev"></div>' +
         '<div class="form-group"><div class="form-label">Team</div><select id="nr-team">' + teamOpts + '</select></div>' +
       '</div>' +
-      '<div class="grid-2">' +
-        '<div class="form-group"><div class="form-label">Email</div><input type="email" id="nr-email" placeholder="name@yourcompany.com"><p class="text-muted" style="font-size:12px;margin-top:4px">Auto-links if it matches an existing account.</p></div>' +
-        '<div class="form-group"><div class="form-label">Capacity (%)</div><input type="number" id="nr-alloc" value="0" min="0" max="100"></div>' +
-      '</div>' +
+      '<div class="form-group"><div class="form-label">Email</div><input type="email" id="nr-email" placeholder="name@yourcompany.com"><p class="text-muted" style="font-size:12px;margin-top:4px">Auto-links if it matches an existing account.</p></div>' +
     '</div>' +
     '<div id="nr-team-fields" style="display:none">' +
       '<div class="form-group"><div class="form-label">Team name *</div><input type="text" id="nr-name" placeholder="e.g. Platform Team"></div>' +
@@ -5533,7 +5701,7 @@ function openAddResource() {
     if (isTeam) {
       var tname = document.getElementById('nr-name').value.trim();
       if (!tname) { showToast('Team name required'); btn.disabled = false; return; }
-      record = { name: tname, type: 'team', title: null, manager_resource_id: document.getElementById('nr-manager').value || null, allocated_pct: 0, non_project_capacity: 0 };
+      record = { name: tname, type: 'team', title: null, manager_resource_id: document.getElementById('nr-manager').value || null };
     } else {
       var first = document.getElementById('nr-first').value.trim();
       var last = document.getElementById('nr-last').value.trim();
@@ -5542,7 +5710,6 @@ function openAddResource() {
       record = {
         name: first + ' ' + last, first_name: first, last_name: last, type: 'individual',
         title: document.getElementById('nr-role').value || null,
-        allocated_pct: parseInt(document.getElementById('nr-alloc').value) || 0, non_project_capacity: 0,
         email: document.getElementById('nr-email').value.trim() || null
       };
     }
@@ -5553,7 +5720,7 @@ function openAddResource() {
     var newRes = {
       id: result.data.id, name: record.name, role: record.title, type: record.type,
       firstName: record.first_name || null, lastName: record.last_name || null,
-      allocated: record.allocated_pct, nonProjectCapacity: 0, projects: [],
+      projects: [],
       email: record.email || null, userId: result.data.user_id
     };
     if (isTeam) {
@@ -5597,8 +5764,7 @@ function editResource(rid) {
         '<div class="form-group"><div class="form-label">Last name</div><input type="text" id="er-last" value="' + (res.lastName||'') + '"></div></div>' +
         '<div class="grid-2"><div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="er-role" value="' + (res.role||'') + '"></div>' +
         '<div class="form-group"><div class="form-label">Team</div><select id="er-team">' + teamOpts + '</select></div></div>' +
-        '<div class="grid-2"><div class="form-group"><div class="form-label">Email</div><input type="email" id="er-email" value="' + (res.email||'') + '">' + (res.userId ? '<p class="text-muted" style="font-size:12px;margin-top:4px"><i class="ti ti-link" style="color:#1D9E75"></i> Linked to a real account</p>' : '') + '</div>' +
-        '<div class="form-group"><div class="form-label">Project allocation (%)</div><input type="number" id="er-alloc" value="' + res.allocated + '" min="0" max="100"></div></div>'
+        '<div class="form-group"><div class="form-label">Email</div><input type="email" id="er-email" value="' + (res.email||'') + '">' + (res.userId ? '<p class="text-muted" style="font-size:12px;margin-top:4px"><i class="ti ti-link" style="color:#1D9E75"></i> Linked to a real account</p>' : '') + '</div>'
       : '<div class="form-group"><div class="form-label">Team name</div><input type="text" id="er-name" value="' + res.name + '"></div>' +
         '<div class="form-group"><div class="form-label">Manager</div><select id="er-manager">' + managerOpts + '</select></div>' +
         '<div class="form-group"><div class="form-label">Team members</div>' +
@@ -5649,14 +5815,13 @@ async function saveResource(rid) {
     var first = document.getElementById('er-first').value.trim();
     var last = document.getElementById('er-last').value.trim();
     var role = document.getElementById('er-role').value;
-    var alloc = parseInt(document.getElementById('er-alloc').value) || 0;
     var email = document.getElementById('er-email').value.trim() || null;
     var newTeamId = document.getElementById('er-team').value || null;
     var name = (first + ' ' + last).trim() || res.name;
 
-    var result = await sb.from('resources').update({ name: name, first_name: first, last_name: last, title: role, allocated_pct: alloc, email: email }).eq('id', rid).select().single();
+    var result = await sb.from('resources').update({ name: name, first_name: first, last_name: last, title: role, email: email }).eq('id', rid).select().single();
     if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
-    res.name = name; res.firstName = first; res.lastName = last; res.role = role; res.allocated = alloc; res.email = email; res.userId = result.data.user_id;
+    res.name = name; res.firstName = first; res.lastName = last; res.role = role; res.email = email; res.userId = result.data.user_id;
 
     var oldTeamId = res.teamId;
     if (oldTeamId !== newTeamId) {
@@ -6081,52 +6246,6 @@ function pgMyTasks() {
       function() { myTasksState[col] = []; },
       pgMyTasks
     );
-  };
-}
-
-function pgMyCapacity() {
-  tb('My Capacity');
-  var me = currentUser();
-  var res = D.resources.find(function(r){ return r.name===me; });
-  var nonPct = res ? (res.nonProjectCapacity||0) : 0;
-  var projPct = res ? res.allocated : 0;
-  document.getElementById('content').innerHTML =
-    '<div class="card" style="max-width:500px">' +
-    '<div class="section-title">My capacity settings</div>' +
-    '<div style="margin-bottom:20px">' +
-      '<div class="form-label">Project allocation</div>' +
-      '<div style="font-size:28px;font-weight:600;color:#534AB7">' + projPct + '%</div>' +
-      '<div class="text-muted">Managed by your PMO admin based on assigned projects</div>' +
-    '</div>' +
-    '<div class="divider"></div>' +
-    '<div class="form-group"><div class="form-label">BAU / Non-project work (%)</div>' +
-    '<div class="form-sub">Set the percentage of your capacity that should be reserved for day-to-day non-project work (e.g. support, meetings, BAU tasks).</div>' +
-    '<input type="number" id="cap-bau" value="' + nonPct + '" min="0" max="100" style="max-width:120px"></div>' +
-    '<div style="background:#f5f5f3;border-radius:8px;padding:14px;margin-bottom:16px">' +
-      '<div style="font-size:13px;font-weight:600;margin-bottom:8px">Capacity summary</div>' +
-      '<div style="display:flex;gap:0;height:20px;border-radius:5px;overflow:hidden;margin-bottom:8px">' +
-        '<div id="cap-bar-proj" style="background:#534AB7;width:' + projPct + '%;transition:width .3s"></div>' +
-        '<div id="cap-bar-bau"  style="background:#b0abe0;width:' + nonPct + '%;transition:width .3s"></div>' +
-        '<div id="cap-bar-free" style="background:#f0ede8;flex:1"></div>' +
-      '</div>' +
-      '<div style="display:flex;gap:16px;font-size:12px">' +
-        '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#534AB7;margin-right:4px"></span>Projects: ' + projPct + '%</span>' +
-        '<span id="cap-bau-label"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#b0abe0;margin-right:4px"></span>BAU: ' + nonPct + '%</span>' +
-        '<span id="cap-free-label"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f0ede8;margin-right:4px"></span>Available: ' + Math.max(0,100-projPct-nonPct) + '%</span>' +
-      '</div>' +
-    '</div>' +
-    '<button class="btn btn-primary" id="cap-save"><i class="ti ti-check"></i> Save</button></div>';
-
-  document.getElementById('cap-bau').addEventListener('input', function() {
-    var v = Math.min(100-projPct, Math.max(0, parseInt(this.value)||0));
-    document.getElementById('cap-bar-bau').style.width = v + '%';
-    document.getElementById('cap-bau-label').innerHTML = '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#b0abe0;margin-right:4px"></span>BAU: ' + v + '%';
-    document.getElementById('cap-free-label').innerHTML = '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f0ede8;margin-right:4px"></span>Available: ' + Math.max(0,100-projPct-v) + '%';
-  });
-  document.getElementById('cap-save').onclick = function() {
-    var v = Math.min(100-projPct, Math.max(0, parseInt(document.getElementById('cap-bau').value)||0));
-    if (res) { res.nonProjectCapacity = v; showToast('Capacity saved'); }
-    else showToast('Resource profile not found','error');
   };
 }
 

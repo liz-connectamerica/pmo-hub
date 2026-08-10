@@ -229,3 +229,9 @@ input[type=file] { width: 100%; padding: 8px 10px; border: 1px solid #ddd; borde
 .pb-unsized-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid #f0efec; }
 .pb-unsized-row:last-child { border-bottom: none; }
 .pb-unsized-row .pb-name { flex: 1; }
+
+/* Capacity timeline */
+.cap-heat-track { flex: 1; display: flex; gap: 2px; }
+.cap-heat-cell { flex: 1; height: 28px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+.cap-team-group { border: 1px solid #e8e8e5; border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+.cap-team-group:last-child { margin-bottom: 0; }
