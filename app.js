@@ -962,10 +962,6 @@ var NAV_DEF = {
       {id:'hold',      icon:'ti-player-pause',   label:'Hold'},
       {id:'completed', icon:'ti-circle-check',   label:'Completed'}
     ]},
-    { s:'Resources', items:[
-      {id:'resources', icon:'ti-users', label:'Resources'},
-      {id:'capacity',  icon:'ti-gauge', label:'Capacity'}
-    ]},
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
       {id:'my-requests',  icon:'ti-clock', label:'My Requests'}
@@ -5380,6 +5376,11 @@ function resourceCombinedProjectIds(r) {
 
 function pgResources() {
   tb('Resources', D.role==='admin' ? '<button class="btn btn-primary" onclick="openAddResource()"><i class="ti ti-plus"></i> Add resource</button>' : '');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access Resources.</p></div>';
+    return;
+  }
   var st = resourcesPageState;
   var individuals = D.resources.filter(function(r){ return r.type === 'individual'; });
   var teams = D.resources.filter(function(r){ return r.type === 'team'; });
@@ -5581,6 +5582,11 @@ function capacityResourceRowHtml(r, months, windowStart, indent) {
 
 function pgCapacity() {
   tb('Capacity');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access Capacity.</p></div>';
+    return;
+  }
   var st = capacityPageState;
   var window_ = computeDateWindow(st.dateMode, st.dateYear);
   var months = capacityMonthBuckets(window_.windowStart, window_.windowMonths);
