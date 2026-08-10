@@ -919,7 +919,8 @@ var NAV_DEF = {
       {id:'my-requests',  icon:'ti-clock', label:'My Requests'}
     ]},
     { s:'Data Tools', items:[
-      {id:'import-projects', icon:'ti-file-upload', label:'Import Projects'}
+      {id:'import-projects', icon:'ti-file-upload', label:'Import Projects'},
+      {id:'export-projects', icon:'ti-file-export', label:'Export Projects'}
     ]},
     { s:'Administration', items:[
       {id:'admin-users', icon:'ti-users-group', label:'Manage Users'},
@@ -977,7 +978,7 @@ var PAGE_RENDERERS = {
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
-  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
+  'import-projects':pgImportProjects, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
   'prioritize-backlog':pgPrioritizeBacklog
 };
 
@@ -5248,6 +5249,77 @@ function pgImportProjects() {
   document.getElementById('import-file').addEventListener('change', function(e) {
     if (e.target.files && e.target.files[0]) handleImportFile(e.target.files[0]);
   });
+}
+
+function pgExportProjects() {
+  tb('Export Projects');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can export projects.</p></div>';
+    return;
+  }
+  document.getElementById('content').innerHTML =
+    '<div class="card">' +
+    '<div class="section-title">Export all projects</div>' +
+    '<p class="text-muted" style="font-size:13px;margin-bottom:16px">Downloads every project-level field (name, stage, owner, dates, financials, etc.) as one row per project. Tasks, milestones, RAID items, documents, and team assignments are not included — those are per-project sub-records, not project-level fields.</p>' +
+    '<button class="btn btn-primary" onclick="exportProjectsToExcel()"><i class="ti ti-file-export"></i> Export ' + D.projects.length + ' project' + (D.projects.length===1?'':'s') + ' to Excel</button>' +
+    '</div>';
+}
+
+var EXPORT_STAGE_LABELS = { backlog:'Backlog', planned:'Planned', active:'Active', complete:'Completed', hold:'Hold' };
+var EXPORT_HEALTH_LABELS = { green:'Green', amber:'Amber', red:'Red' };
+
+function exportProjectsToExcel() {
+  if (!D.projects.length) { showToast('No projects to export'); return; }
+  var rows = D.projects.map(function(p) {
+    return {
+      'Project ID': p.id,
+      'Project Number': p.projectNumber || '',
+      'Project Name': p.name || '',
+      'Stage': EXPORT_STAGE_LABELS[p.stage] || p.stage || '',
+      'Status': p.status || '',
+      'Phase': p.phase || '',
+      'Priority': p.priority || '',
+      'Health': EXPORT_HEALTH_LABELS[p.health] || p.health || '',
+      'Progress %': p.progress != null ? p.progress : '',
+      'Category': (p.categories || []).join(', '),
+      'Tags': (p.tags || []).join(', '),
+      'Business Unit': p.businessUnit || '',
+      'Value Area': p.value || '',
+      'Owner': p.owner || '',
+      'Sponsor': p.sponsor || '',
+      'Sponsor Email': p.sponsorEmail || '',
+      'Delivery Methodology': p.deliveryMethodology || '',
+      'T-shirt Size': p.tshirtSize || '',
+      'Start Date': p.start || '',
+      'Target End Date': p.end || '',
+      'Planned Start': p.plannedStart || '',
+      'Target Quarter': p.targetQuarter || '',
+      'Target Year': p.targetYear || '',
+      'Target End Quarter': p.targetEndQuarter || '',
+      'Target End Year': p.targetEndYear || '',
+      'Completed At': p.completedAt || '',
+      'Hold Reason': p.holdReason || '',
+      'Pre-Hold Stage': EXPORT_STAGE_LABELS[p.preHoldStage] || p.preHoldStage || '',
+      'Held At': p.heldAt || '',
+      'Description': p.description || '',
+      'Blockers': p.blockers || '',
+      'Opportunity Type': p.estimatedType || '',
+      'Estimated Amount': p.estimatedAmount != null ? p.estimatedAmount : '',
+      'Estimated Frequency': p.estimatedFrequency || '',
+      'Opportunity Type Confidence': p.valueConfidence || '',
+      'Cost Estimate': p.costEstimate != null ? p.costEstimate : '',
+      'Cost Estimate Confidence': p.costConfidence || '',
+      'Created At': p.createdAt || ''
+    };
+  });
+
+  var ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = Object.keys(rows[0] || {}).map(function(){ return { wch: 18 }; });
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Projects');
+  var stamp = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, 'pmo-hub-projects-export-' + stamp + '.xlsx');
 }
 
 function resourceOpenTaskCount(r) {
