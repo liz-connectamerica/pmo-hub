@@ -209,6 +209,13 @@ async function loadAllProjects() {
     if (results[i].error) { console.error('loadAllProjects query failed:', results[i].error); return []; }
   }
 
+  // Queried separately (not in the Promise.all above) so a missing/not-yet-
+  // migrated project_priority_ranks table degrades to "no ranks yet" instead
+  // of taking down the entire project load.
+  var priorityRankResult = await sb.from('project_priority_ranks').select('*');
+  if (priorityRankResult.error) console.error('Could not load priority ranks:', priorityRankResult.error);
+  var priorityRankRows = priorityRankResult.data || [];
+
   var projectsRows      = results[0].data || [];
   var profilesRows      = results[1].data || [];
   var teamRows          = results[2].data || [];
@@ -224,6 +231,7 @@ async function loadAllProjects() {
   var resourceMiniRows  = results[12].data || [];
   var categoryRows      = results[13].data || [];
   var dependencyRows    = results[14].data || [];
+  var priorityRankByProj = groupBy(priorityRankRows, 'project_id');
 
   var activeProfilesRows = profilesRows.filter(function(p){ return p.is_active !== false; });
   D.people = activeProfilesRows.map(function(p){ return p.display_name; });
@@ -309,6 +317,9 @@ async function loadAllProjects() {
     (foldersByProj[pr.id] || []).forEach(function(f){ docFolderIds[f.name] = f.id; });
     if (docFolders.indexOf('General') < 0) docFolders.unshift('General');
 
+    var priorityRanks = {};
+    (priorityRankByProj[pr.id] || []).forEach(function(pp){ priorityRanks[pp.scope] = pp.rank; });
+
     return {
       id: pr.id, name: pr.name,
       owner: pr.owner_name || (pr.owner_id ? resourceNameById[pr.owner_id] : ''), ownerId: pr.owner_id,
@@ -326,6 +337,7 @@ async function loadAllProjects() {
       deliveryMethodology: pr.delivery_methodology, projectNumber: pr.project_number, createdAt: pr.created_at, tshirtSize: pr.tshirt_size,
       estimatedAmount: pr.estimated_amount, estimatedFrequency: pr.estimated_frequency, estimatedType: pr.estimated_type,
       valueConfidence: pr.value_confidence, costEstimate: pr.cost_estimate, costConfidence: pr.cost_confidence,
+      priorityRanks: priorityRanks,
       milestones: milestones, tasks: tasks, raid: raid,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
     };
@@ -702,6 +714,7 @@ var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#
 var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null, tagFilter:[] };
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
 var portfolioTagFilter = [];
+var prioritizeBacklogState = { category:'All', dragPid:null };
 var backlogProjState = { sort:'name', dir:'asc', search:'', category:'All',
   filters: { tags:[], value:[], priority:[], owner:[] }, openFilter:null };
 var plannedProjState = { sort:'name', dir:'asc', search:'', category:'All',
@@ -891,7 +904,7 @@ var projectDetailReferrer = null;
 
 var NAV_DEF = {
   admin: [
-    { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'}] },
+    { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'}] },
     { s:'Projects', items:[
       {id:'projects', icon:'ti-briefcase',      label:'Active'},
       {id:'planned',  icon:'ti-calendar-event', label:'Planned'},
@@ -964,7 +977,8 @@ var PAGE_RENDERERS = {
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks, 'my-capacity':pgMyCapacity,
-  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects
+  'import-projects':pgImportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
+  'prioritize-backlog':pgPrioritizeBacklog
 };
 
 function pageAllowedForRole(page, role) {
@@ -2110,6 +2124,156 @@ function pgBacklog() {
       pgBacklog
     );
   };
+}
+
+// ── Prioritize Backlog ────────────────────────────────────────────────────────
+
+function pbIsSized(p) { return p.estimatedAmount != null && !!p.tshirtSize; }
+
+// Higher score = more value for less effort. Only meaningful for sized
+// projects; used purely to seed initial order before a rank has been set.
+function pbScore(p) {
+  var idx = TSHIRT_SIZES.indexOf(p.tshirtSize);
+  var effort = idx >= 0 ? idx + 1 : 3;
+  return (p.estimatedAmount || 0) / effort;
+}
+
+// XS/S = Low effort, M/L/XL = High effort.
+function pbEffortBucket(p) {
+  var idx = TSHIRT_SIZES.indexOf(p.tshirtSize);
+  return idx <= 1 ? 'Low' : 'High';
+}
+
+function pgPrioritizeBacklog() {
+  tb('Prioritize Backlog');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access Prioritize Backlog.</p></div>';
+    return;
+  }
+  var st = prioritizeBacklogState;
+  var allActive = D.projects.filter(function(p){ return p.stage !== 'complete'; });
+  var cat = buildCategoryTabs(allActive, st.category, 'setPrioritizeCategory');
+  st.category = cat.resolvedFilter;
+  var scope = st.category;
+
+  var filtered = allActive.filter(function(p){ return projectMatchesCategoryTab(p, scope); });
+  var sized = filtered.filter(pbIsSized);
+  var unsized = filtered.filter(function(p){ return !pbIsSized(p); });
+
+  var ranked = sized.filter(function(p){ return p.priorityRanks && p.priorityRanks[scope] != null; })
+    .sort(function(a,b){ return a.priorityRanks[scope] - b.priorityRanks[scope]; });
+  var unranked = sized.filter(function(p){ return !(p.priorityRanks && p.priorityRanks[scope] != null); })
+    .sort(function(a,b){ return pbScore(b) - pbScore(a); });
+  var orderedSized = ranked.concat(unranked);
+
+  // Matrix quadrant thresholds: split sized projects on the median $ amount.
+  var amounts = sized.map(function(p){ return p.estimatedAmount; }).sort(function(a,b){ return a-b; });
+  var mid = amounts.length ? amounts[Math.floor((amounts.length-1)/2)] : 0;
+  function valueBucket(p) { return p.estimatedAmount >= mid ? 'High' : 'Low'; }
+
+  var quadrants = {
+    'High-Low':  { label:'Quick Wins',      cls:'pb-quad-tl', items:[] },
+    'High-High': { label:'Major Projects',  cls:'pb-quad-tr', items:[] },
+    'Low-Low':   { label:'Fill-ins',        cls:'pb-quad-bl', items:[] },
+    'Low-High':  { label:'Reconsider',      cls:'pb-quad-br', items:[] }
+  };
+  orderedSized.forEach(function(p){ quadrants[valueBucket(p) + '-' + pbEffortBucket(p)].items.push(p); });
+
+  function chip(p) {
+    return '<div class="pb-chip" onclick="goToProject(\'' + p.id + '\')" title="' + p.name.replace(/"/g,'&quot;') + ' — ' + fmtCost(p.estimatedAmount) + ', ' + p.tshirtSize + '">' + p.name + '</div>';
+  }
+
+  var matrixHtml = !sized.length
+    ? '<div class="empty-state" style="padding:30px"><p>No sized projects in this view yet.</p></div>'
+    : '<div class="pb-matrix-wrap">' +
+        '<div class="pb-axis-y">Value $</div>' +
+        '<div class="pb-matrix">' +
+          Object.keys(quadrants).map(function(k){
+            var q = quadrants[k];
+            return '<div class="pb-quad ' + q.cls + '"><div class="pb-quad-title">' + q.label + '</div><div class="pb-quad-chips">' + (q.items.map(chip).join('') || '<span class="text-muted" style="font-size:12px">—</span>') + '</div></div>';
+          }).join('') +
+        '</div>' +
+        '<div class="pb-axis-x">Effort (T-shirt size) →</div>' +
+      '</div>';
+
+  var listRows = orderedSized.map(function(p, idx) {
+    return '<div class="pb-row" draggable="true" data-pid="' + p.id + '" data-idx="' + idx + '">' +
+      '<span class="pb-drag-handle"><i class="ti ti-grip-vertical"></i></span>' +
+      '<span class="pb-rank">' + (idx+1) + '</span>' +
+      '<span class="pb-name" onclick="goToProject(\'' + p.id + '\')">' + p.name + '</span>' +
+      '<span class="pb-cats">' + (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '') + '</span>' +
+      '<span class="pb-value">' + fmtCost(p.estimatedAmount) + '</span>' +
+      '<span class="pb-size">' + '<span class="badge badge-gray">' + p.tshirtSize + '</span>' + '</span>' +
+    '</div>';
+  }).join('');
+
+  var unsizedRows = unsized.map(function(p) {
+    return '<div class="pb-unsized-row">' +
+      '<span class="pb-name" onclick="goToProject(\'' + p.id + '\')">' + p.name + '</span>' +
+      '<span class="text-muted" style="font-size:12px">' + (p.estimatedAmount == null ? 'Needs value estimate' : '') + (p.estimatedAmount == null && !p.tshirtSize ? ' · ' : '') + (!p.tshirtSize ? 'Needs T-shirt size' : '') + '</span>' +
+      '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Size it</button>' +
+    '</div>';
+  }).join('');
+
+  document.getElementById('content').innerHTML =
+    '<div class="info-banner info-amber"><i class="ti ti-arrows-sort" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
+    '<span>Drag rows in the list to set priority order for <strong>' + scope + '</strong>. Ranking one category tab does not affect another — a project in multiple categories can rank differently in each.</span></div>' +
+    cat.html +
+    '<div class="grid-2" style="align-items:start;gap:20px">' +
+      '<div class="card">' +
+        '<div class="section-title" style="margin-bottom:12px">Value / Effort Matrix</div>' +
+        matrixHtml +
+      '</div>' +
+      '<div class="card">' +
+        '<div class="section-title" style="margin-bottom:12px">Priority Order — ' + scope + '</div>' +
+        (listRows || '<div class="text-muted" style="padding:20px;text-align:center">No sized projects in this view</div>') +
+      '</div>' +
+    '</div>' +
+    (unsized.length
+      ? '<div class="card" style="margin-top:20px"><div class="section-title" style="margin-bottom:12px">Needs sizing (' + unsized.length + ')</div>' + unsizedRows + '</div>'
+      : '');
+
+  window.setPrioritizeCategory = function(c) { st.category = c; pgPrioritizeBacklog(); };
+
+  var rowEls = document.querySelectorAll('.pb-row');
+  rowEls.forEach(function(el) {
+    el.addEventListener('dragstart', function(ev) {
+      st.dragPid = el.getAttribute('data-pid');
+      el.classList.add('pb-dragging');
+      ev.dataTransfer.effectAllowed = 'move';
+    });
+    el.addEventListener('dragend', function() { el.classList.remove('pb-dragging'); });
+    el.addEventListener('dragover', function(ev) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; });
+    el.addEventListener('drop', function(ev) {
+      ev.preventDefault();
+      var fromPid = st.dragPid;
+      var toPid = el.getAttribute('data-pid');
+      st.dragPid = null;
+      if (!fromPid || fromPid === toPid) return;
+      var ids = orderedSized.map(function(p){ return p.id; });
+      var fromIdx = ids.indexOf(fromPid);
+      var toIdx = ids.indexOf(toPid);
+      if (fromIdx < 0 || toIdx < 0) return;
+      ids.splice(fromIdx, 1);
+      ids.splice(toIdx, 0, fromPid);
+      pbPersistOrder(scope, ids);
+    });
+  });
+}
+
+async function pbPersistOrder(scope, orderedIds) {
+  var rows = orderedIds.map(function(pid, idx){ return { project_id: pid, scope: scope, rank: idx + 1 }; });
+  var result = await sb.from('project_priority_ranks').upsert(rows, { onConflict: 'project_id,scope' });
+  if (result.error) {
+    showToast('Could not save order: ' + result.error.message, 'error');
+    return;
+  }
+  rows.forEach(function(r) {
+    var p = D.projects.find(function(x){ return x.id === r.project_id; });
+    if (p) { p.priorityRanks = p.priorityRanks || {}; p.priorityRanks[r.scope] = r.rank; }
+  });
+  if (currentPage === 'prioritize-backlog') pgPrioritizeBacklog();
 }
 
 // ── Schedule Modal ────────────────────────────────────────────────────────────
@@ -3700,6 +3864,11 @@ async function saveProject(pid) {
     }
   }
 
+  // Read the category checkboxes now, before the modal (and its DOM) goes away.
+  var catCbs = document.querySelectorAll('.ep-category-cb');
+  var newCats = catCbs.length ? Array.from(catCbs).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; }) : null;
+  var oldCats = p.categories || [];
+
   var saveBtn = document.querySelector('.modal-footer .btn-primary'); if (saveBtn) saveBtn.disabled = true;
   var result = await sb.from('projects').update(newVals).eq('id', pid).select().single();
   if (result.error || !result.data) {
@@ -3707,28 +3876,12 @@ async function saveProject(pid) {
     if (saveBtn) saveBtn.disabled = false;
     return;
   }
+
+  // The row is saved at this point - everything below (audit log, category
+  // sync) is best-effort. A failure in either must never make a successful
+  // save look like it silently didn't happen, so local state, the success
+  // toast, and the page re-render all happen first and don't depend on them.
   if (newVals.stage) { p.stage = newVals.stage; if (newVals.planned_start) p.plannedStart = newVals.planned_start; }
-
-  var afterSnapshot = {
-    name: newVals.name, status: newVals.status, phase: newVals.phase, priority: newVals.priority, value: newVals.value_area,
-    businessUnit: newVals.business_unit, sponsor: newVals.sponsor,
-    start: newVals.start_date, end: newVals.end_date, progress: newVals.progress, health: newVals.health,
-    description: newVals.description, blockers: newVals.blockers, stage: newVals.stage || beforeSnapshot.stage,
-    deliveryMethodology: newVals.delivery_methodology, tshirtSize: newVals.tshirt_size
-  };
-  if (pmEl) afterSnapshot.owner = newVals.owner_name;
-  await logProjectChanges(pid, beforeSnapshot, afterSnapshot, 'edit');
-
-  var catCbs = document.querySelectorAll('.ep-category-cb');
-  if (catCbs.length) {
-    var newCats = Array.from(catCbs).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
-    var oldCats = p.categories || [];
-    var catsToAdd = newCats.filter(function(c){ return oldCats.indexOf(c) < 0; });
-    var catsToRemove = oldCats.filter(function(c){ return newCats.indexOf(c) < 0; });
-    if (catsToAdd.length) await sb.from('project_categories').insert(catsToAdd.map(function(c){ return { project_id: pid, category: c }; }));
-    for (var ci = 0; ci < catsToRemove.length; ci++) { await sb.from('project_categories').delete().eq('project_id', pid).eq('category', catsToRemove[ci]); }
-    p.categories = newCats;
-  }
 
   p.name = newVals.name; p.status = newVals.status; p.phase = newVals.phase; p.priority = newVals.priority;
   p.value = newVals.value_area; p.start = newVals.start_date; p.end = newVals.end_date; p.progress = newVals.progress;
@@ -3739,9 +3892,31 @@ async function saveProject(pid) {
   if (spEl) p.sponsor = newVals.sponsor;
   if (spEmailEl) { p.sponsorEmail = newVals.sponsor_email; p.sponsorId = result.data.sponsor_id; }
   if (pmEl) { p.owner = pmEl.value; p.ownerId = newVals.owner_id; }
+  if (newCats) p.categories = newCats;
 
   closeModal(); showToast('Project saved');
   if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage==='projects') pgProjects(); else if (currentPage === 'requests') pgRequests(); else pgDashboard();
+
+  try {
+    var afterSnapshot = {
+      name: newVals.name, status: newVals.status, phase: newVals.phase, priority: newVals.priority, value: newVals.value_area,
+      businessUnit: newVals.business_unit, sponsor: newVals.sponsor,
+      start: newVals.start_date, end: newVals.end_date, progress: newVals.progress, health: newVals.health,
+      description: newVals.description, blockers: newVals.blockers, stage: newVals.stage || beforeSnapshot.stage,
+      deliveryMethodology: newVals.delivery_methodology, tshirtSize: newVals.tshirt_size
+    };
+    if (pmEl) afterSnapshot.owner = newVals.owner_name;
+    await logProjectChanges(pid, beforeSnapshot, afterSnapshot, 'edit');
+  } catch (e) { console.error('Could not record change history:', e); }
+
+  if (newCats) {
+    try {
+      var catsToAdd = newCats.filter(function(c){ return oldCats.indexOf(c) < 0; });
+      var catsToRemove = oldCats.filter(function(c){ return newCats.indexOf(c) < 0; });
+      if (catsToAdd.length) await sb.from('project_categories').insert(catsToAdd.map(function(c){ return { project_id: pid, category: c }; }));
+      for (var ci = 0; ci < catsToRemove.length; ci++) { await sb.from('project_categories').delete().eq('project_id', pid).eq('category', catsToRemove[ci]); }
+    } catch (e) { console.error('Could not sync categories:', e); }
+  }
 }
 
 async function deleteProject(pid) {

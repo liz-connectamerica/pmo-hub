@@ -200,3 +200,32 @@ input[type=file] { width: 100%; padding: 8px 10px; border: 1px solid #ddd; borde
 
 /* Documentation folder bar */
 .doc-folder-bar { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+
+/* Prioritize Backlog: value/effort matrix */
+.pb-matrix-wrap { display: grid; grid-template-columns: 20px 1fr; grid-template-rows: 1fr 20px; gap: 8px; }
+.pb-axis-y { grid-column: 1; grid-row: 1; writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: .06em; }
+.pb-axis-x { grid-column: 2; grid-row: 2; text-align: center; font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: .06em; }
+.pb-matrix { grid-column: 2; grid-row: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px; min-height: 320px; }
+.pb-quad { border: 1px solid #e8e8e5; border-radius: 10px; padding: 10px; background: #fafaf8; overflow-y: auto; }
+.pb-quad-title { font-size: 12px; font-weight: 600; color: #666; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .04em; }
+.pb-quad-chips { display: flex; flex-direction: column; gap: 6px; }
+.pb-quad-tl { background: #EAF3DE; }
+.pb-quad-tr { background: #E6F1FB; }
+.pb-quad-bl { background: #f0ede8; }
+.pb-quad-br { background: #FCEBEB; }
+.pb-chip { background: #fff; border: 1px solid #e8e8e5; border-radius: 6px; padding: 5px 8px; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pb-chip:hover { border-color: #534AB7; }
+
+/* Prioritize Backlog: draggable rank list */
+.pb-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid #f0efec; cursor: grab; }
+.pb-row:last-child { border-bottom: none; }
+.pb-row.pb-dragging { opacity: .4; }
+.pb-drag-handle { color: #ccc; font-size: 14px; }
+.pb-rank { min-width: 20px; font-weight: 600; color: #999; font-size: 12px; }
+.pb-name { flex: 1; cursor: pointer; font-weight: 500; }
+.pb-name:hover { color: #534AB7; }
+.pb-cats { display: flex; gap: 4px; }
+.pb-value { font-size: 12px; color: #555; white-space: nowrap; }
+.pb-unsized-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid #f0efec; }
+.pb-unsized-row:last-child { border-bottom: none; }
+.pb-unsized-row .pb-name { flex: 1; }
