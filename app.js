@@ -4852,7 +4852,9 @@ function pgAllProjects() {
     if (!selectedIds.length) return;
     window.__bulkEditSelectedIds = selectedIds;
     var fieldOpts = '<option value="sponsor">Sponsor</option><option value="owner">Owner</option><option value="businessUnit">Business Unit</option>' +
-      '<option value="value">Value Area</option><option value="priority">Priority</option><option value="status">Status</option><option value="phase">Phase</option>';
+      '<option value="value">Value Area</option><option value="priority">Priority</option><option value="status">Status</option><option value="phase">Phase</option>' +
+      '<option value="tshirtSize">T-shirt Size</option><option value="health">Health</option><option value="deliveryMethodology">Delivery Methodology</option>' +
+      '<option value="estimatedType">Opportunity Type</option><option value="valueConfidence">Opportunity Type Confidence</option><option value="costConfidence">Cost Estimate Confidence</option>';
     showModal('<div class="modal-title">Bulk edit ' + selectedIds.length + ' project' + (selectedIds.length===1?'':'s') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
       '<div class="form-group"><div class="form-label">Field to update</div><select id="bulk-field" onchange="renderBulkValueInput(this.value)">' + fieldOpts + '</select></div>' +
       '<div id="bulk-value-container"></div>' +
@@ -4869,6 +4871,16 @@ function pgAllProjects() {
     } else if (field === 'owner') {
       var ownerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
       html = '<div class="form-group"><div class="form-label">New owner</div><select id="bulk-value-input">' + ownerOpts + '</select></div>';
+    } else if (field === 'tshirtSize') {
+      html = '<div class="form-group"><div class="form-label">New T-shirt size</div><select id="bulk-value-input"><option value="">— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>';
+    } else if (field === 'health') {
+      html = '<div class="form-group"><div class="form-label">New health</div><select id="bulk-value-input"><option value="green">Green</option><option value="amber">Amber</option><option value="red">Red</option></select></div>';
+    } else if (field === 'deliveryMethodology') {
+      html = '<div class="form-group"><div class="form-label">New delivery methodology</div><select id="bulk-value-input"><option value="">Not selected</option><option>Agile</option><option>Waterfall</option><option>Hybrid</option></select></div>';
+    } else if (field === 'estimatedType') {
+      html = '<div class="form-group"><div class="form-label">New opportunity type</div><select id="bulk-value-input"><option value="">— Not set —</option><option value="Revenue">Revenue opportunity</option><option value="Savings">Cost savings opportunity</option></select></div>';
+    } else if (field === 'valueConfidence' || field === 'costConfidence') {
+      html = '<div class="form-group"><div class="form-label">New ' + (field === 'valueConfidence' ? 'opportunity type' : 'cost estimate') + ' confidence</div><select id="bulk-value-input">' + confidenceOptsHtml() + '</select></div>';
     } else {
       var opts = field === 'businessUnit' ? BUSINESS_UNITS : field === 'value' ? VALUE_AREAS : field === 'priority' ? PRIORITIES : field === 'status' ? STATUSES : PHASES;
       html = '<div class="form-group"><div class="form-label">New value</div><select id="bulk-value-input">' + opts.map(function(o){ return '<option>' + o + '</option>'; }).join('') + '</select></div>';
@@ -4882,7 +4894,8 @@ function pgAllProjects() {
     var value = document.getElementById('bulk-value-input').value;
     var btn = document.querySelector('.modal-footer .btn-primary'); if (btn) btn.disabled = true;
 
-    var columnMap = { sponsor:'sponsor', businessUnit:'business_unit', value:'value_area', priority:'priority', status:'status', phase:'phase' };
+    var columnMap = { sponsor:'sponsor', businessUnit:'business_unit', value:'value_area', priority:'priority', status:'status', phase:'phase',
+      tshirtSize:'tshirt_size', health:'health', deliveryMethodology:'delivery_methodology', estimatedType:'estimated_type', valueConfidence:'value_confidence', costConfidence:'cost_confidence' };
     var ownerResource = null;
     var updatePayload = {};
     if (field === 'owner') {
