@@ -3702,7 +3702,11 @@ async function saveProject(pid) {
 
   var saveBtn = document.querySelector('.modal-footer .btn-primary'); if (saveBtn) saveBtn.disabled = true;
   var result = await sb.from('projects').update(newVals).eq('id', pid).select().single();
-  if (result.error) { showToast('Could not save: ' + result.error.message); if (saveBtn) saveBtn.disabled = false; return; }
+  if (result.error || !result.data) {
+    showToast('Could not save: ' + (result.error ? result.error.message : 'no project was updated - you may not have permission to edit this project'));
+    if (saveBtn) saveBtn.disabled = false;
+    return;
+  }
   if (newVals.stage) { p.stage = newVals.stage; if (newVals.planned_start) p.plannedStart = newVals.planned_start; }
 
   var afterSnapshot = {
