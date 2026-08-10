@@ -5473,7 +5473,6 @@ function pgResources() {
   }
 
   document.getElementById('content').innerHTML =
-    '<div class="metric mb-16" style="max-width:240px"><div class="metric-label">Total resources</div><div class="metric-value">' + D.resources.length + '</div><div class="metric-sub">' + teams.length + ' teams, ' + individuals.length + ' individuals</div></div>' +
     '<div class="tab-bar" style="margin-bottom:16px">' +
       '<div class="tab' + (st.tab==='individual'?' active':'') + '" onclick="setResourceTab(\'individual\')">Individuals <span class="badge badge-gray">' + individuals.length + '</span></div>' +
       '<div class="tab' + (st.tab==='team'?' active':'') + '" onclick="setResourceTab(\'team\')">Teams <span class="badge badge-gray">' + teams.length + '</span></div>' +
