@@ -751,7 +751,7 @@ var CHANGE_LOG_FIELDS = {
 async function logProjectChanges(projectId, before, after, source) {
   var rows = [];
   Object.keys(CHANGE_LOG_FIELDS).forEach(function(field) {
-    if (!(field in after)) return;
+    if (!(field in after) || after[field] === undefined) return; // field wasn't actually part of this update
     var oldVal = before ? before[field] : undefined;
     var newVal = after[field];
     var oldNorm = (oldVal == null || oldVal === '') ? null : String(oldVal);
@@ -3705,13 +3705,15 @@ async function saveProject(pid) {
   if (result.error) { showToast('Could not save: ' + result.error.message); if (saveBtn) saveBtn.disabled = false; return; }
   if (newVals.stage) { p.stage = newVals.stage; if (newVals.planned_start) p.plannedStart = newVals.planned_start; }
 
-  await logProjectChanges(pid, beforeSnapshot, {
+  var afterSnapshot = {
     name: newVals.name, status: newVals.status, phase: newVals.phase, priority: newVals.priority, value: newVals.value_area,
-    businessUnit: newVals.business_unit, sponsor: newVals.sponsor, owner: newVals.owner_name,
+    businessUnit: newVals.business_unit, sponsor: newVals.sponsor,
     start: newVals.start_date, end: newVals.end_date, progress: newVals.progress, health: newVals.health,
     description: newVals.description, blockers: newVals.blockers, stage: newVals.stage || beforeSnapshot.stage,
     deliveryMethodology: newVals.delivery_methodology, tshirtSize: newVals.tshirt_size
-  }, 'edit');
+  };
+  if (pmEl) afterSnapshot.owner = newVals.owner_name;
+  await logProjectChanges(pid, beforeSnapshot, afterSnapshot, 'edit');
 
   var catCbs = document.querySelectorAll('.ep-category-cb');
   if (catCbs.length) {
