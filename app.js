@@ -2505,8 +2505,7 @@ async function activateProject(pid) {
 // ── Active Projects ───────────────────────────────────────────────────────────
 
 function pgProjects() {
-  var addBtn = D.role === 'admin' ? '<button class="btn btn-primary" onclick="openNewProjectModal()"><i class="ti ti-plus"></i> New project</button>' : '';
-  tb('Active', addBtn);
+  tb('Active');
   var st = activeProjState;
   var allActive = myProjects().filter(function(p){ return p.stage === 'active'; });
   var cat = buildCategoryTabs(allActive, st.category, 'setActiveProjCategory');
@@ -3997,7 +3996,7 @@ function openNewProjectModal() {
       documents:[], docFolders:['General'], docFolderIds:{}
     });
     closeModal(); showToast('Project created');
-    if (newStage === 'active') pgProjects(); else if (newStage === 'planned') pgPlanned(); else pgBacklog();
+    nav(currentPage);
   };
 }
 
@@ -4737,7 +4736,8 @@ async function callAdminUsersApi(payload) {
 }
 
 function pgAllProjects() {
-  tb('All Projects');
+  var addBtn = D.role === 'admin' ? '<button class="btn btn-primary" onclick="openNewProjectModal()"><i class="ti ti-plus"></i> New project</button>' : '';
+  tb('All Projects', addBtn);
   if (D.role !== 'admin') {
     document.getElementById('content').innerHTML =
       '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access All Projects.</p></div>';
