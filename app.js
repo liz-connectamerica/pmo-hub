@@ -5271,15 +5271,30 @@ var EXPORT_HEALTH_LABELS = { green:'Green', amber:'Amber', red:'Red' };
 
 function exportProjectsToExcel() {
   if (!D.projects.length) { showToast('No projects to export'); return; }
+
+  // Priority rank is stored per scope ('All' plus whichever category tabs a
+  // project has been ranked under), not a single column, so build the set of
+  // scopes actually in use across the portfolio and add one column each.
+  var rankScopes = [];
+  D.projects.forEach(function(p) {
+    if (p.priorityRanks) Object.keys(p.priorityRanks).forEach(function(s){ if (rankScopes.indexOf(s) < 0) rankScopes.push(s); });
+  });
+  rankScopes.sort(function(a,b){ if (a==='All') return -1; if (b==='All') return 1; return a.localeCompare(b); });
+
   var rows = D.projects.map(function(p) {
-    return {
+    var row = {
       'Project ID': p.id,
       'Project Number': p.projectNumber || '',
       'Project Name': p.name || '',
       'Stage': EXPORT_STAGE_LABELS[p.stage] || p.stage || '',
       'Status': p.status || '',
       'Phase': p.phase || '',
-      'Priority': p.priority || '',
+      'Priority': p.priority || ''
+    };
+    rankScopes.forEach(function(scope) {
+      row['Priority Rank (' + scope + ')'] = (p.priorityRanks && p.priorityRanks[scope] != null) ? p.priorityRanks[scope] : '';
+    });
+    Object.assign(row, {
       'Health': EXPORT_HEALTH_LABELS[p.health] || p.health || '',
       'Progress %': p.progress != null ? p.progress : '',
       'Category': (p.categories || []).join(', '),
@@ -5311,7 +5326,8 @@ function exportProjectsToExcel() {
       'Cost Estimate': p.costEstimate != null ? p.costEstimate : '',
       'Cost Estimate Confidence': p.costConfidence || '',
       'Created At': p.createdAt || ''
-    };
+    });
+    return row;
   });
 
   var ws = XLSX.utils.json_to_sheet(rows);
