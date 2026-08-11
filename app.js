@@ -322,7 +322,7 @@ async function loadAllProjects() {
     return {
       id: pr.id, name: pr.name,
       owner: pr.owner_name || (pr.owner_id ? resourceNameById[pr.owner_id] : ''), ownerId: pr.owner_id,
-      sponsor: pr.sponsor, sponsorEmail: pr.sponsor_email, sponsorId: pr.sponsor_id,
+      sponsor: pr.sponsor, sponsorEmail: pr.sponsor_email, sponsorId: pr.sponsor_id, sponsorResourceId: pr.sponsor_resource_id,
       categories: (categoriesByProj[pr.id]||[]).map(function(c){ return c.category; }), businessUnit: pr.business_unit,
       dependencies: (dependenciesByProject[pr.id]||[]).map(function(d){ return projectInfoById[d.depends_on_project_id]; }).filter(Boolean),
       team: teamNames, teamIds: teamIds,
@@ -385,19 +385,24 @@ function canEdit(p) {
   return !!(p.ownerId && D.myResourceId && p.ownerId === D.myResourceId);
 }
 
-// Single gate for all financial detail (value/cost estimates + their confidence
-// ratings) across the app. Currently admin-only; once a per-user "can view
-// financial detail" permission exists, this is the only place that needs to change.
-function canViewFinancials() {
-  return D.role === 'admin';
+function isProjectSponsor(p) {
+  return !!(p && p.sponsorResourceId && D.myResourceId && p.sponsorResourceId === D.myResourceId);
 }
 
-// Admin can always edit a project's financial detail. A non-admin owner can
-// only do so if they personally have financial-view permission - once the
-// real per-user permission exists, this composes correctly with no changes
-// needed here.
+// Single gate for all financial detail (value/cost estimates + their confidence
+// ratings) across the app. Admin-only, plus a project's own linked sponsor for
+// that specific project. Pass the project when checking in a project context;
+// omit it (e.g. for requests, which have no resource-linked sponsor) to fall
+// back to the admin-only check.
+function canViewFinancials(p) {
+  return D.role === 'admin' || isProjectSponsor(p);
+}
+
+// Admin can always edit a project's financial detail, as can that project's
+// linked sponsor. A non-admin, non-sponsor owner can only do so if they
+// personally have financial-view permission on this project.
 function canEditProjectFinancials(p) {
-  return canViewFinancials() && canEdit(p);
+  return isProjectSponsor(p) || (canViewFinancials(p) && canEdit(p));
 }
 
 async function ensureOnTeam(p, res) {
@@ -1248,6 +1253,17 @@ function pgDashboard() {
     });
   }
 
+  var sponsoredProjects = D.myResourceId ? D.projects.filter(function(p){ return p.sponsorResourceId === D.myResourceId; }) : [];
+  var sponsoredRows = sponsoredProjects.map(function(p) {
+    return '<tr>' +
+      '<td class="bold">' + hdot(p.health) + p.name + '</td>' +
+      '<td>' + (EXPORT_STAGE_LABELS[p.stage] || p.stage) + '</td>' +
+      '<td>' + (p.estimatedAmount != null ? fmtCost(p.estimatedAmount) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.costEstimate != null ? fmtCost(p.costEstimate) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button> ' +
+        '<button class="btn btn-sm" onclick="openEditProjectFinancialsModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit financials</button></td></tr>';
+  }).join('');
+
   document.getElementById('content').innerHTML =
     '<div class="grid-4 mb-16">' +
       '<div class="metric"><div class="metric-label">Active projects</div><div class="metric-value">' + active.length + '</div></div>' +
@@ -1269,6 +1285,11 @@ function pgDashboard() {
       '<tbody>' + projRows + '</tbody></table></div>'
       : (active.length ? '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No projects match your search/filters</p></div>' : '<div class="empty-state" style="padding:24px"><i class="ti ti-briefcase"></i><p>No active projects</p></div>')) +
     '</div>' +
+    (sponsoredProjects.length
+      ? '<div class="card mb-16"><div class="section-title">Projects you sponsor <span class="badge badge-purple" style="margin-left:6px">' + sponsoredProjects.length + '</span></div>' +
+        '<div class="form-sub" style="margin-bottom:12px">You can see and edit financial detail for these, even though they\'re not otherwise admin-only.</div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Project</th><th>Stage</th><th>Estimated value</th><th>Cost estimate</th><th></th></tr></thead>' +
+        '<tbody>' + sponsoredRows + '</tbody></table></div></div>' : '') +
     (D.role === 'admin' && pendingCount() > 0
       ? '<div class="card mb-16"><div class="section-title">Pending approval <span class="badge badge-amber" style="margin-left:6px">' + pendingCount() + '</span></div>' +
         '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th></th></tr></thead>' +
@@ -2744,7 +2765,7 @@ function renderMetadataStatic(p, editable) {
   var linkedReq = p.requestId ? D.requests.find(function(r){ return r.id === p.requestId; }) : null;
   var canEditFin = canEditProjectFinancials(p);
   var financialsHtml = '';
-  if (canViewFinancials()) {
+  if (canViewFinancials(p)) {
     var hasFinData = p.estimatedAmount != null || p.costEstimate != null;
     financialsHtml = '<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="section-title" style="font-size:14px;margin-bottom:0">Financial detail</div>' +
       (canEditFin ? '<button class="btn btn-sm" onclick="openEditProjectFinancialsModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit financials</button>' : '') +
@@ -3808,6 +3829,11 @@ function editProject(pid) {
     var isInactiveCurrent = p.owner===n && individualResourceNames().indexOf(n) < 0;
     return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
   }).join('');
+  var sponsorPoolEdit = p.sponsor && individualResourceNames().indexOf(p.sponsor) < 0 ? individualResourceNames().concat([p.sponsor]) : individualResourceNames();
+  var sponsorOpts     = '<option value="">— None —</option>' + sponsorPoolEdit.map(function(n){
+    var isUnlinkedCurrent = p.sponsor===n && individualResourceNames().indexOf(n) < 0;
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.sponsor===n?' selected':'') + '>' + n + (isUnlinkedCurrent ? ' (not linked to a resource)' : '') + '</option>';
+  }).join('');
   var catCheckboxes = CATEGORIES.map(function(s){
     var checked = (p.categories||[]).indexOf(s) >= 0;
     return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="ep-category-cb" value="' + s + '"' + (checked?' checked':'') + '> ' + s + '</label>';
@@ -3839,8 +3865,7 @@ function editProject(pid) {
     '<div class="form-group"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="ep-blocker" value="' + (p.blockers||'') + '"></div>' +
     '<div class="divider"></div>' +
     '<div class="grid-2">' +
-    '<div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="ep-sponsor" value="' + (p.sponsor||'') + '"></div>' +
-    '<div class="form-group"><div class="form-label">Sponsor email' + (p.sponsorId ? ' <i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75;font-size:12px"></i>' : '') + '</div><input type="email" id="ep-sponsor-email" value="' + (p.sponsorEmail||'') + '"></div>' +
+    '<div class="form-group"><div class="form-label">Sponsor</div>' + (D.role === 'admin' ? '<select id="ep-sponsor">' + sponsorOpts + '</select>' : '<div style="padding:8px 0;color:#444">' + (p.sponsor || '—') + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the sponsor</div></div>') + '</div>' +
     '<div class="form-group"><div class="form-label">Owner</div>' + (D.role === 'admin' ? '<select id="ep-owner">' + ownerOpts + '</select>' : '<div style="padding:8px 0;color:#444">' + (p.owner || '—') + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the owner</div></div>') + '</div>' +
     '</div>' +
     '<div class="modal-footer">' +
@@ -3874,8 +3899,9 @@ async function saveProject(pid) {
     blockers: document.getElementById('ep-blocker').value
   };
   var buEl = document.getElementById('ep-bu'); if (buEl) newVals.business_unit = buEl.value || null;
-  var spEl = document.getElementById('ep-sponsor'); if (spEl) newVals.sponsor = spEl.value || null;
-  var spEmailEl = document.getElementById('ep-sponsor-email'); if (spEmailEl) newVals.sponsor_email = spEmailEl.value.trim() || null;
+  var spEl = document.getElementById('ep-sponsor');
+  var sponsorResource = spEl ? resolveResource(spEl.value) : null;
+  if (spEl) { newVals.sponsor = spEl.value || null; newVals.sponsor_resource_id = sponsorResource ? sponsorResource.id : null; }
   var pmEl = document.getElementById('ep-owner');
   var ownerResource = pmEl ? resolveResource(pmEl.value) : null;
   if (pmEl) { newVals.owner_id = ownerResource ? ownerResource.id : null; newVals.owner_name = pmEl.value || null; }
@@ -3917,8 +3943,7 @@ async function saveProject(pid) {
   p.tshirtSize = newVals.tshirt_size;
   p.health = newVals.health; p.description = newVals.description; p.blockers = newVals.blockers;
   if (buEl) p.businessUnit = newVals.business_unit;
-  if (spEl) p.sponsor = newVals.sponsor;
-  if (spEmailEl) { p.sponsorEmail = newVals.sponsor_email; p.sponsorId = result.data.sponsor_id; }
+  if (spEl) { p.sponsor = newVals.sponsor; p.sponsorResourceId = newVals.sponsor_resource_id; }
   if (pmEl) { p.owner = pmEl.value; p.ownerId = newVals.owner_id; }
   if (newCats) p.categories = newCats;
 
@@ -3961,6 +3986,7 @@ function openNewProjectModal() {
   var valOpts = VALUE_AREAS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var priorOpts = PRIORITIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   var ownerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
+  var sponsorOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var catCheckboxesNew = CATEGORIES.map(function(s){ return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="np-category-cb" value="' + s + '"> ' + s + '</label>'; }).join('');
   var buOpts = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   showModal('<div class="modal-title">Create new project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
@@ -3974,8 +4000,7 @@ function openNewProjectModal() {
     '<div class="form-group"><div class="form-label">Target end date</div><input type="date" id="np-end"></div></div>' +
     '<div class="form-group"><div class="form-label">Categories</div><div>' + catCheckboxesNew + '</div></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="np-desc" placeholder="What is this project about?"></textarea></div>' +
-    '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor name</div><input type="text" id="np-sponsor" placeholder="Sponsor name"></div>' +
-    '<div class="form-group"><div class="form-label">Sponsor email</div><input type="email" id="np-sponsor-email" placeholder="name@yourcompany.com"></div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor</div><select id="np-sponsor">' + sponsorOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Owner</div><select id="np-owner">' + ownerOpts + '</select></div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="np-save"><i class="ti ti-plus"></i> Create project</button></div>', true);
@@ -3984,8 +4009,8 @@ function openNewProjectModal() {
     if (!name){ showToast('Project name required'); return; }
     var ownerName = document.getElementById('np-owner').value;
     var ownerResource = resolveResource(ownerName);
-    var sponsorName = document.getElementById('np-sponsor').value.trim();
-    var sponsorEmail = document.getElementById('np-sponsor-email').value.trim();
+    var sponsorName = document.getElementById('np-sponsor').value;
+    var sponsorResource = resolveResource(sponsorName);
     var btn = document.getElementById('np-save'); btn.disabled = true;
 
     var selectedCats = Array.from(document.querySelectorAll('.np-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
@@ -3994,7 +4019,7 @@ function openNewProjectModal() {
     var newStage = computeStageFromDates(startDate, endDate);
     var record = {
       name: name, owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
-      sponsor: sponsorName || null, sponsor_email: sponsorEmail || null,
+      sponsor: sponsorName || null, sponsor_resource_id: sponsorResource ? sponsorResource.id : null,
       business_unit: document.getElementById('np-bu').value || null,
       delivery_methodology: document.getElementById('np-methodology').value || null,
       status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
@@ -4014,7 +4039,7 @@ function openNewProjectModal() {
 
     D.projects.push({
       id: result.data.id, name:name, owner:ownerName, ownerId: ownerResource?ownerResource.id:null,
-      sponsor:sponsorName, sponsorEmail:sponsorEmail, sponsorId: result.data.sponsor_id,
+      sponsor:sponsorName, sponsorResourceId: sponsorResource?sponsorResource.id:null,
       categories:selectedCats, businessUnit:record.business_unit, team:[], teamIds:[],
       status:record.status, phase:'Not Started', progress:0, start:startDate||'', end:endDate||'',
       value:record.value_area, priority:record.priority, description:record.description,
