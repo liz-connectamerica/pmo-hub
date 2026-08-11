@@ -35,7 +35,7 @@ You also have a **Delete** button on any request — this only unlinks it from i
 
 ## Prioritize Backlog
 
-A value-vs-effort view for deciding what to schedule next. Filter by category tab (or "All"), and each tab maintains its **own independent priority ranking** — reordering Hardware doesn't touch Transformation's order, and a project in two categories can rank differently in each.
+A value-vs-effort view for deciding what to schedule next. Filter by category tab (or "All") — there's **one overall priority ranking** across every non-complete project, and each category tab just shows the projects in it, in that same order. Reordering within a tab only changes what you see elsewhere if the move crosses a project that shares a category with it — moving a project past others outside its own category(ies) leaves its position in those categories' tabs untouched. A project in two categories has a single rank, so it's possible for a drag in one of its tabs to shift where it lands in the other.
 
 - The **matrix** plots projects by Value $ (estimated amount) against T-shirt size, into four quadrants (Quick Wins, Major Projects, Fill-ins, Reconsider).
 - The **ranked list** is the actual editing surface — drag rows to reorder. New projects without a saved rank yet are seeded by a value-per-effort score, then you can drag them anywhere.
@@ -83,7 +83,7 @@ Every row is validated before you commit anything — you'll see a green check o
 
 ## Export Projects
 
-One click downloads every project's scalar fields (not tasks, milestones, RAID, documents, or team) as an Excel file — status, dates, financials, and one `Priority Rank (Scope)` column per category scope that's actually been ranked in Prioritize Backlog.
+One click downloads every project's scalar fields (not tasks, milestones, RAID, documents, or team) as an Excel file — status, dates, financials, and a single `Priority Rank` column reflecting its position in the one overall Prioritize Backlog ranking.
 
 ## Manage Users
 

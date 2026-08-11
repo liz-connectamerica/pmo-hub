@@ -230,7 +230,8 @@ async function loadAllProjects() {
   var resourceMiniRows  = results[12].data || [];
   var categoryRows      = results[13].data || [];
   var dependencyRows    = results[14].data || [];
-  var priorityRankByProj = groupBy(priorityRankRows, 'project_id');
+  var priorityRankByProj = {};
+  priorityRankRows.forEach(function(r){ priorityRankByProj[r.project_id] = r.rank; });
 
   var activeProfilesRows = profilesRows.filter(function(p){ return p.is_active !== false; });
   D.people = activeProfilesRows.map(function(p){ return p.display_name; });
@@ -316,8 +317,7 @@ async function loadAllProjects() {
     (foldersByProj[pr.id] || []).forEach(function(f){ docFolderIds[f.name] = f.id; });
     if (docFolders.indexOf('General') < 0) docFolders.unshift('General');
 
-    var priorityRanks = {};
-    (priorityRankByProj[pr.id] || []).forEach(function(pp){ priorityRanks[pp.scope] = pp.rank; });
+    var priorityRank = priorityRankByProj[pr.id] != null ? priorityRankByProj[pr.id] : null;
 
     return {
       id: pr.id, name: pr.name,
@@ -336,7 +336,7 @@ async function loadAllProjects() {
       deliveryMethodology: pr.delivery_methodology, projectNumber: pr.project_number, createdAt: pr.created_at, tshirtSize: pr.tshirt_size,
       estimatedAmount: pr.estimated_amount, estimatedFrequency: pr.estimated_frequency, estimatedType: pr.estimated_type,
       valueConfidence: pr.value_confidence, costEstimate: pr.cost_estimate, costConfidence: pr.cost_confidence,
-      priorityRanks: priorityRanks,
+      priorityRank: priorityRank,
       milestones: milestones, tasks: tasks, raid: raid,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
     };
@@ -2176,18 +2176,25 @@ function pgPrioritizeBacklog() {
   st.category = cat.resolvedFilter;
   var scope = st.category;
 
-  var filtered = allActive.filter(function(p){ return projectMatchesCategoryTab(p, scope); });
-  var sized = filtered.filter(pbIsSized);
-  var unsized = filtered.filter(function(p){ return !pbIsSized(p); });
-
-  var ranked = sized.filter(function(p){ return p.priorityRanks && p.priorityRanks[scope] != null; })
-    .sort(function(a,b){ return a.priorityRanks[scope] - b.priorityRanks[scope]; });
-  var unranked = sized.filter(function(p){ return !(p.priorityRanks && p.priorityRanks[scope] != null); })
+  // There is exactly one priority order across every non-complete project,
+  // regardless of category — category tabs below are a filtered view of
+  // this same global order, not an independent ranking of their own. That
+  // means dragging within a tab can still shift where a multi-category
+  // project lands in its other tabs, if the move crosses another project
+  // that also belongs to that other category.
+  var globalSized = allActive.filter(pbIsSized);
+  var globalRanked = globalSized.filter(function(p){ return p.priorityRank != null; })
+    .sort(function(a,b){ return a.priorityRank - b.priorityRank; });
+  var globalUnranked = globalSized.filter(function(p){ return p.priorityRank == null; })
     .sort(function(a,b){ return pbScore(b) - pbScore(a); });
-  var orderedSized = ranked.concat(unranked);
+  var orderedSized = globalRanked.concat(globalUnranked);
 
-  // Matrix quadrant thresholds: split sized projects on the median $ amount.
-  var amounts = sized.map(function(p){ return p.estimatedAmount; }).sort(function(a,b){ return a-b; });
+  var filtered = allActive.filter(function(p){ return projectMatchesCategoryTab(p, scope); });
+  var unsized = filtered.filter(function(p){ return !pbIsSized(p); });
+  var displaySized = orderedSized.filter(function(p){ return projectMatchesCategoryTab(p, scope); });
+
+  // Matrix quadrant thresholds: split this tab's sized projects on the median $ amount.
+  var amounts = displaySized.map(function(p){ return p.estimatedAmount; }).sort(function(a,b){ return a-b; });
   var mid = amounts.length ? amounts[Math.floor((amounts.length-1)/2)] : 0;
   function valueBucket(p) { return p.estimatedAmount >= mid ? 'High' : 'Low'; }
 
@@ -2197,13 +2204,13 @@ function pgPrioritizeBacklog() {
     'Low-Low':   { label:'Fill-ins',        cls:'pb-quad-bl', items:[] },
     'Low-High':  { label:'Reconsider',      cls:'pb-quad-br', items:[] }
   };
-  orderedSized.forEach(function(p){ quadrants[valueBucket(p) + '-' + pbEffortBucket(p)].items.push(p); });
+  displaySized.forEach(function(p){ quadrants[valueBucket(p) + '-' + pbEffortBucket(p)].items.push(p); });
 
   function chip(p) {
     return '<div class="pb-chip" onclick="goToProject(\'' + p.id + '\')" title="' + p.name.replace(/"/g,'&quot;') + ' — ' + fmtCost(p.estimatedAmount) + ', ' + p.tshirtSize + '">' + p.name + '</div>';
   }
 
-  var matrixHtml = !sized.length
+  var matrixHtml = !displaySized.length
     ? '<div class="empty-state" style="padding:30px"><p>No sized projects in this view yet.</p></div>'
     : '<div class="pb-matrix-wrap">' +
         '<div class="pb-axis-y">Value $</div>' +
@@ -2216,7 +2223,7 @@ function pgPrioritizeBacklog() {
         '<div class="pb-axis-x">Effort (T-shirt size) →</div>' +
       '</div>';
 
-  var listRows = orderedSized.map(function(p, idx) {
+  var listRows = displaySized.map(function(p, idx) {
     return '<div class="pb-row" draggable="true" data-pid="' + p.id + '" data-idx="' + idx + '">' +
       '<span class="pb-drag-handle"><i class="ti ti-grip-vertical"></i></span>' +
       '<span class="pb-rank">' + (idx+1) + '</span>' +
@@ -2237,7 +2244,7 @@ function pgPrioritizeBacklog() {
 
   document.getElementById('content').innerHTML =
     '<div class="info-banner info-amber"><i class="ti ti-arrows-sort" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
-    '<span>Drag rows in the list to set priority order for <strong>' + scope + '</strong>. Ranking one category tab does not affect another — a project in multiple categories can rank differently in each.</span></div>' +
+    '<span>Drag rows in the list to set priority order for <strong>' + scope + '</strong>. There is one overall ranking across all categories — this tab shows just the projects in it, in that same order. Reordering here only changes what you see elsewhere if it moves a project past another one that shares a category with it.</span></div>' +
     cat.html +
     '<div class="grid-2" style="align-items:start;gap:20px">' +
       '<div class="card">' +
@@ -2270,27 +2277,30 @@ function pgPrioritizeBacklog() {
       var toPid = el.getAttribute('data-pid');
       st.dragPid = null;
       if (!fromPid || fromPid === toPid) return;
+      // Splice against the GLOBAL order, not this tab's filtered view — the
+      // drop target's position in that global order is what "move it here"
+      // actually means, regardless of which tab the drag happened in.
       var ids = orderedSized.map(function(p){ return p.id; });
       var fromIdx = ids.indexOf(fromPid);
       var toIdx = ids.indexOf(toPid);
       if (fromIdx < 0 || toIdx < 0) return;
       ids.splice(fromIdx, 1);
       ids.splice(toIdx, 0, fromPid);
-      pbPersistOrder(scope, ids);
+      pbPersistOrder(ids);
     });
   });
 }
 
-async function pbPersistOrder(scope, orderedIds) {
-  var rows = orderedIds.map(function(pid, idx){ return { project_id: pid, scope: scope, rank: idx + 1 }; });
-  var result = await sb.from('project_priority_ranks').upsert(rows, { onConflict: 'project_id,scope' });
+async function pbPersistOrder(orderedIds) {
+  var rows = orderedIds.map(function(pid, idx){ return { project_id: pid, rank: idx + 1 }; });
+  var result = await sb.from('project_priority_ranks').upsert(rows, { onConflict: 'project_id' });
   if (result.error) {
     showToast('Could not save order: ' + result.error.message, 'error');
     return;
   }
   rows.forEach(function(r) {
     var p = D.projects.find(function(x){ return x.id === r.project_id; });
-    if (p) { p.priorityRanks = p.priorityRanks || {}; p.priorityRanks[r.scope] = r.rank; }
+    if (p) { p.priorityRank = r.rank; }
   });
   if (currentPage === 'prioritize-backlog') pgPrioritizeBacklog();
 }
@@ -5290,15 +5300,6 @@ var EXPORT_HEALTH_LABELS = { green:'Green', amber:'Amber', red:'Red' };
 function exportProjectsToExcel() {
   if (!D.projects.length) { showToast('No projects to export'); return; }
 
-  // Priority rank is stored per scope ('All' plus whichever category tabs a
-  // project has been ranked under), not a single column, so build the set of
-  // scopes actually in use across the portfolio and add one column each.
-  var rankScopes = [];
-  D.projects.forEach(function(p) {
-    if (p.priorityRanks) Object.keys(p.priorityRanks).forEach(function(s){ if (rankScopes.indexOf(s) < 0) rankScopes.push(s); });
-  });
-  rankScopes.sort(function(a,b){ if (a==='All') return -1; if (b==='All') return 1; return a.localeCompare(b); });
-
   var rows = D.projects.map(function(p) {
     var row = {
       'Project ID': p.id,
@@ -5307,11 +5308,9 @@ function exportProjectsToExcel() {
       'Stage': EXPORT_STAGE_LABELS[p.stage] || p.stage || '',
       'Status': p.status || '',
       'Phase': p.phase || '',
-      'Priority': p.priority || ''
+      'Priority': p.priority || '',
+      'Priority Rank': p.priorityRank != null ? p.priorityRank : ''
     };
-    rankScopes.forEach(function(scope) {
-      row['Priority Rank (' + scope + ')'] = (p.priorityRanks && p.priorityRanks[scope] != null) ? p.priorityRanks[scope] : '';
-    });
     Object.assign(row, {
       'Health': EXPORT_HEALTH_LABELS[p.health] || p.health || '',
       'Progress %': p.progress != null ? p.progress : '',
