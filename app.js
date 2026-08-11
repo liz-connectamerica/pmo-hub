@@ -4922,7 +4922,8 @@ function pgAllProjects() {
     if (!container) return;
     var html;
     if (field === 'sponsor') {
-      html = '<div class="form-group"><div class="form-label">New sponsor name</div><input type="text" id="bulk-value-input" placeholder="Sponsor name"></div>';
+      var sponsorOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
+      html = '<div class="form-group"><div class="form-label">New sponsor</div><select id="bulk-value-input">' + sponsorOpts + '</select></div>';
     } else if (field === 'owner') {
       var ownerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
       html = '<div class="form-group"><div class="form-label">New owner</div><select id="bulk-value-input">' + ownerOpts + '</select></div>';
@@ -4952,10 +4953,14 @@ function pgAllProjects() {
     var columnMap = { sponsor:'sponsor', businessUnit:'business_unit', value:'value_area', priority:'priority', status:'status', phase:'phase',
       tshirtSize:'tshirt_size', health:'health', deliveryMethodology:'delivery_methodology', estimatedType:'estimated_type', valueConfidence:'value_confidence', costConfidence:'cost_confidence' };
     var ownerResource = null;
+    var sponsorResource = null;
     var updatePayload = {};
     if (field === 'owner') {
       ownerResource = resolveResource(value);
       updatePayload = { owner_id: ownerResource ? ownerResource.id : null, owner_name: value || null };
+    } else if (field === 'sponsor') {
+      sponsorResource = resolveResource(value);
+      updatePayload = { sponsor_resource_id: sponsorResource ? sponsorResource.id : null, sponsor: value || null };
     } else {
       updatePayload[columnMap[field]] = value || null;
     }
@@ -4967,6 +4972,7 @@ function pgAllProjects() {
       var proj = D.projects.find(function(x){ return x.id === selectedIds[i]; });
       if (!proj) continue;
       if (field === 'owner') { proj.owner = value || ''; proj.ownerId = ownerResource ? ownerResource.id : null; }
+      else if (field === 'sponsor') { proj.sponsor = value || ''; proj.sponsorResourceId = sponsorResource ? sponsorResource.id : null; }
       else if (field === 'businessUnit') proj.businessUnit = value;
       else if (field === 'value') proj.value = value;
       else proj[field] = value;
