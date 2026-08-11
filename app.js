@@ -2214,6 +2214,24 @@ function pbEffortBucket(p) {
   return idx <= 1 ? 'Low' : 'High';
 }
 
+function pbShowMatrixHelp() {
+  showModal('<div class="modal-title">How the Value / Effort Matrix works <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-sub" style="margin-bottom:14px">Only sized projects (an estimated value <strong>and</strong> a T-shirt size) show up here — everything else is listed under Needs sizing instead.</div>' +
+    '<div class="form-group"><div class="form-label">Value axis (High vs. Low)</div><div style="font-size:13px;color:#444">A project is "High" if its estimated value is at or above the <strong>median</strong> estimated value among the sized projects in this tab, otherwise "Low." That\'s a relative split, not a fixed dollar line — it recalculates per tab and shifts as projects are added, resolved, or resized.</div></div>' +
+    '<div class="form-group"><div class="form-label">Effort axis (High vs. Low)</div><div style="font-size:13px;color:#444">Comes straight from T-shirt size: XS/S = Low effort, M/L/XL = High effort.</div></div>' +
+    '<div class="form-group"><div class="form-label">The four quadrants</div><div style="font-size:13px;color:#444">Quick Wins = High value, Low effort. Major Projects = High value, High effort. Fill-ins = Low value, Low effort. Reconsider = Low value, High effort.</div></div>' +
+    '<div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>');
+}
+
+function pbShowPriorityHelp() {
+  showModal('<div class="modal-title">How Priority Order is calculated <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">One shared ranking</div><div style="font-size:13px;color:#444">There is a single priority order across every non-complete project (Backlog, Planned, Active, Hold) — category tabs are a filtered view of that same order, not a ranking of their own. Dragging a row in any tab updates the real, shared order, so a move can shift where a project lands in another tab it also belongs to, if the move crosses a project that shares that category.</div></div>' +
+    '<div class="form-group"><div class="form-label">Before you drag anything</div><div style="font-size:13px;color:#444">A project without a saved rank yet is placed automatically by <strong>estimated value ÷ effort</strong>, highest first. Effort comes from T-shirt size (XS=1, S=2, M=3, L=4, XL=5; missing size counts as 3). This is just a starting point — it isn\'t saved as a rank until something is actually dragged.</div></div>' +
+    '<div class="form-group"><div class="form-label">After you drag something</div><div style="font-size:13px;color:#444">Its new position is saved as an explicit rank, which always takes precedence over the automatic score above.</div></div>' +
+    '<div class="form-group"><div class="form-label">Only sized projects rank</div><div style="font-size:13px;color:#444">A project needs both an estimated value and a T-shirt size to appear here — otherwise it shows under Needs sizing instead.</div></div>' +
+    '<div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>');
+}
+
 function pgPrioritizeBacklog() {
   tb('Prioritize Backlog');
   if (D.role !== 'admin') {
@@ -2311,11 +2329,11 @@ function pgPrioritizeBacklog() {
     cat.html +
     '<div class="grid-2" style="align-items:start;gap:20px">' +
       '<div class="card">' +
-        '<div class="section-title" style="margin-bottom:12px">Value / Effort Matrix</div>' +
+        '<div class="section-title" style="margin-bottom:12px;display:flex;align-items:center;gap:6px">Value / Effort Matrix <i class="ti ti-help-circle pb-help-icon" onclick="pbShowMatrixHelp()" title="How this is calculated"></i></div>' +
         matrixHtml +
       '</div>' +
       '<div class="card">' +
-        '<div class="section-title" style="margin-bottom:12px">Priority Order — ' + scope + '</div>' +
+        '<div class="section-title" style="margin-bottom:12px;display:flex;align-items:center;gap:6px">Priority Order — ' + scope + ' <i class="ti ti-help-circle pb-help-icon" onclick="pbShowPriorityHelp()" title="How this is calculated"></i></div>' +
         (listRows || '<div class="text-muted" style="padding:20px;text-align:center">' + (searchQ ? 'No sized projects match your search' : 'No sized projects in this view') + '</div>') +
       '</div>' +
     '</div>' +
