@@ -738,7 +738,7 @@ var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
 var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null };
 var portfolioTagFilter = [];
-var prioritizeBacklogState = { category:'All', dragPid:null, search:'', materializing:false };
+var prioritizeBacklogState = { category:'All', dragPid:null, search:'', materializing:false, lastMove:null };
 var backlogProjState = { sort:'name', dir:'asc', search:'', category:'All',
   filters: { tags:[], value:[], priority:[], owner:[] }, openFilter:null };
 var plannedProjState = { sort:'name', dir:'asc', search:'', category:'All',
@@ -2229,6 +2229,7 @@ function pbShowPriorityHelp() {
     '<div class="form-group"><div class="form-label">One shared ranking</div><div style="font-size:13px;color:#444">There is a single priority order across every non-complete project (Backlog, Planned, Active, Hold) — category tabs are a filtered view of that same order, not a ranking of their own. Dragging a row in any tab updates the real, shared order, so a move can shift where a project lands in another tab it also belongs to, if the move crosses a project that shares that category.</div></div>' +
     '<div class="form-group"><div class="form-label">Every sized project has a saved rank</div><div style="font-size:13px;color:#444">As soon as a project has both an estimated value and a T-shirt size, its position is calculated by <strong>estimated value ÷ effort</strong> (highest first) and saved right away — effort comes from T-shirt size (XS=1, S=2, M=3, L=4, XL=5; missing size counts as 3). You don\'t have to touch it for that rank to be real.</div></div>' +
     '<div class="form-group"><div class="form-label">Dragging creates an override</div><div style="font-size:13px;color:#444">Moving a row by hand saves its new position and marks it <span class="badge badge-amber" style="font-size:10px"><i class="ti ti-pin"></i> Manual</span> — that project won\'t be swept back into place by the automatic calculation. Everything else keeps its own override status even when its rank number shifts to make room.</div></div>' +
+    '<div class="form-group"><div class="form-label">Undo</div><div style="font-size:13px;color:#444">Right after a drag, an Undo button appears next to Reset to default — it puts that one project back exactly where it was, including removing its Manual badge if this was the first time it had ever been moved by hand. It only covers the most recent move.</div></div>' +
     '<div class="form-group"><div class="form-label">Resetting</div><div style="font-size:13px;color:#444">"Reset to default" clears every manual override and re-sorts the whole list by the automatic calculation — it shows you exactly what would move before anything is saved.</div></div>' +
     '<div class="form-group"><div class="form-label">Only sized projects rank</div><div style="font-size:13px;color:#444">A project needs both an estimated value and a T-shirt size to appear here — otherwise it shows under Needs sizing instead.</div></div>' +
     '<div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>');
@@ -2287,6 +2288,7 @@ async function pbApplyResetToDefault() {
     var p = D.projects.find(function(x){ return x.id === r.project_id; });
     if (p) { p.priorityRank = r.rank; p.priorityIsOverride = false; }
   });
+  prioritizeBacklogState.lastMove = null;
   closeModal();
   showToast('Priority order reset to the default calculation');
   if (currentPage === 'prioritize-backlog') pgPrioritizeBacklog();
@@ -2406,7 +2408,10 @@ function pgPrioritizeBacklog() {
       '<div class="card">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px">' +
           '<div class="section-title" style="margin-bottom:0;display:flex;align-items:center;gap:6px">Priority Order — ' + scope + ' <i class="ti ti-help-circle pb-help-icon" onclick="pbShowPriorityHelp()" title="How this is calculated"></i></div>' +
-          (hasAnyOverride ? '<button class="btn btn-sm" onclick="pbShowResetPreview()"><i class="ti ti-refresh"></i> Reset to default</button>' : '') +
+          '<div style="display:flex;gap:8px;flex-shrink:0">' +
+            (st.lastMove ? '<button class="btn btn-sm" onclick="pbUndoLastMove()"><i class="ti ti-arrow-back-up"></i> Undo</button>' : '') +
+            (hasAnyOverride ? '<button class="btn btn-sm" onclick="pbShowResetPreview()"><i class="ti ti-refresh"></i> Reset to default</button>' : '') +
+          '</div>' +
         '</div>' +
         (listRows || '<div class="text-muted" style="padding:20px;text-align:center">' + (searchQ ? 'No sized projects match your search' : 'No sized projects in this view') + '</div>') +
       '</div>' +
@@ -2444,9 +2449,12 @@ function pgPrioritizeBacklog() {
       var fromIdx = ids.indexOf(fromPid);
       var toIdx = ids.indexOf(toPid);
       if (fromIdx < 0 || toIdx < 0) return;
+      // Snapshot everyone's rank/override as they stood right before this
+      // move, so a single Undo can restore exactly this state afterward.
+      var snapshotBeforeMove = orderedSized.map(function(p){ return { project_id: p.id, rank: p.priorityRank, is_override: p.priorityIsOverride }; });
       ids.splice(fromIdx, 1);
       ids.splice(toIdx, 0, fromPid);
-      pbPersistOrder(ids, fromPid);
+      pbPersistOrder(ids, fromPid, snapshotBeforeMove);
     });
   });
 }
@@ -2455,7 +2463,7 @@ function pgPrioritizeBacklog() {
 // project someone actually moved) gets flagged as an override; everyone else
 // keeps whatever override status they already had, even though their rank
 // number may shift to make room.
-async function pbPersistOrder(orderedIds, draggedPid) {
+async function pbPersistOrder(orderedIds, draggedPid, snapshotBeforeMove) {
   var rows = orderedIds.map(function(pid, idx){
     var proj = D.projects.find(function(x){ return x.id === pid; });
     var isOverride = pid === draggedPid ? true : !!(proj && proj.priorityIsOverride);
@@ -2470,6 +2478,22 @@ async function pbPersistOrder(orderedIds, draggedPid) {
     var p = D.projects.find(function(x){ return x.id === r.project_id; });
     if (p) { p.priorityRank = r.rank; p.priorityIsOverride = r.is_override; }
   });
+  if (snapshotBeforeMove) prioritizeBacklogState.lastMove = { snapshot: snapshotBeforeMove, movedPid: draggedPid };
+  if (currentPage === 'prioritize-backlog') pgPrioritizeBacklog();
+}
+
+async function pbUndoLastMove() {
+  var lastMove = prioritizeBacklogState.lastMove;
+  if (!lastMove) return;
+  var rows = lastMove.snapshot.filter(function(r){ return r.rank != null; });
+  var result = await sb.from('project_priority_ranks').upsert(rows, { onConflict: 'project_id' });
+  if (result.error) { showToast('Could not undo: ' + result.error.message, 'error'); return; }
+  rows.forEach(function(r) {
+    var p = D.projects.find(function(x){ return x.id === r.project_id; });
+    if (p) { p.priorityRank = r.rank; p.priorityIsOverride = r.is_override; }
+  });
+  prioritizeBacklogState.lastMove = null;
+  showToast('Move undone');
   if (currentPage === 'prioritize-backlog') pgPrioritizeBacklog();
 }
 
