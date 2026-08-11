@@ -1,6 +1,6 @@
 // ── Supabase connection ───────────────────────────────────────────────────────
-var SUPABASE_URL = 'https://mglwdprqbjncnlioifya.supabase.co';
-var SUPABASE_KEY = 'sb_publishable_iEcNnoDk0u7CqoAuh8Kuyg_nDl-QuO3';
+var SUPABASE_URL = 'https://bnzrhmjhfnqfekrkjghh.supabase.co';
+var SUPABASE_KEY = 'sb_publishable_2R6cXaudHMWLBFY3DA_RGg_4yeL7Wky';
 var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // "View as" is a client-side simulation only — the real Supabase session never
