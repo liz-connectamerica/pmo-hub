@@ -231,7 +231,7 @@ async function loadAllProjects() {
   var categoryRows      = results[13].data || [];
   var dependencyRows    = results[14].data || [];
   var priorityRankByProj = {};
-  priorityRankRows.forEach(function(r){ priorityRankByProj[r.project_id] = r.rank; });
+  priorityRankRows.forEach(function(r){ priorityRankByProj[r.project_id] = { rank: r.rank, isOverride: r.is_override }; });
 
   var activeProfilesRows = profilesRows.filter(function(p){ return p.is_active !== false; });
   D.people = activeProfilesRows.map(function(p){ return p.display_name; });
@@ -317,7 +317,7 @@ async function loadAllProjects() {
     (foldersByProj[pr.id] || []).forEach(function(f){ docFolderIds[f.name] = f.id; });
     if (docFolders.indexOf('General') < 0) docFolders.unshift('General');
 
-    var priorityRank = priorityRankByProj[pr.id] != null ? priorityRankByProj[pr.id] : null;
+    var priorityInfo = priorityRankByProj[pr.id] || null;
 
     return {
       id: pr.id, name: pr.name,
@@ -336,7 +336,8 @@ async function loadAllProjects() {
       deliveryMethodology: pr.delivery_methodology, projectNumber: pr.project_number, createdAt: pr.created_at, tshirtSize: pr.tshirt_size,
       estimatedAmount: pr.estimated_amount, estimatedFrequency: pr.estimated_frequency, estimatedType: pr.estimated_type,
       valueConfidence: pr.value_confidence, costEstimate: pr.cost_estimate, costConfidence: pr.cost_confidence,
-      priorityRank: priorityRank,
+      priorityRank: priorityInfo ? priorityInfo.rank : null,
+      priorityIsOverride: priorityInfo ? !!priorityInfo.isOverride : false,
       milestones: milestones, tasks: tasks, raid: raid,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
     };
@@ -737,7 +738,7 @@ var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
 var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null };
 var portfolioTagFilter = [];
-var prioritizeBacklogState = { category:'All', dragPid:null, search:'' };
+var prioritizeBacklogState = { category:'All', dragPid:null, search:'', materializing:false };
 var backlogProjState = { sort:'name', dir:'asc', search:'', category:'All',
   filters: { tags:[], value:[], priority:[], owner:[] }, openFilter:null };
 var plannedProjState = { sort:'name', dir:'asc', search:'', category:'All',
@@ -2226,10 +2227,69 @@ function pbShowMatrixHelp() {
 function pbShowPriorityHelp() {
   showModal('<div class="modal-title">How Priority Order is calculated <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">One shared ranking</div><div style="font-size:13px;color:#444">There is a single priority order across every non-complete project (Backlog, Planned, Active, Hold) — category tabs are a filtered view of that same order, not a ranking of their own. Dragging a row in any tab updates the real, shared order, so a move can shift where a project lands in another tab it also belongs to, if the move crosses a project that shares that category.</div></div>' +
-    '<div class="form-group"><div class="form-label">Before you drag anything</div><div style="font-size:13px;color:#444">A project without a saved rank yet is placed automatically by <strong>estimated value ÷ effort</strong>, highest first. Effort comes from T-shirt size (XS=1, S=2, M=3, L=4, XL=5; missing size counts as 3). This is just a starting point — it isn\'t saved as a rank until something is actually dragged.</div></div>' +
-    '<div class="form-group"><div class="form-label">After you drag something</div><div style="font-size:13px;color:#444">Its new position is saved as an explicit rank, which always takes precedence over the automatic score above.</div></div>' +
+    '<div class="form-group"><div class="form-label">Every sized project has a saved rank</div><div style="font-size:13px;color:#444">As soon as a project has both an estimated value and a T-shirt size, its position is calculated by <strong>estimated value ÷ effort</strong> (highest first) and saved right away — effort comes from T-shirt size (XS=1, S=2, M=3, L=4, XL=5; missing size counts as 3). You don\'t have to touch it for that rank to be real.</div></div>' +
+    '<div class="form-group"><div class="form-label">Dragging creates an override</div><div style="font-size:13px;color:#444">Moving a row by hand saves its new position and marks it <span class="badge badge-amber" style="font-size:10px"><i class="ti ti-pin"></i> Manual</span> — that project won\'t be swept back into place by the automatic calculation. Everything else keeps its own override status even when its rank number shifts to make room.</div></div>' +
+    '<div class="form-group"><div class="form-label">Resetting</div><div style="font-size:13px;color:#444">"Reset to default" clears every manual override and re-sorts the whole list by the automatic calculation — it shows you exactly what would move before anything is saved.</div></div>' +
     '<div class="form-group"><div class="form-label">Only sized projects rank</div><div style="font-size:13px;color:#444">A project needs both an estimated value and a T-shirt size to appear here — otherwise it shows under Needs sizing instead.</div></div>' +
     '<div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>');
+}
+
+async function pbMaterializeDefaultRanks(orderedSized) {
+  var rows = orderedSized.map(function(p, idx){ return { project_id: p.id, rank: idx + 1, is_override: !!p.priorityIsOverride }; });
+  var result = await sb.from('project_priority_ranks').upsert(rows, { onConflict: 'project_id' });
+  prioritizeBacklogState.materializing = false;
+  if (result.error) { console.error('Could not save default priority ranks:', result.error); return; }
+  rows.forEach(function(r) {
+    var p = D.projects.find(function(x){ return x.id === r.project_id; });
+    if (p) { p.priorityRank = r.rank; }
+  });
+  if (currentPage === 'prioritize-backlog') pgPrioritizeBacklog();
+}
+
+function pbShowResetPreview() {
+  var globalSizedAll = D.projects.filter(function(p){ return p.stage !== 'complete'; }).filter(pbIsSized);
+  var currentOrder = globalSizedAll.filter(function(p){ return p.priorityRank != null; }).sort(function(a,b){ return a.priorityRank - b.priorityRank; })
+    .concat(globalSizedAll.filter(function(p){ return p.priorityRank == null; }));
+  var currentPos = {};
+  currentOrder.forEach(function(p, idx){ currentPos[p.id] = idx + 1; });
+
+  var defaultOrder = globalSizedAll.slice().sort(function(a,b){ return pbScore(b) - pbScore(a); });
+  var changed = [];
+  defaultOrder.forEach(function(p, idx){
+    var newPos = idx + 1;
+    var oldPos = currentPos[p.id];
+    if (oldPos !== newPos) changed.push({ p:p, oldPos:oldPos, newPos:newPos });
+  });
+  changed.sort(function(a,b){ return a.newPos - b.newPos; });
+
+  var rowsHtml = changed.map(function(c) {
+    return '<tr><td>' + c.p.name + '</td><td class="text-muted">#' + c.oldPos + '</td><td style="text-align:center"><i class="ti ti-arrow-right"></i></td><td class="bold">#' + c.newPos + '</td></tr>';
+  }).join('');
+
+  showModal('<div class="modal-title">Reset priority order to the default calculation? <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    (changed.length
+      ? '<div class="form-sub" style="margin-bottom:12px">This clears every manual override and re-sorts everyone by estimated value ÷ effort. ' + changed.length + ' project' + (changed.length===1?'':'s') + ' would move:</div>' +
+        '<div class="table-wrap" style="max-height:320px"><table><thead><tr><th>Project</th><th>Current</th><th></th><th>New</th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div>'
+      : '<div class="text-muted">No changes — the current order already matches the default calculation.</div>') +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    (changed.length ? '<button class="btn btn-primary" onclick="pbApplyResetToDefault()"><i class="ti ti-check"></i> Reset ' + changed.length + ' project' + (changed.length===1?'':'s') + '</button>' : '') +
+    '</div>', true);
+}
+
+async function pbApplyResetToDefault() {
+  var globalSizedAll = D.projects.filter(function(p){ return p.stage !== 'complete'; }).filter(pbIsSized);
+  var defaultOrder = globalSizedAll.slice().sort(function(a,b){ return pbScore(b) - pbScore(a); });
+  var rows = defaultOrder.map(function(p, idx){ return { project_id: p.id, rank: idx + 1, is_override: false }; });
+  var btn = document.querySelector('.modal-footer .btn-primary'); if (btn) btn.disabled = true;
+  var result = await sb.from('project_priority_ranks').upsert(rows, { onConflict: 'project_id' });
+  if (result.error) { showToast('Could not reset order: ' + result.error.message, 'error'); if (btn) btn.disabled = false; return; }
+  rows.forEach(function(r) {
+    var p = D.projects.find(function(x){ return x.id === r.project_id; });
+    if (p) { p.priorityRank = r.rank; p.priorityIsOverride = false; }
+  });
+  closeModal();
+  showToast('Priority order reset to the default calculation');
+  if (currentPage === 'prioritize-backlog') pgPrioritizeBacklog();
 }
 
 function pgPrioritizeBacklog() {
@@ -2257,6 +2317,17 @@ function pgPrioritizeBacklog() {
   var globalUnranked = globalSized.filter(function(p){ return p.priorityRank == null; })
     .sort(function(a,b){ return pbScore(b) - pbScore(a); });
   var orderedSized = globalRanked.concat(globalUnranked);
+  var hasAnyOverride = globalSized.some(function(p){ return p.priorityIsOverride; });
+
+  // A project's default (score-based) position is meant to be a real, saved
+  // rank from the moment it becomes sized -- not just a transient sort order
+  // that only gets persisted once someone happens to drag it. So as soon as
+  // any sized project is missing a saved rank, quietly write the whole
+  // current order as everyone's rank, preserving existing override flags.
+  if (globalUnranked.length && !st.materializing) {
+    st.materializing = true;
+    pbMaterializeDefaultRanks(orderedSized);
+  }
 
   var filtered = allActive.filter(function(p){ return projectMatchesCategoryTab(p, scope); });
   var unsized = filtered.filter(function(p){ return !pbIsSized(p); });
@@ -2306,7 +2377,7 @@ function pgPrioritizeBacklog() {
       return '<div class="pb-row" draggable="true" data-pid="' + p.id + '" data-idx="' + idx + '">' +
         '<span class="pb-drag-handle"><i class="ti ti-grip-vertical"></i></span>' +
         '<span class="pb-rank">' + (idx+1) + '</span>' +
-        '<span class="pb-name" onclick="goToProject(\'' + p.id + '\')">' + p.name + '</span>' +
+        '<span class="pb-name" onclick="goToProject(\'' + p.id + '\')">' + p.name + (p.priorityIsOverride ? ' <span class="badge badge-amber" style="font-size:10px" title="Manually set — won\'t move automatically"><i class="ti ti-pin"></i> Manual</span>' : '') + '</span>' +
         '<span class="pb-cats">' + (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '') + '</span>' +
         '<span class="pb-value">' + fmtCost(p.estimatedAmount) + '</span>' +
         '<span class="pb-size">' + '<span class="badge badge-gray">' + p.tshirtSize + '</span>' + '</span>' +
@@ -2333,7 +2404,10 @@ function pgPrioritizeBacklog() {
         matrixHtml +
       '</div>' +
       '<div class="card">' +
-        '<div class="section-title" style="margin-bottom:12px;display:flex;align-items:center;gap:6px">Priority Order — ' + scope + ' <i class="ti ti-help-circle pb-help-icon" onclick="pbShowPriorityHelp()" title="How this is calculated"></i></div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px">' +
+          '<div class="section-title" style="margin-bottom:0;display:flex;align-items:center;gap:6px">Priority Order — ' + scope + ' <i class="ti ti-help-circle pb-help-icon" onclick="pbShowPriorityHelp()" title="How this is calculated"></i></div>' +
+          (hasAnyOverride ? '<button class="btn btn-sm" onclick="pbShowResetPreview()"><i class="ti ti-refresh"></i> Reset to default</button>' : '') +
+        '</div>' +
         (listRows || '<div class="text-muted" style="padding:20px;text-align:center">' + (searchQ ? 'No sized projects match your search' : 'No sized projects in this view') + '</div>') +
       '</div>' +
     '</div>' +
@@ -2372,13 +2446,21 @@ function pgPrioritizeBacklog() {
       if (fromIdx < 0 || toIdx < 0) return;
       ids.splice(fromIdx, 1);
       ids.splice(toIdx, 0, fromPid);
-      pbPersistOrder(ids);
+      pbPersistOrder(ids, fromPid);
     });
   });
 }
 
-async function pbPersistOrder(orderedIds) {
-  var rows = orderedIds.map(function(pid, idx){ return { project_id: pid, rank: idx + 1 }; });
+// Writes the whole current order as everyone's rank. Only draggedPid (the
+// project someone actually moved) gets flagged as an override; everyone else
+// keeps whatever override status they already had, even though their rank
+// number may shift to make room.
+async function pbPersistOrder(orderedIds, draggedPid) {
+  var rows = orderedIds.map(function(pid, idx){
+    var proj = D.projects.find(function(x){ return x.id === pid; });
+    var isOverride = pid === draggedPid ? true : !!(proj && proj.priorityIsOverride);
+    return { project_id: pid, rank: idx + 1, is_override: isOverride };
+  });
   var result = await sb.from('project_priority_ranks').upsert(rows, { onConflict: 'project_id' });
   if (result.error) {
     showToast('Could not save order: ' + result.error.message, 'error');
@@ -2386,7 +2468,7 @@ async function pbPersistOrder(orderedIds) {
   }
   rows.forEach(function(r) {
     var p = D.projects.find(function(x){ return x.id === r.project_id; });
-    if (p) { p.priorityRank = r.rank; }
+    if (p) { p.priorityRank = r.rank; p.priorityIsOverride = r.is_override; }
   });
   if (currentPage === 'prioritize-backlog') pgPrioritizeBacklog();
 }
