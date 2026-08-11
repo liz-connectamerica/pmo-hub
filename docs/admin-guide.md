@@ -37,8 +37,9 @@ You also have a **Delete** button on any request — this only unlinks it from i
 
 A value-vs-effort view for deciding what to schedule next. Filter by category tab (or "All") — there's **one overall priority ranking** across every non-complete project, and each category tab just shows the projects in it, in that same order. Reordering within a tab only changes what you see elsewhere if the move crosses a project that shares a category with it — moving a project past others outside its own category(ies) leaves its position in those categories' tabs untouched. A project in two categories has a single rank, so it's possible for a drag in one of its tabs to shift where it lands in the other.
 
-- The **matrix** plots projects by Value $ (estimated amount) against T-shirt size, into four quadrants (Quick Wins, Major Projects, Fill-ins, Reconsider).
-- The **ranked list** is the actual editing surface — drag rows to reorder. New projects without a saved rank yet are seeded by a value-per-effort score, then you can drag them anywhere.
+- The **matrix** plots projects by Value $ (estimated amount) against T-shirt size, into four quadrants (Quick Wins, Major Projects, Fill-ins, Reconsider). Click the **?** next to its title for exactly how High/Low is decided on each axis.
+- The **ranked list** is the actual editing surface — drag rows to reorder. New projects without a saved rank yet are seeded by a value-per-effort score, then you can drag them anywhere. Click the **?** next to its title for exactly how that starting score is calculated.
+- Search filters both the matrix and the ranked list by project name — rank numbers stay tied to the project's true position even when a search narrows what's visible.
 - Projects missing a value estimate or T-shirt size show up in a separate **Needs sizing** panel instead of the matrix, since they can't be meaningfully plotted yet.
 
 ## Resources
