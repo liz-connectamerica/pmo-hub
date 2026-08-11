@@ -363,7 +363,7 @@ function myAssignedProjects() {
   var myId = D.myResourceId;
   if (!myId) return [];
   return D.projects.filter(function(p){
-    return (p.teamIds||[]).indexOf(myId) >= 0 || p.ownerId === myId ||
+    return (p.teamIds||[]).indexOf(myId) >= 0 || p.ownerId === myId || p.sponsorResourceId === myId ||
       p.tasks.some(function(t){ return t.assigneeId === myId; });
   });
 }
@@ -372,8 +372,9 @@ function hasAssignedWork() {
   var myId = D.myResourceId;
   if (!myId) return false;
   var onActiveProject = D.projects.some(function(p){ return p.stage === 'active' && ((p.teamIds||[]).indexOf(myId) >= 0 || p.ownerId === myId); });
+  var sponsoringAProject = D.projects.some(function(p){ return p.sponsorResourceId === myId; });
   var hasOpenTask = D.projects.some(function(p){ return p.tasks.some(function(t){ return t.assigneeId === myId && t.status !== 'Done'; }); });
-  return onActiveProject || hasOpenTask;
+  return onActiveProject || sponsoringAProject || hasOpenTask;
 }
 
 function currentUser() {
@@ -6145,7 +6146,7 @@ function pgMyProjectsResource() {
     return '<div class="project-card">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
         '<div><div class="bold mb-12">' + hdot(p.health) + p.name + '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.status) + ' ' + stagePill(p.stage) + ' ' + badgeIf('badge-purple', p.value) + '</div></div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + (isProjectSponsor(p) ? '<span class="badge badge-coral">Sponsor</span>' : '') + bdg(p.status) + ' ' + stagePill(p.stage) + ' ' + badgeIf('badge-purple', p.value) + '</div></div>' +
         '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
       '</div>' +
       '<div class="grid-2 mt-12" style="font-size:12px;color:#777">' +
