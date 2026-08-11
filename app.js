@@ -929,21 +929,21 @@ var projectDetailReferrer = null;
 var NAV_DEF = {
   admin: [
     { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'}] },
+    { s:'My Requests', items:[
+      {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
+      {id:'my-requests',  icon:'ti-clock', label:'My Requests'}
+    ]},
     { s:'Projects', items:[
       {id:'projects', icon:'ti-briefcase',      label:'Active'},
       {id:'planned',  icon:'ti-calendar-event', label:'Planned'},
       {id:'backlog',  icon:'ti-stack-2',        label:'Backlog',         badge:'backlog'},
       {id:'hold',     icon:'ti-player-pause',   label:'Hold'},
-      {id:'completed',icon:'ti-circle-check',   label:'Completed'}
+      {id:'completed',icon:'ti-circle-check',   label:'Completed'},
+      {id:'requests', icon:'ti-inbox',          label:'Requests',        badge:'pending'}
     ]},
     { s:'Resources', items:[
       {id:'resources', icon:'ti-users', label:'Resources'},
       {id:'capacity',  icon:'ti-gauge', label:'Capacity'}
-    ]},
-    { s:'Intake',   items:[{id:'requests',icon:'ti-inbox',label:'Requests',badge:'pending'}] },
-    { s:'My Requests', items:[
-      {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
-      {id:'my-requests',  icon:'ti-clock', label:'My Requests'}
     ]},
     { s:'Data Tools', items:[
       {id:'import-projects', icon:'ti-file-upload', label:'Import Projects'},
@@ -962,16 +962,16 @@ var NAV_DEF = {
       {id:'roadmap',   icon:'ti-road',             label:'Roadmap'},
       {id:'portfolio', icon:'ti-folder-open',      label:'Portfolio'}
     ]},
+    { s:'My Requests', items:[
+      {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
+      {id:'my-requests',  icon:'ti-clock', label:'My Requests'}
+    ]},
     { s:'Projects', items:[
       {id:'projects',  icon:'ti-briefcase',      label:'Active'},
       {id:'planned',   icon:'ti-calendar-event', label:'Planned'},
       {id:'backlog',   icon:'ti-stack-2',        label:'Backlog',         badge:'backlog'},
       {id:'hold',      icon:'ti-player-pause',   label:'Hold'},
       {id:'completed', icon:'ti-circle-check',   label:'Completed'}
-    ]},
-    { s:'My Requests', items:[
-      {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
-      {id:'my-requests',  icon:'ti-clock', label:'My Requests'}
     ]}
   ]
 };
@@ -996,10 +996,11 @@ function toggleNavSection(s) {
 function renderNav() {
   var defs = (NAV_DEF[D.role] || []).slice();
   if (hasAssignedWork()) {
-    defs = defs.concat([{ s:'My Work', items:[
+    // Right after Overview, not appended at the end.
+    defs.splice(1, 0, { s:'My Work', items:[
       {id:'my-projects', icon:'ti-briefcase',   label:'My Projects'},
       {id:'my-tasks',    icon:'ti-check',       label:'My Tasks', badge:'my-tasks'}
-    ]}]);
+    ]});
   }
   var anyExpanded = defs.some(function(sec){ return !isNavSectionCollapsed(sec.s); });
   var h = '<div class="nav-toggle-all" onclick="toggleAllNavSections()">' + (anyExpanded ? 'Collapse all' : 'Expand all') + '</div>';
