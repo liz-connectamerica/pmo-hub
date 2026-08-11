@@ -981,8 +981,13 @@ var navCollapsedState = (function() {
   try { return JSON.parse(localStorage.getItem('pmoHubNavCollapsed') || '{}'); } catch (e) { return {}; }
 })();
 
+// No stored entry means never touched -- defaults to collapsed.
+function isNavSectionCollapsed(s) {
+  return navCollapsedState[s] !== undefined ? navCollapsedState[s] : true;
+}
+
 function toggleNavSection(s) {
-  navCollapsedState[s] = !navCollapsedState[s];
+  navCollapsedState[s] = !isNavSectionCollapsed(s);
   try { localStorage.setItem('pmoHubNavCollapsed', JSON.stringify(navCollapsedState)); } catch (e) {}
   renderNav();
 }
@@ -995,9 +1000,10 @@ function renderNav() {
       {id:'my-tasks',    icon:'ti-check',       label:'My Tasks', badge:'my-tasks'}
     ]}]);
   }
-  var h = '';
+  var anyExpanded = defs.some(function(sec){ return !isNavSectionCollapsed(sec.s); });
+  var h = '<div class="nav-toggle-all" onclick="toggleAllNavSections()">' + (anyExpanded ? 'Collapse all' : 'Expand all') + '</div>';
   defs.forEach(function(sec) {
-    var collapsed = !!navCollapsedState[sec.s];
+    var collapsed = isNavSectionCollapsed(sec.s);
     h += '<div class="sidebar-section" onclick="toggleNavSection(\'' + sec.s.replace(/'/g,"\\'") + '\')">' +
       '<span>' + sec.s + '</span><i class="ti ti-chevron-' + (collapsed ? 'right' : 'down') + '"></i></div>';
     if (!collapsed) {
@@ -1010,6 +1016,13 @@ function renderNav() {
     }
   });
   document.getElementById('nav-menu').innerHTML = h;
+
+  window.toggleAllNavSections = function() {
+    var collapseThem = anyExpanded;
+    defs.forEach(function(sec){ navCollapsedState[sec.s] = collapseThem; });
+    try { localStorage.setItem('pmoHubNavCollapsed', JSON.stringify(navCollapsedState)); } catch (e) {}
+    renderNav();
+  };
 }
 
 var PAGE_RENDERERS = {
