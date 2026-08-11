@@ -737,7 +737,7 @@ var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
 var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null };
 var portfolioTagFilter = [];
-var prioritizeBacklogState = { category:'All', dragPid:null };
+var prioritizeBacklogState = { category:'All', dragPid:null, search:'' };
 var backlogProjState = { sort:'name', dir:'asc', search:'', category:'All',
   filters: { tags:[], value:[], priority:[], owner:[] }, openFilter:null };
 var plannedProjState = { sort:'name', dir:'asc', search:'', category:'All',
@@ -975,6 +975,18 @@ var NAV_DEF = {
   ]
 };
 
+// Which sidebar sections are collapsed, keyed by section title. Persisted
+// across sessions since this is a personal layout preference, not app state.
+var navCollapsedState = (function() {
+  try { return JSON.parse(localStorage.getItem('pmoHubNavCollapsed') || '{}'); } catch (e) { return {}; }
+})();
+
+function toggleNavSection(s) {
+  navCollapsedState[s] = !navCollapsedState[s];
+  try { localStorage.setItem('pmoHubNavCollapsed', JSON.stringify(navCollapsedState)); } catch (e) {}
+  renderNav();
+}
+
 function renderNav() {
   var defs = (NAV_DEF[D.role] || []).slice();
   if (hasAssignedWork()) {
@@ -985,13 +997,17 @@ function renderNav() {
   }
   var h = '';
   defs.forEach(function(sec) {
-    h += '<div class="sidebar-section">' + sec.s + '</div>';
-    sec.items.forEach(function(item) {
-      var cnt = item.badge === 'pending' ? pendingCount() : item.badge === 'backlog' ? backlogCount() : item.badge === 'my-tasks' ? myOpenTasksCount() : 0;
-      var badge = cnt > 0 ? '<span class="nav-badge">' + cnt + '</span>' : '';
-      h += '<div class="nav-item' + (currentPage === item.id ? ' active' : '') + '" onclick="nav(\'' + item.id + '\')">' +
-           '<i class="ti ' + item.icon + '"></i>' + item.label + badge + '</div>';
-    });
+    var collapsed = !!navCollapsedState[sec.s];
+    h += '<div class="sidebar-section" onclick="toggleNavSection(\'' + sec.s.replace(/'/g,"\\'") + '\')">' +
+      '<span>' + sec.s + '</span><i class="ti ti-chevron-' + (collapsed ? 'right' : 'down') + '"></i></div>';
+    if (!collapsed) {
+      sec.items.forEach(function(item) {
+        var cnt = item.badge === 'pending' ? pendingCount() : item.badge === 'backlog' ? backlogCount() : item.badge === 'my-tasks' ? myOpenTasksCount() : 0;
+        var badge = cnt > 0 ? '<span class="nav-badge">' + cnt + '</span>' : '';
+        h += '<div class="nav-item' + (currentPage === item.id ? ' active' : '') + '" onclick="nav(\'' + item.id + '\')">' +
+             '<i class="ti ' + item.icon + '"></i>' + item.label + badge + '</div>';
+      });
+    }
   });
   document.getElementById('nav-menu').innerHTML = h;
 }
@@ -2215,7 +2231,12 @@ function pgPrioritizeBacklog() {
   var unsized = filtered.filter(function(p){ return !pbIsSized(p); });
   var displaySized = orderedSized.filter(function(p){ return projectMatchesCategoryTab(p, scope); });
 
-  // Matrix quadrant thresholds: split this tab's sized projects on the median $ amount.
+  var searchQ = (st.search || '').trim().toLowerCase();
+  function matchesSearch(p) { return !searchQ || p.name.toLowerCase().indexOf(searchQ) >= 0; }
+
+  // Matrix quadrant thresholds: split this tab's sized projects on the median $
+  // amount, before any search filtering -- searching should narrow which chips
+  // show up, not shift the quadrant boundaries themselves.
   var amounts = displaySized.map(function(p){ return p.estimatedAmount; }).sort(function(a,b){ return a-b; });
   var mid = amounts.length ? amounts[Math.floor((amounts.length-1)/2)] : 0;
   function valueBucket(p) { return p.estimatedAmount >= mid ? 'High' : 'Low'; }
@@ -2226,7 +2247,7 @@ function pgPrioritizeBacklog() {
     'Low-Low':   { label:'Fill-ins',        cls:'pb-quad-bl', items:[] },
     'Low-High':  { label:'Reconsider',      cls:'pb-quad-br', items:[] }
   };
-  displaySized.forEach(function(p){ quadrants[valueBucket(p) + '-' + pbEffortBucket(p)].items.push(p); });
+  displaySized.filter(matchesSearch).forEach(function(p){ quadrants[valueBucket(p) + '-' + pbEffortBucket(p)].items.push(p); });
 
   function chip(p) {
     return '<div class="pb-chip" onclick="goToProject(\'' + p.id + '\')" title="' + p.name.replace(/"/g,'&quot;') + ' — ' + fmtCost(p.estimatedAmount) + ', ' + p.tshirtSize + '">' + p.name + '</div>';
@@ -2245,18 +2266,24 @@ function pgPrioritizeBacklog() {
         '<div class="pb-axis-x">Effort (T-shirt size) →</div>' +
       '</div>';
 
-  var listRows = displaySized.map(function(p, idx) {
-    return '<div class="pb-row" draggable="true" data-pid="' + p.id + '" data-idx="' + idx + '">' +
-      '<span class="pb-drag-handle"><i class="ti ti-grip-vertical"></i></span>' +
-      '<span class="pb-rank">' + (idx+1) + '</span>' +
-      '<span class="pb-name" onclick="goToProject(\'' + p.id + '\')">' + p.name + '</span>' +
-      '<span class="pb-cats">' + (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '') + '</span>' +
-      '<span class="pb-value">' + fmtCost(p.estimatedAmount) + '</span>' +
-      '<span class="pb-size">' + '<span class="badge badge-gray">' + p.tshirtSize + '</span>' + '</span>' +
-    '</div>';
-  }).join('');
+  // Rank numbers reflect true position in the full (unfiltered) order for this
+  // tab, even when a search narrows which rows are actually shown.
+  var listRows = displaySized.map(function(p, idx){ return { p:p, idx:idx }; })
+    .filter(function(x){ return matchesSearch(x.p); })
+    .map(function(x) {
+      var p = x.p, idx = x.idx;
+      return '<div class="pb-row" draggable="true" data-pid="' + p.id + '" data-idx="' + idx + '">' +
+        '<span class="pb-drag-handle"><i class="ti ti-grip-vertical"></i></span>' +
+        '<span class="pb-rank">' + (idx+1) + '</span>' +
+        '<span class="pb-name" onclick="goToProject(\'' + p.id + '\')">' + p.name + '</span>' +
+        '<span class="pb-cats">' + (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '') + '</span>' +
+        '<span class="pb-value">' + fmtCost(p.estimatedAmount) + '</span>' +
+        '<span class="pb-size">' + '<span class="badge badge-gray">' + p.tshirtSize + '</span>' + '</span>' +
+      '</div>';
+    }).join('');
 
-  var unsizedRows = unsized.map(function(p) {
+  var unsizedVisible = unsized.filter(matchesSearch);
+  var unsizedRows = unsizedVisible.map(function(p) {
     return '<div class="pb-unsized-row">' +
       '<span class="pb-name" onclick="goToProject(\'' + p.id + '\')">' + p.name + '</span>' +
       '<span class="text-muted" style="font-size:12px">' + (p.estimatedAmount == null ? 'Needs value estimate' : '') + (p.estimatedAmount == null && !p.tshirtSize ? ' · ' : '') + (!p.tshirtSize ? 'Needs T-shirt size' : '') + '</span>' +
@@ -2267,6 +2294,7 @@ function pgPrioritizeBacklog() {
   document.getElementById('content').innerHTML =
     '<div class="info-banner info-amber"><i class="ti ti-arrows-sort" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
     '<span>Drag rows in the list to set priority order for <strong>' + scope + '</strong>. There is one overall ranking across all categories — this tab shows just the projects in it, in that same order. Reordering here only changes what you see elsewhere if it moves a project past another one that shares a category with it.</span></div>' +
+    searchBoxHtml(st.search, 'Search projects by name…', 'prioritize-search', 'onPrioritizeSearch') +
     cat.html +
     '<div class="grid-2" style="align-items:start;gap:20px">' +
       '<div class="card">' +
@@ -2275,14 +2303,19 @@ function pgPrioritizeBacklog() {
       '</div>' +
       '<div class="card">' +
         '<div class="section-title" style="margin-bottom:12px">Priority Order — ' + scope + '</div>' +
-        (listRows || '<div class="text-muted" style="padding:20px;text-align:center">No sized projects in this view</div>') +
+        (listRows || '<div class="text-muted" style="padding:20px;text-align:center">' + (searchQ ? 'No sized projects match your search' : 'No sized projects in this view') + '</div>') +
       '</div>' +
     '</div>' +
-    (unsized.length
-      ? '<div class="card" style="margin-top:20px"><div class="section-title" style="margin-bottom:12px">Needs sizing (' + unsized.length + ')</div>' + unsizedRows + '</div>'
+    (unsizedVisible.length
+      ? '<div class="card" style="margin-top:20px"><div class="section-title" style="margin-bottom:12px">Needs sizing (' + unsizedVisible.length + ')</div>' + unsizedRows + '</div>'
       : '');
 
   window.setPrioritizeCategory = function(c) { st.category = c; pgPrioritizeBacklog(); };
+  window.onPrioritizeSearch = function(v) {
+    st.search = v; pgPrioritizeBacklog();
+    var el = document.getElementById('prioritize-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
 
   var rowEls = document.querySelectorAll('.pb-row');
   rowEls.forEach(function(el) {
