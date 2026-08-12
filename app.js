@@ -185,6 +185,33 @@ async function loadResources() {
   });
 }
 
+async function loadPrograms() {
+  var results = await Promise.all([
+    sb.from('programs').select('*'),
+    sb.from('resources').select('id, name'),
+    sb.from('projects').select('id, name, program_id')
+  ]);
+  for (var i = 0; i < results.length; i++) {
+    if (results[i].error) { console.error('loadPrograms query failed:', results[i].error); return []; }
+  }
+  var programRows = results[0].data || [];
+  var nameById = {};
+  (results[1].data || []).forEach(function(r){ nameById[r.id] = r.name; });
+  var projectsByProgram = groupBy((results[2].data || []).filter(function(p){ return p.program_id; }), 'program_id');
+
+  return programRows.map(function(pr) {
+    return {
+      id: pr.id, programNumber: pr.program_number, name: pr.name, description: pr.description,
+      businessObjective: pr.business_objective,
+      sponsorResourceId: pr.sponsor_resource_id, sponsorName: pr.sponsor_resource_id ? (nameById[pr.sponsor_resource_id] || '') : '',
+      managerResourceId: pr.manager_resource_id, managerName: pr.manager_resource_id ? (nameById[pr.manager_resource_id] || '') : '',
+      businessOwnerResourceId: pr.business_owner_resource_id, businessOwnerName: pr.business_owner_resource_id ? (nameById[pr.business_owner_resource_id] || '') : '',
+      createdAt: pr.created_at,
+      projects: (projectsByProgram[pr.id] || []).map(function(p){ return { id: p.id, name: p.name }; })
+    };
+  });
+}
+
 async function loadAllProjects() {
   var results = await Promise.all([
     sb.from('projects').select('*'),
@@ -322,7 +349,7 @@ async function loadAllProjects() {
     return {
       id: pr.id, name: pr.name,
       owner: pr.owner_name || (pr.owner_id ? resourceNameById[pr.owner_id] : ''), ownerId: pr.owner_id,
-      sponsor: pr.sponsor, sponsorResourceId: pr.sponsor_resource_id,
+      sponsor: pr.sponsor, sponsorResourceId: pr.sponsor_resource_id, programId: pr.program_id,
       categories: (categoriesByProj[pr.id]||[]).map(function(c){ return c.category; }), businessUnit: pr.business_unit,
       dependencies: (dependenciesByProject[pr.id]||[]).map(function(d){ return projectInfoById[d.depends_on_project_id]; }).filter(Boolean),
       team: teamNames, teamIds: teamIds,
@@ -385,11 +412,20 @@ function currentUser() {
 
 function canEdit(p) {
   if (D.role === 'admin') return true;
-  return !!(p.ownerId && D.myResourceId && p.ownerId === D.myResourceId);
+  if (p.ownerId && D.myResourceId && p.ownerId === D.myResourceId) return true;
+  return isProgramManagerOf(programForProject(p));
 }
 
 function isProjectSponsor(p) {
   return !!(p && p.sponsorResourceId && D.myResourceId && p.sponsorResourceId === D.myResourceId);
+}
+
+function programForProject(p) {
+  return p && p.programId ? D.programs.find(function(prog){ return prog.id === p.programId; }) : null;
+}
+
+function isProgramManagerOf(program) {
+  return !!(program && program.managerResourceId && D.myResourceId && program.managerResourceId === D.myResourceId);
 }
 
 // Single gate for all financial detail (value/cost estimates + their confidence
@@ -942,7 +978,7 @@ var projectDetailReferrer = null;
 
 var NAV_DEF = {
   admin: [
-    { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'}] },
+    { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
       {id:'my-requests',  icon:'ti-clock', label:'My Requests'}
@@ -974,7 +1010,8 @@ var NAV_DEF = {
     { s:'Overview', items:[
       {id:'dashboard', icon:'ti-layout-dashboard', label:'Dashboard'},
       {id:'roadmap',   icon:'ti-road',             label:'Roadmap'},
-      {id:'portfolio', icon:'ti-folder-open',      label:'Portfolio'}
+      {id:'portfolio', icon:'ti-folder-open',      label:'Portfolio'},
+      {id:'programs',  icon:'ti-folders',           label:'Programs'}
     ]},
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
@@ -1048,7 +1085,7 @@ var PAGE_RENDERERS = {
   submit:pgSubmit, 'my-requests':pgMyRequests,
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks,
   'import-projects':pgImportProjects, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
-  'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity
+  'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms
 };
 
 function pageAllowedForRole(page, role) {
@@ -1115,11 +1152,12 @@ async function bootAppForUser(skipReload) {
 
   if (!skipReload) {
     document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading your projects…</p></div>';
-    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests(), loadTags(), loadFieldOptions()]);
+    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests(), loadTags(), loadFieldOptions(), loadPrograms()]);
     D.projects = loaded[0];
     D.resources = loaded[1];
     D.requests = loaded[2];
     var tagData = loaded[3];
+    D.programs = loaded[5];
     D.tags = tagData.tags;
     D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; });
     D.resources.forEach(function(r){ r.tags = tagData.resourceTagNames[r.id] || []; });
@@ -1220,6 +1258,10 @@ async function refreshTags() {
   D.tags = tagData.tags;
   D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; });
   D.resources.forEach(function(r){ r.tags = tagData.resourceTagNames[r.id] || []; });
+}
+
+async function refreshPrograms() {
+  D.programs = await loadPrograms();
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
@@ -4072,6 +4114,7 @@ function editProject(pid) {
     return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="ep-category-cb" value="' + s + '"' + (checked?' checked':'') + '> ' + s + '</label>';
   }).join('');
   var buOpts     = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
+  var programOptsEdit = '<option value="">— None —</option>' + D.programs.slice().sort(function(a,b){ return a.programNumber - b.programNumber; }).map(function(pr){ return '<option value="' + pr.id + '"' + (p.programId===pr.id?' selected':'') + '>' + programLabel(pr) + ' — ' + pr.name + '</option>'; }).join('');
   var unplannedDepsEdit = (p.dependencies||[]).filter(function(d){ return !(d.start && d.end); });
   var depWarningEdit = unplannedDepsEdit.length
     ? '<div class="info-banner info-amber" style="margin-bottom:16px"><i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
@@ -4101,6 +4144,7 @@ function editProject(pid) {
     '<div class="form-group"><div class="form-label">Sponsor</div>' + (D.role === 'admin' ? '<select id="ep-sponsor">' + sponsorOpts + '</select>' : '<div style="padding:8px 0;color:#444">' + (p.sponsor || '—') + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the sponsor</div></div>') + '</div>' +
     '<div class="form-group"><div class="form-label">Owner</div>' + (D.role === 'admin' ? '<select id="ep-owner">' + ownerOpts + '</select>' : '<div style="padding:8px 0;color:#444">' + (p.owner || '—') + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the owner</div></div>') + '</div>' +
     '</div>' +
+    '<div class="form-group"><div class="form-label">Program</div><select id="ep-program">' + programOptsEdit + '</select></div>' +
     '<div class="modal-footer">' +
       (D.role === 'admin' ? '<button class="btn btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
       '<button class="btn" onclick="closeModal()">Cancel</button>' +
@@ -4138,6 +4182,8 @@ async function saveProject(pid) {
   var pmEl = document.getElementById('ep-owner');
   var ownerResource = pmEl ? resolveResource(pmEl.value) : null;
   if (pmEl) { newVals.owner_id = ownerResource ? ownerResource.id : null; newVals.owner_name = pmEl.value || null; }
+  var programEl = document.getElementById('ep-program');
+  if (programEl) newVals.program_id = programEl.value || null;
 
   // If this project is still in backlog or planned, editing in real dates should
   // move it forward automatically, rather than leaving it stranded until someone
@@ -4178,6 +4224,13 @@ async function saveProject(pid) {
   if (buEl) p.businessUnit = newVals.business_unit;
   if (spEl) { p.sponsor = newVals.sponsor; p.sponsorResourceId = newVals.sponsor_resource_id; }
   if (pmEl) { p.owner = pmEl.value; p.ownerId = newVals.owner_id; }
+  if (programEl) {
+    var oldProg = p.programId ? D.programs.find(function(x){ return x.id === p.programId; }) : null;
+    if (oldProg) oldProg.projects = oldProg.projects.filter(function(x){ return x.id !== p.id; });
+    p.programId = newVals.program_id;
+    var newProg = p.programId ? D.programs.find(function(x){ return x.id === p.programId; }) : null;
+    if (newProg) newProg.projects.push({ id: p.id, name: p.name });
+  }
   if (newCats) p.categories = newCats;
 
   closeModal(); showToast('Project saved');
@@ -4220,6 +4273,7 @@ function openNewProjectModal() {
   var priorOpts = PRIORITIES.map(function(s){ return '<option' + (s==='Needs prioritization'?' selected':'') + '>' + s + '</option>'; }).join('');
   var ownerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var sponsorOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
+  var programOpts = '<option value="">— None —</option>' + D.programs.slice().sort(function(a,b){ return a.programNumber - b.programNumber; }).map(function(pr){ return '<option value="' + pr.id + '">' + programLabel(pr) + ' — ' + pr.name + '</option>'; }).join('');
   var catCheckboxesNew = CATEGORIES.map(function(s){ return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="np-category-cb" value="' + s + '"> ' + s + '</label>'; }).join('');
   var buOpts = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
   showModal('<div class="modal-title">Create new project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
@@ -4235,6 +4289,7 @@ function openNewProjectModal() {
     '<div class="form-group"><div class="form-label">Description</div><textarea id="np-desc" placeholder="What is this project about?"></textarea></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor</div><select id="np-sponsor">' + sponsorOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Owner</div><select id="np-owner">' + ownerOpts + '</select></div></div>' +
+    '<div class="form-group"><div class="form-label">Program</div><select id="np-program">' + programOpts + '</select></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="np-save"><i class="ti ti-plus"></i> Create project</button></div>', true);
   document.getElementById('np-save').onclick = async function() {
@@ -4244,6 +4299,7 @@ function openNewProjectModal() {
     var ownerResource = resolveResource(ownerName);
     var sponsorName = document.getElementById('np-sponsor').value;
     var sponsorResource = resolveResource(sponsorName);
+    var programId = document.getElementById('np-program').value || null;
     var btn = document.getElementById('np-save'); btn.disabled = true;
 
     var selectedCats = Array.from(document.querySelectorAll('.np-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
@@ -4253,6 +4309,7 @@ function openNewProjectModal() {
     var record = {
       name: name, owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
       sponsor: sponsorName || null, sponsor_resource_id: sponsorResource ? sponsorResource.id : null,
+      program_id: programId,
       business_unit: document.getElementById('np-bu').value || null,
       delivery_methodology: document.getElementById('np-methodology').value || null,
       status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
@@ -4270,9 +4327,9 @@ function openNewProjectModal() {
       deliveryMethodology: record.delivery_methodology, start: startDate, end: endDate
     }, 'edit');
 
-    D.projects.push({
+    var newProject = {
       id: result.data.id, name:name, owner:ownerName, ownerId: ownerResource?ownerResource.id:null,
-      sponsor:sponsorName, sponsorResourceId: sponsorResource?sponsorResource.id:null,
+      sponsor:sponsorName, sponsorResourceId: sponsorResource?sponsorResource.id:null, programId: programId,
       categories:selectedCats, businessUnit:record.business_unit, team:[], teamIds:[],
       status:record.status, phase:'Not Started', progress:0, start:startDate||'', end:endDate||'',
       value:record.value_area, priority:record.priority, description:record.description,
@@ -4280,7 +4337,12 @@ function openNewProjectModal() {
       deliveryMethodology: record.delivery_methodology, projectNumber: result.data.project_number, createdAt: result.data.created_at,
       milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]},
       documents:[], docFolders:['General'], docFolderIds:{}
-    });
+    };
+    D.projects.push(newProject);
+    if (programId) {
+      var newProjProgram = D.programs.find(function(x){ return x.id === programId; });
+      if (newProjProgram) newProjProgram.projects.push({ id: newProject.id, name: newProject.name });
+    }
     closeModal(); showToast('Project created');
     nav(currentPage);
   };
@@ -6369,6 +6431,236 @@ function pgMyRequests() {
     if (result.error) { showToast('Could not revoke: ' + result.error.message); return; }
     r.status = 'Revoked'; showToast('Request revoked'); pgMyRequests(); renderNav();
   };
+}
+
+// ── Programs ────────────────────────────────────────────────────────────────
+
+function programLabel(program) { return 'P' + program.programNumber; }
+
+function pgPrograms() {
+  tb('Programs');
+  var programs = D.programs.slice().sort(function(a,b){ return a.programNumber - b.programNumber; });
+
+  var rows = programs.map(function(prog) {
+    return '<tr>' +
+      '<td class="bold">' + programLabel(prog) + '</td>' +
+      '<td class="bold">' + prog.name + '</td>' +
+      '<td>' + (prog.sponsorName || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (prog.managerName || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (prog.businessOwnerName || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + prog.projects.length + '</td>' +
+      '<td><button class="btn btn-sm" onclick="openProgramDetailModal(\'' + prog.id + '\')"><i class="ti ti-eye"></i> View</button></td>' +
+    '</tr>';
+  }).join('');
+
+  document.getElementById('content').innerHTML =
+    (D.role === 'admin' ? '<div style="display:flex;justify-content:flex-end;margin-bottom:16px"><button class="btn btn-primary" onclick="openNewProgramModal()"><i class="ti ti-plus"></i> New Program</button></div>' : '') +
+    (programs.length
+      ? '<div class="card"><div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Sponsor</th><th>Manager</th><th>Business Owner</th><th>Projects</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>'
+      : '<div class="empty-state"><i class="ti ti-folders"></i><p>No programs yet' + (D.role === 'admin' ? ' — create one to start grouping projects' : '') + '</p></div>');
+}
+
+function programResourceOpts(currentName) {
+  var pool = currentName && individualResourceNames().indexOf(currentName) < 0 ? individualResourceNames().concat([currentName]) : individualResourceNames();
+  return '<option value="">— None —</option>' + pool.map(function(n){ return '<option' + (currentName===n?' selected':'') + '>' + n + '</option>'; }).join('');
+}
+
+function openNewProgramModal() {
+  if (D.role !== 'admin') return;
+  showModal('<div class="modal-title">New Program <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Program name *</div><input type="text" id="npg-name" placeholder="Program name"></div>' +
+    '<div class="form-group"><div class="form-label">Description</div><textarea id="npg-desc" placeholder="What does this program cover?"></textarea></div>' +
+    '<div class="form-group"><div class="form-label">Business objective</div><textarea id="npg-obj" placeholder="What business objective does this program serve?"></textarea></div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">Program sponsor</div><select id="npg-sponsor">' + programResourceOpts() + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Program manager</div><select id="npg-manager">' + programResourceOpts() + '</select></div></div>' +
+    '<div class="form-group"><div class="form-label">Business owner</div><select id="npg-owner">' + programResourceOpts() + '</select></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="npg-save"><i class="ti ti-plus"></i> Create program</button></div>');
+
+  document.getElementById('npg-save').onclick = async function() {
+    var name = document.getElementById('npg-name').value.trim();
+    if (!name) { showToast('Program name required'); return; }
+    var sponsorResource = resolveResource(document.getElementById('npg-sponsor').value);
+    var managerResource = resolveResource(document.getElementById('npg-manager').value);
+    var ownerResource = resolveResource(document.getElementById('npg-owner').value);
+    var btn = document.getElementById('npg-save'); btn.disabled = true;
+
+    var record = {
+      name: name,
+      description: document.getElementById('npg-desc').value.trim() || null,
+      business_objective: document.getElementById('npg-obj').value.trim() || null,
+      sponsor_resource_id: sponsorResource ? sponsorResource.id : null,
+      manager_resource_id: managerResource ? managerResource.id : null,
+      business_owner_resource_id: ownerResource ? ownerResource.id : null
+    };
+    var result = await sb.from('programs').insert(record).select().single();
+    if (result.error) { showToast('Could not create program: ' + result.error.message); btn.disabled = false; return; }
+
+    D.programs.push({
+      id: result.data.id, programNumber: result.data.program_number, name: name,
+      description: record.description, businessObjective: record.business_objective,
+      sponsorResourceId: record.sponsor_resource_id, sponsorName: sponsorResource ? sponsorResource.name : '',
+      managerResourceId: record.manager_resource_id, managerName: managerResource ? managerResource.name : '',
+      businessOwnerResourceId: record.business_owner_resource_id, businessOwnerName: ownerResource ? ownerResource.name : '',
+      createdAt: result.data.created_at, projects: []
+    });
+    closeModal();
+    showToast('Program created');
+    pgPrograms();
+  };
+}
+
+function openProgramDetailModal(id) {
+  var prog = D.programs.find(function(x){ return x.id === id; });
+  if (!prog) return;
+  var canEditProgram = D.role === 'admin' || isProgramManagerOf(prog);
+  var canReassignRoles = D.role === 'admin';
+
+  var linkedRows = prog.projects.length
+    ? prog.projects.map(function(proj) {
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0ede8">' +
+          '<span style="font-size:13px;cursor:pointer" onclick="closeModal();goToProject(\'' + proj.id + '\')">' + proj.name + '</span>' +
+          (canEditProgram ? '<button class="btn btn-sm btn-danger" onclick="removeProjectFromProgram(\'' + prog.id + '\',\'' + proj.id + '\')"><i class="ti ti-x"></i></button>' : '') +
+        '</div>';
+      }).join('')
+    : '<div class="text-muted" style="font-size:13px">No projects linked yet</div>';
+
+  // Non-admins can only pull in projects they can already edit (own, sponsor,
+  // or already manage via another program) -- matches what the update RLS
+  // policy on projects will actually allow.
+  var candidateProjects = D.projects.filter(function(p){ return p.programId !== prog.id && canEdit(p); });
+  var addPanelHtml = canEditProgram
+    ? '<div class="card mt-16"><div class="section-title">Add a project</div>' +
+      '<input type="text" id="pg-add-search" placeholder="Search projects…" oninput="filterProgramAddList(this.value)">' +
+      '<div id="pg-add-list" style="max-height:220px;overflow-y:auto;margin-top:8px">' +
+      (candidateProjects.length
+        ? candidateProjects.map(function(p) {
+            var currentProgram = p.programId ? D.programs.find(function(x){ return x.id === p.programId; }) : null;
+            return '<div class="pg-add-row" data-name="' + p.name.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">' +
+              '<span style="font-size:13px">' + p.name + (currentProgram ? ' <span class="text-muted">(currently ' + programLabel(currentProgram) + ')</span>' : '') + '</span>' +
+              '<button class="btn btn-sm" onclick="addProjectToProgram(\'' + prog.id + '\',\'' + p.id + '\')"><i class="ti ti-plus"></i> Add</button>' +
+            '</div>';
+          }).join('')
+        : '<span class="text-muted" style="font-size:13px">No projects available to add</span>') +
+      '</div></div>'
+    : '';
+
+  function fieldRow(label, value, inputId, isTextarea) {
+    if (!canEditProgram) return '<div class="form-group"><div class="form-label">' + label + '</div><div style="font-size:13px;color:#444">' + (value || '—') + '</div></div>';
+    return '<div class="form-group"><div class="form-label">' + label + '</div>' +
+      (isTextarea ? '<textarea id="' + inputId + '">' + (value||'') + '</textarea>' : '<input type="text" id="' + inputId + '" value="' + (value||'').replace(/"/g,'&quot;') + '">') +
+      '</div>';
+  }
+  function roleRow(label, currentName, selectId) {
+    if (!canReassignRoles) return '<div class="form-group"><div class="form-label">' + label + '</div><div style="font-size:13px;color:#444">' + (currentName || '—') + '</div></div>';
+    return '<div class="form-group"><div class="form-label">' + label + '</div><select id="' + selectId + '">' + programResourceOpts(currentName) + '</select></div>';
+  }
+
+  showModal('<div class="modal-title">' + programLabel(prog) + ' — ' + prog.name + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    (!canReassignRoles ? '<div class="form-sub" style="margin-bottom:12px">Only a PMO Admin can reassign Sponsor, Manager, or Business Owner.</div>' : '') +
+    fieldRow('Program name', prog.name, 'epg-name') +
+    fieldRow('Description', prog.description, 'epg-desc', true) +
+    fieldRow('Business objective', prog.businessObjective, 'epg-obj', true) +
+    '<div class="grid-2">' + roleRow('Program sponsor', prog.sponsorName, 'epg-sponsor') + roleRow('Program manager', prog.managerName, 'epg-manager') + '</div>' +
+    roleRow('Business owner', prog.businessOwnerName, 'epg-owner') +
+    '<div class="divider"></div>' +
+    '<div class="section-title">Linked projects (' + prog.projects.length + ')</div>' +
+    linkedRows +
+    addPanelHtml +
+    '<div class="modal-footer">' +
+      (D.role === 'admin' ? '<button class="btn btn-danger" onclick="deleteProgram(\'' + prog.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
+      '<button class="btn" onclick="closeModal()">Close</button>' +
+      (canEditProgram ? '<button class="btn btn-primary" onclick="saveProgramFields(\'' + prog.id + '\')"><i class="ti ti-check"></i> Save changes</button>' : '') +
+    '</div>', true);
+
+  window.filterProgramAddList = function(query) {
+    var q = query.trim().toLowerCase();
+    document.querySelectorAll('#pg-add-list .pg-add-row').forEach(function(row) {
+      row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
+    });
+  };
+}
+
+async function saveProgramFields(id) {
+  var prog = D.programs.find(function(x){ return x.id === id; });
+  if (!prog) return;
+  var nameEl = document.getElementById('epg-name');
+  var descEl = document.getElementById('epg-desc');
+  var objEl = document.getElementById('epg-obj');
+  var name = nameEl ? nameEl.value.trim() : prog.name;
+  if (!name) { showToast('Program name required'); return; }
+
+  var updates = {
+    name: name,
+    description: descEl ? (descEl.value.trim() || null) : prog.description,
+    business_objective: objEl ? (objEl.value.trim() || null) : prog.businessObjective
+  };
+
+  var sponsorEl = document.getElementById('epg-sponsor');
+  var managerEl = document.getElementById('epg-manager');
+  var ownerEl = document.getElementById('epg-owner');
+  var sponsorResource = sponsorEl ? resolveResource(sponsorEl.value) : null;
+  var managerResource = managerEl ? resolveResource(managerEl.value) : null;
+  var ownerResource = ownerEl ? resolveResource(ownerEl.value) : null;
+  if (sponsorEl) updates.sponsor_resource_id = sponsorResource ? sponsorResource.id : null;
+  if (managerEl) updates.manager_resource_id = managerResource ? managerResource.id : null;
+  if (ownerEl) updates.business_owner_resource_id = ownerResource ? ownerResource.id : null;
+
+  var btn = document.querySelector('.modal-footer .btn-primary'); if (btn) btn.disabled = true;
+  var result = await sb.from('programs').update(updates).eq('id', id);
+  if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
+
+  prog.name = name; prog.description = updates.description; prog.businessObjective = updates.business_objective;
+  if (sponsorEl) { prog.sponsorResourceId = updates.sponsor_resource_id; prog.sponsorName = sponsorResource ? sponsorResource.name : ''; }
+  if (managerEl) { prog.managerResourceId = updates.manager_resource_id; prog.managerName = managerResource ? managerResource.name : ''; }
+  if (ownerEl) { prog.businessOwnerResourceId = updates.business_owner_resource_id; prog.businessOwnerName = ownerResource ? ownerResource.name : ''; }
+
+  closeModal();
+  showToast('Program saved');
+  if (currentPage === 'programs') pgPrograms();
+}
+
+async function deleteProgram(id) {
+  if (D.role !== 'admin') return;
+  var prog = D.programs.find(function(x){ return x.id === id; });
+  if (!prog) return;
+  var msg = 'Delete ' + programLabel(prog) + ' — ' + prog.name + '?' + (prog.projects.length ? ' Its ' + prog.projects.length + ' linked project' + (prog.projects.length===1?'':'s') + ' will keep existing, just with no program.' : '');
+  if (!confirm(msg)) return;
+  var result = await sb.from('programs').delete().eq('id', id);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  D.programs = D.programs.filter(function(x){ return x.id !== id; });
+  D.projects.forEach(function(p){ if (p.programId === id) p.programId = null; });
+  closeModal();
+  showToast('Program deleted');
+  if (currentPage === 'programs') pgPrograms();
+}
+
+async function addProjectToProgram(programId, projectId) {
+  var prog = D.programs.find(function(x){ return x.id === programId; });
+  var proj = D.projects.find(function(x){ return x.id === projectId; });
+  if (!prog || !proj) return;
+  var result = await sb.from('projects').update({ program_id: programId }).eq('id', projectId);
+  if (result.error) { showToast('Could not add project: ' + result.error.message); return; }
+  if (proj.programId) {
+    var oldProg = D.programs.find(function(x){ return x.id === proj.programId; });
+    if (oldProg) oldProg.projects = oldProg.projects.filter(function(x){ return x.id !== projectId; });
+  }
+  proj.programId = programId;
+  prog.projects.push({ id: proj.id, name: proj.name });
+  showToast(proj.name + ' added to ' + programLabel(prog));
+  openProgramDetailModal(programId);
+}
+
+async function removeProjectFromProgram(programId, projectId) {
+  var prog = D.programs.find(function(x){ return x.id === programId; });
+  var proj = D.projects.find(function(x){ return x.id === projectId; });
+  if (!prog || !proj) return;
+  var result = await sb.from('projects').update({ program_id: null }).eq('id', projectId);
+  if (result.error) { showToast('Could not remove project: ' + result.error.message); return; }
+  proj.programId = null;
+  prog.projects = prog.projects.filter(function(x){ return x.id !== projectId; });
+  showToast(proj.name + ' removed from ' + programLabel(prog));
+  openProgramDetailModal(programId);
 }
 
 // ── Resource Role Pages ────────────────────────────────────────────────────────

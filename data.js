@@ -49,5 +49,8 @@ var D = {
   ],
 
   resources: [
+  ],
+
+  programs: [
   ]
 };
