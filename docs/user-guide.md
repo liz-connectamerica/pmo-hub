@@ -13,7 +13,7 @@ The sidebar is organized into a few sections:
 - **Overview** — Dashboard, Roadmap, Portfolio
 - **Projects** — Active, Planned, Backlog, Hold, Completed
 - **My Requests** — Submit a Request, My Requests
-- **My Work** — My Projects, My Tasks (this section only appears once you're actually on a team or assigned a task somewhere)
+- **My Work** — My Projects, My Tasks (this section only appears once you have any connection at all to a project — owner, sponsor, team member, or task assignee — at any stage)
 
 The bar at the top of the page shows the current page's title and any page-specific action buttons (like "New request").
 
@@ -91,9 +91,9 @@ Shows only your own submitted requests, with status, PMO feedback, and a quick l
 
 ## My Projects & My Tasks
 
-These only show up in the sidebar once you're actually assigned somewhere — either on the team (or owner) of an active project, or assigned at least one open task.
+These only show up in the sidebar once you have some connection to a project — owner, sponsor, team member, or task assignee — at any stage.
 
-- **My Projects** — a card per project you're on: health, status, owner, due date, and a "My tasks: X/Y done" count. Purely informational, with a View link into each project.
+- **My Projects** — split into five tabs: **Sponsor**, **Owner: Active**, **Owner: Not Started** (Planned, Backlog, or Hold), **Contributor** (on the team or assigned a task), and **Completed**. A project shows up in every tab that applies to you — if you're both the owner and the sponsor of the same active project, it appears under both. Completed projects get their own tab regardless of what your role was, with a badge per role so you can tell how you were involved. Each card shows health, status, owner, due date, and a "My tasks: X/Y done" count — purely informational, with a View link into each project.
 - **My Tasks** — every task assigned to you, split into Open and Completed tabs, searchable and filterable by project or status. You can comment on any task and mark your own open tasks **Done**. There's no time-logging feature in the app — commenting and marking done are the two actions available to you as a plain assignee.
 
 ## Tags vs. Categories
