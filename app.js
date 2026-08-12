@@ -3110,7 +3110,8 @@ function pgProjectDetail(pid, tab) {
           (p.tags && p.tags.length ? p.tags.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
           (editable ? '<button class="btn btn-sm" onclick="openProjectTagPicker(\'' + p.id + '\')"><i class="ti ti-tag"></i> Edit tags</button>' : '') +
         '</div></div>' +
-        '<div class="form-group mb-16"><div class="form-label">Depends on</div><div style="display:flex;flex-direction:column;gap:6px">' +
+        '<div class="grid-2 mb-16">' +
+        '<div class="form-group" style="margin-bottom:0"><div class="form-label">Depends on</div><div style="display:flex;flex-direction:column;gap:6px">' +
           (p.dependencies && p.dependencies.length
             ? p.dependencies.map(function(d){
                 var isPlanned = !!(d.start && d.end);
@@ -3123,6 +3124,21 @@ function pgProjectDetail(pid, tab) {
             : '<span class="text-muted" style="font-size:13px">No dependencies</span>') +
           (editable ? '<button class="btn btn-sm" style="align-self:flex-start" onclick="openDependencyPicker(\'' + p.id + '\')"><i class="ti ti-link"></i> Add dependency</button>' : '') +
         '</div></div>' +
+        '<div class="form-group" style="margin-bottom:0"><div class="form-label">Program</div><div style="display:flex;flex-direction:column;gap:6px">' +
+          (p.programId
+            ? (function(){
+                var prog = D.programs.find(function(x){ return x.id === p.programId; });
+                return prog
+                  ? '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:#faf9f7;border-radius:6px">' +
+                      '<span style="font-size:13px"><i class="ti ti-eye" style="cursor:pointer;margin-right:6px" onclick="goToProgram(\'' + prog.id + '\')"></i>' + programLabel(prog) + ' — ' + prog.name + '</span>' +
+                      (editable ? '<button class="btn btn-sm btn-danger" onclick="removeProjectProgram(\'' + p.id + '\')"><i class="ti ti-x"></i></button>' : '') +
+                    '</div>'
+                  : '<span class="text-muted" style="font-size:13px">No program</span>';
+              })()
+            : '<span class="text-muted" style="font-size:13px">No program</span>') +
+          (editable ? '<button class="btn btn-sm" style="align-self:flex-start" onclick="openProgramPickerForProject(\'' + p.id + '\')"><i class="ti ti-folders"></i> ' + (p.programId ? 'Change program' : 'Add program') + '</button>' : '') +
+        '</div></div>' +
+        '</div>' +
         (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '') +
         (p.stage === 'hold' ? '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
         '<div class="form-group" style="margin-top:16px"><div class="form-label">Timeline</div>' + timelineHtml() +
@@ -3461,6 +3477,44 @@ function pgProjectDetail(pid, tab) {
     var pr = D.projects.find(function(x){ return x.id === pid2; });
     pr.dependencies = (pr.dependencies||[]).filter(function(d){ return d.id !== depId; });
     showToast('Dependency removed');
+    if (document.getElementById('ptab-content')) document.getElementById('ptab-content').innerHTML = tabC('overview');
+  };
+  window.openProgramPickerForProject = function(pid2) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var candidates = D.programs.filter(function(prog){ return prog.id !== pr.programId; });
+    var query = '';
+    function render() {
+      var q = query.trim().toLowerCase();
+      var matches = candidates.filter(function(prog){ return prog.name.toLowerCase().indexOf(q) >= 0 || programLabel(prog).toLowerCase().indexOf(q) >= 0; });
+      var listHtml = matches.map(function(prog){
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + programLabel(prog) + ' — ' + prog.name + '</span><button class="btn btn-sm" onclick="window.__progAdd(\'' + prog.id + '\')"><i class="ti ti-plus"></i> Add</button></div>';
+      }).join('');
+      showModal('<div class="modal-title">Add to a program <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+        '<input type="text" id="prog-picker-search" placeholder="Search programs…" value="' + query.replace(/"/g,'&quot;') + '" oninput="window.__progSearch(this.value)">' +
+        '<div style="max-height:260px;overflow-y:auto;margin-top:8px">' + (listHtml || '<span class="text-muted" style="font-size:13px">No matching programs</span>') + '</div>' +
+        '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button></div>');
+      var el = document.getElementById('prog-picker-search');
+      if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+    }
+    window.__progSearch = function(val) { query = val; render(); };
+    window.__progAdd = async function(progId) {
+      var result = await sb.from('projects').update({ program_id: progId }).eq('id', pid2);
+      if (result.error) { showToast('Could not set program: ' + result.error.message); return; }
+      pr.programId = progId;
+      closeModal();
+      var prog = D.programs.find(function(x){ return x.id === progId; });
+      showToast(pr.name + ' added to ' + programLabel(prog));
+      if (document.getElementById('ptab-content')) document.getElementById('ptab-content').innerHTML = tabC('overview');
+    };
+    render();
+  };
+  window.removeProjectProgram = async function(pid2) {
+    if (!confirm('Remove this project from its program?')) return;
+    var result = await sb.from('projects').update({ program_id: null }).eq('id', pid2);
+    if (result.error) { showToast('Could not remove: ' + result.error.message); return; }
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    pr.programId = null;
+    showToast('Removed from program');
     if (document.getElementById('ptab-content')) document.getElementById('ptab-content').innerHTML = tabC('overview');
   };
   window.filterTeamAddList = function(query) {
