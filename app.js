@@ -6425,19 +6425,21 @@ function pgMyProjectsResource() {
     { key:'completed',         label:'Completed',         list:buckets.completed,         empty:'No completed projects yet' }
   ];
 
-  var totalCount = tabDefs.reduce(function(sum, t){ return sum + t.list.length; }, 0);
-  if (!totalCount) {
+  if (!tabDefs.some(function(t){ return t.list.length; })) {
     document.getElementById('content').innerHTML = '<div class="empty-state"><i class="ti ti-briefcase"></i><p>You are not assigned to any projects</p></div>';
     return;
   }
+  // Only tabs that actually have something in them, same as the category
+  // tabs on Roadmap.
+  var visibleTabs = tabDefs.filter(function(t){ return t.list.length; });
 
   var st = myProjectsPageState;
-  if (!tabDefs.some(function(t){ return t.key === st.tab; })) st.tab = 'sponsor';
-  var activeTab = tabDefs.filter(function(t){ return t.key === st.tab; })[0];
+  if (!visibleTabs.some(function(t){ return t.key === st.tab; })) st.tab = visibleTabs[0].key;
+  var activeTab = visibleTabs.filter(function(t){ return t.key === st.tab; })[0];
 
-  var tabHtml = '<div class="tab-bar">' + tabDefs.map(function(t) {
+  var tabHtml = '<div class="tab-bar">' + visibleTabs.map(function(t) {
     return '<div class="tab' + (st.tab===t.key?' active':'') + '" onclick="setMyProjectsTab(\'' + t.key + '\')">' + t.label +
-      (t.list.length ? ' <span class="badge badge-gray" style="font-size:10px">' + t.list.length + '</span>' : '') + '</div>';
+      ' <span class="badge badge-gray" style="font-size:10px">' + t.list.length + '</span></div>';
   }).join('') + '</div>';
 
   var cardsHtml = activeTab.list.length
