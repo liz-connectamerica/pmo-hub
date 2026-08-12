@@ -2928,7 +2928,7 @@ function openEditProjectFinancialsModal(pid) {
     var btn = document.getElementById('epf-save'); btn.disabled = true;
     var updates = {
       estimated_type: estType,
-      estimated_frequency: estType ? document.getElementById('epf-freq').value : null,
+      estimated_frequency: estAmountRaw ? document.getElementById('epf-freq').value : null,
       estimated_amount: estAmountRaw ? Number(estAmountRaw) : null,
       value_confidence: document.getElementById('epf-value-confidence').value || null,
       cost_estimate: costAmountRaw ? Number(costAmountRaw) : null,
