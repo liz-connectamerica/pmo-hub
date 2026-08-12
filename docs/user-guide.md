@@ -43,7 +43,7 @@ A card-based view of every project that isn't yet completed (active, planned, ba
 
 ## Programs
 
-A program groups a set of related projects together, with its own ID (P1, P2…), name, description, business objective, and three named roles: Program Sponsor, Program Manager, and Business Owner. Anyone can browse the Programs list and open a program to see its details and linked projects. Editing a program (or the projects linked to it) is limited to a PMO Admin or that program's own Program Manager — see the Admin Guide's Programs section for exactly what that covers.
+A program groups a set of related projects together, with its own ID (P1, P2…), name, description, business objective, and three named roles: Program Sponsor, Program Manager, and Business Owner. Anyone can browse the Programs list (searchable, sortable columns) and open a program's own page — its linked projects show up grouped by stage. Editing a program (or the projects linked to it) is limited to a PMO Admin or that program's own Program Manager — see the Admin Guide's Programs section for exactly what that covers.
 
 ## Projects: Active, Planned, Backlog, Hold, Completed
 
