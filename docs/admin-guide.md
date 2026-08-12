@@ -37,9 +37,11 @@ You also have a **Delete** button on any request — this only unlinks it from i
 
 A program is a named collection of projects — each project can belong to at most one program, or none. Every program has a **Program ID** (P1, P2, P3…, assigned automatically), a name, description, and business objective, plus three resource-linked roles: **Program Sponsor**, **Program Manager**, and **Business Owner**.
 
+- **The Programs list** supports search (by name or ID) and sortable column headers, the same pattern as the project list pages.
+- **Opening a program** takes you to its own full page, the same way opening a project does — not a popup. Its linked projects are grouped into sections by stage (Active, Planned, Backlog, Hold, Completed), skipping any stage with nothing in it.
 - **Creating a program** is admin-only — use **New Program** on the Programs list.
 - **Editing a program's name, description, and business objective** is available to a PMO Admin or that program's own **Program Manager**. Reassigning the Sponsor, Manager, or Business Owner roles themselves is admin-only, the same restriction as reassigning a project's Owner.
-- **Linking projects** happens from either side: the program's own detail view has a search-and-add panel (plus a remove button per linked project), and New/Edit Project both have a Program picker. A Program Manager can only pull in projects they can already edit some other way (as owner, sponsor, or manager of a different program) — they can't reach into an arbitrary project owned by someone else just because they manage a program.
+- **Linking projects** happens from either side: the program's own page has a search-and-add panel (plus a remove button per linked project), and New/Edit Project both have a Program picker. A Program Manager can only pull in projects they can already edit some other way (as owner, sponsor, or manager of a different program) — they can't reach into an arbitrary project owned by someone else just because they manage a program.
 - **A Program Manager gets Owner-level edit rights on every project linked to their program** — general fields, team, milestones, tasks, RAID, documents — but not financials. Financial view/edit stays admin-only or gated to that specific project's own Sponsor, unchanged.
 - **Deleting a program** is admin-only and just unlinks its projects — they keep existing with no program, nothing about them is deleted.
 

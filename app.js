@@ -188,8 +188,7 @@ async function loadResources() {
 async function loadPrograms() {
   var results = await Promise.all([
     sb.from('programs').select('*'),
-    sb.from('resources').select('id, name'),
-    sb.from('projects').select('id, name, program_id')
+    sb.from('resources').select('id, name')
   ]);
   for (var i = 0; i < results.length; i++) {
     if (results[i].error) { console.error('loadPrograms query failed:', results[i].error); return []; }
@@ -197,8 +196,9 @@ async function loadPrograms() {
   var programRows = results[0].data || [];
   var nameById = {};
   (results[1].data || []).forEach(function(r){ nameById[r.id] = r.name; });
-  var projectsByProgram = groupBy((results[2].data || []).filter(function(p){ return p.program_id; }), 'program_id');
 
+  // Linked project membership is derived from projects.program_id at render
+  // time (see programProjects()), not cached here -- one source of truth.
   return programRows.map(function(pr) {
     return {
       id: pr.id, programNumber: pr.program_number, name: pr.name, description: pr.description,
@@ -206,8 +206,7 @@ async function loadPrograms() {
       sponsorResourceId: pr.sponsor_resource_id, sponsorName: pr.sponsor_resource_id ? (nameById[pr.sponsor_resource_id] || '') : '',
       managerResourceId: pr.manager_resource_id, managerName: pr.manager_resource_id ? (nameById[pr.manager_resource_id] || '') : '',
       businessOwnerResourceId: pr.business_owner_resource_id, businessOwnerName: pr.business_owner_resource_id ? (nameById[pr.business_owner_resource_id] || '') : '',
-      createdAt: pr.created_at,
-      projects: (projectsByProgram[pr.id] || []).map(function(p){ return { id: p.id, name: p.name }; })
+      createdAt: pr.created_at
     };
   });
 }
@@ -797,6 +796,7 @@ var allProjectsState = {
 var tagAdminState = { expandedId: null };
 var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var myProjectsPageState = { tab:'sponsor' };
+var programsPageState = { search:'', sort:'id', dir:'asc' };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
 var rejectedFilterState = { range:'30' };
 
@@ -1130,6 +1130,8 @@ function handleRoute() {
   var hash = location.hash;
   var m = hash.match(/^#\/project\/([^\/]+)(?:\/([^\/]+))?/);
   if (m) { pgProjectDetail(m[1], m[2] || 'overview'); return; }
+  var mProg = hash.match(/^#\/program\/([^\/]+)/);
+  if (mProg) { pgProgramDetail(mProg[1]); return; }
   var m2 = hash.match(/^#\/([a-zA-Z0-9_-]+)/);
   if (m2) { renderPage(m2[1]); return; }
   renderPage('dashboard');
@@ -4224,13 +4226,7 @@ async function saveProject(pid) {
   if (buEl) p.businessUnit = newVals.business_unit;
   if (spEl) { p.sponsor = newVals.sponsor; p.sponsorResourceId = newVals.sponsor_resource_id; }
   if (pmEl) { p.owner = pmEl.value; p.ownerId = newVals.owner_id; }
-  if (programEl) {
-    var oldProg = p.programId ? D.programs.find(function(x){ return x.id === p.programId; }) : null;
-    if (oldProg) oldProg.projects = oldProg.projects.filter(function(x){ return x.id !== p.id; });
-    p.programId = newVals.program_id;
-    var newProg = p.programId ? D.programs.find(function(x){ return x.id === p.programId; }) : null;
-    if (newProg) newProg.projects.push({ id: p.id, name: p.name });
-  }
+  if (programEl) p.programId = newVals.program_id;
   if (newCats) p.categories = newCats;
 
   closeModal(); showToast('Project saved');
@@ -4339,10 +4335,6 @@ function openNewProjectModal() {
       documents:[], docFolders:['General'], docFolderIds:{}
     };
     D.projects.push(newProject);
-    if (programId) {
-      var newProjProgram = D.programs.find(function(x){ return x.id === programId; });
-      if (newProjProgram) newProjProgram.projects.push({ id: newProject.id, name: newProject.name });
-    }
     closeModal(); showToast('Project created');
     nav(currentPage);
   };
@@ -6437,27 +6429,80 @@ function pgMyRequests() {
 
 function programLabel(program) { return 'P' + program.programNumber; }
 
+// projects.program_id is the single source of truth for membership -- no
+// separate cached list to keep in sync.
+function programProjects(programId) {
+  return D.projects.filter(function(p){ return p.programId === programId; });
+}
+
+function goToProgram(id) {
+  pgProgramDetail(id);
+  var targetHash = '#/program/' + id;
+  if (location.hash !== targetHash) location.hash = targetHash;
+}
+
 function pgPrograms() {
   tb('Programs');
-  var programs = D.programs.slice().sort(function(a,b){ return a.programNumber - b.programNumber; });
+  var st = programsPageState;
+  var programs = D.programs.slice();
+
+  if (st.search) {
+    var q = st.search.toLowerCase();
+    programs = programs.filter(function(pr){ return pr.name.toLowerCase().indexOf(q) >= 0 || programLabel(pr).toLowerCase().indexOf(q) >= 0; });
+  }
+
+  function sortVal(pr, col) {
+    if (col === 'id') return pr.programNumber;
+    if (col === 'projects') return programProjects(pr.id).length;
+    if (col === 'sponsor') return (pr.sponsorName || '').toLowerCase();
+    if (col === 'manager') return (pr.managerName || '').toLowerCase();
+    if (col === 'owner') return (pr.businessOwnerName || '').toLowerCase();
+    return (pr.name || '').toLowerCase();
+  }
+  programs.sort(function(a, b) {
+    var av = sortVal(a, st.sort), bv = sortVal(b, st.sort);
+    if (av < bv) return st.dir === 'asc' ? -1 : 1;
+    if (av > bv) return st.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir === 'asc' ? '▲' : '▼') + '</span>'; }
 
   var rows = programs.map(function(prog) {
     return '<tr>' +
       '<td class="bold">' + programLabel(prog) + '</td>' +
-      '<td class="bold">' + prog.name + '</td>' +
+      '<td class="bold" style="cursor:pointer" onclick="goToProgram(\'' + prog.id + '\')">' + prog.name + '</td>' +
       '<td>' + (prog.sponsorName || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (prog.managerName || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (prog.businessOwnerName || '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + prog.projects.length + '</td>' +
-      '<td><button class="btn btn-sm" onclick="openProgramDetailModal(\'' + prog.id + '\')"><i class="ti ti-eye"></i> View</button></td>' +
+      '<td>' + programProjects(prog.id).length + '</td>' +
+      '<td><button class="btn btn-sm" onclick="goToProgram(\'' + prog.id + '\')"><i class="ti ti-eye"></i> View</button></td>' +
     '</tr>';
   }).join('');
 
   document.getElementById('content').innerHTML =
     (D.role === 'admin' ? '<div style="display:flex;justify-content:flex-end;margin-bottom:16px"><button class="btn btn-primary" onclick="openNewProgramModal()"><i class="ti ti-plus"></i> New Program</button></div>' : '') +
+    searchBoxHtml(st.search, 'Search programs by name…', 'programs-search', 'onProgramsSearch') +
     (programs.length
-      ? '<div class="card"><div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Sponsor</th><th>Manager</th><th>Business Owner</th><th>Projects</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>'
-      : '<div class="empty-state"><i class="ti ti-folders"></i><p>No programs yet' + (D.role === 'admin' ? ' — create one to start grouping projects' : '') + '</p></div>');
+      ? '<div class="card"><div class="table-wrap"><table><thead><tr>' +
+          '<th class="sortable-th" onclick="setProgramsSort(\'id\')">ID ' + arrow('id') + '</th>' +
+          '<th class="sortable-th" onclick="setProgramsSort(\'name\')">Name ' + arrow('name') + '</th>' +
+          '<th class="sortable-th" onclick="setProgramsSort(\'sponsor\')">Sponsor ' + arrow('sponsor') + '</th>' +
+          '<th class="sortable-th" onclick="setProgramsSort(\'manager\')">Manager ' + arrow('manager') + '</th>' +
+          '<th class="sortable-th" onclick="setProgramsSort(\'owner\')">Business Owner ' + arrow('owner') + '</th>' +
+          '<th class="sortable-th" onclick="setProgramsSort(\'projects\')">Projects ' + arrow('projects') + '</th>' +
+          '<th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>'
+      : '<div class="empty-state"><i class="ti ti-folders"></i><p>' + (st.search ? 'No programs match your search' : ('No programs yet' + (D.role === 'admin' ? ' — create one to start grouping projects' : ''))) + '</p></div>');
+
+  window.onProgramsSearch = function(v) {
+    st.search = v; pgPrograms();
+    var el = document.getElementById('programs-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.setProgramsSort = function(col) {
+    if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; }
+    pgPrograms();
+  };
 }
 
 function programResourceOpts(currentName) {
@@ -6502,7 +6547,7 @@ function openNewProgramModal() {
       sponsorResourceId: record.sponsor_resource_id, sponsorName: sponsorResource ? sponsorResource.name : '',
       managerResourceId: record.manager_resource_id, managerName: managerResource ? managerResource.name : '',
       businessOwnerResourceId: record.business_owner_resource_id, businessOwnerName: ownerResource ? ownerResource.name : '',
-      createdAt: result.data.created_at, projects: []
+      createdAt: result.data.created_at
     });
     closeModal();
     showToast('Program created');
@@ -6510,20 +6555,34 @@ function openNewProgramModal() {
   };
 }
 
-function openProgramDetailModal(id) {
+function pgProgramDetail(id) {
   var prog = D.programs.find(function(x){ return x.id === id; });
-  if (!prog) return;
+  if (!prog) { nav('programs'); return; }
+  currentPage = 'programDetail';
+  renderNav();
+  tb(programLabel(prog) + ' — ' + prog.name);
+
   var canEditProgram = D.role === 'admin' || isProgramManagerOf(prog);
   var canReassignRoles = D.role === 'admin';
+  var linkedProjects = programProjects(prog.id);
 
-  var linkedRows = prog.projects.length
-    ? prog.projects.map(function(proj) {
-        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0ede8">' +
-          '<span style="font-size:13px;cursor:pointer" onclick="closeModal();goToProject(\'' + proj.id + '\')">' + proj.name + '</span>' +
-          (canEditProgram ? '<button class="btn btn-sm btn-danger" onclick="removeProjectFromProgram(\'' + prog.id + '\',\'' + proj.id + '\')"><i class="ti ti-x"></i></button>' : '') +
-        '</div>';
-      }).join('')
-    : '<div class="text-muted" style="font-size:13px">No projects linked yet</div>';
+  var stageOrder = ['active','planned','backlog','hold','complete'];
+  var stageLabels = { active:'Active', planned:'Planned', backlog:'Backlog', hold:'Hold', complete:'Completed' };
+  var byStage = {};
+  linkedProjects.forEach(function(p){ (byStage[p.stage] = byStage[p.stage] || []).push(p); });
+
+  var stageSectionsHtml = stageOrder.filter(function(s){ return byStage[s] && byStage[s].length; }).map(function(s) {
+    var rows = byStage[s].map(function(p) {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0ede8">' +
+        '<span style="font-size:13px;cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' + hdot(p.health) + p.name + '</span>' +
+        '<span style="display:flex;align-items:center;gap:12px">' +
+          '<span class="text-muted" style="font-size:12px">' + (p.owner || '—') + '</span>' +
+          (canEditProgram ? '<button class="btn btn-sm btn-danger" onclick="removeProjectFromProgram(\'' + prog.id + '\',\'' + p.id + '\')"><i class="ti ti-x"></i></button>' : '') +
+        '</span>' +
+      '</div>';
+    }).join('');
+    return '<div class="mt-16"><div class="form-label" style="margin-bottom:2px">' + stageLabels[s] + ' (' + byStage[s].length + ')</div>' + rows + '</div>';
+  }).join('');
 
   // Non-admins can only pull in projects they can already edit (own, sponsor,
   // or already manage via another program) -- matches what the update RLS
@@ -6556,22 +6615,25 @@ function openProgramDetailModal(id) {
     return '<div class="form-group"><div class="form-label">' + label + '</div><select id="' + selectId + '">' + programResourceOpts(currentName) + '</select></div>';
   }
 
-  showModal('<div class="modal-title">' + programLabel(prog) + ' — ' + prog.name + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    (!canReassignRoles ? '<div class="form-sub" style="margin-bottom:12px">Only a PMO Admin can reassign Sponsor, Manager, or Business Owner.</div>' : '') +
-    fieldRow('Program name', prog.name, 'epg-name') +
-    fieldRow('Description', prog.description, 'epg-desc', true) +
-    fieldRow('Business objective', prog.businessObjective, 'epg-obj', true) +
-    '<div class="grid-2">' + roleRow('Program sponsor', prog.sponsorName, 'epg-sponsor') + roleRow('Program manager', prog.managerName, 'epg-manager') + '</div>' +
-    roleRow('Business owner', prog.businessOwnerName, 'epg-owner') +
-    '<div class="divider"></div>' +
-    '<div class="section-title">Linked projects (' + prog.projects.length + ')</div>' +
-    linkedRows +
-    addPanelHtml +
-    '<div class="modal-footer">' +
-      (D.role === 'admin' ? '<button class="btn btn-danger" onclick="deleteProgram(\'' + prog.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
-      '<button class="btn" onclick="closeModal()">Close</button>' +
-      (canEditProgram ? '<button class="btn btn-primary" onclick="saveProgramFields(\'' + prog.id + '\')"><i class="ti ti-check"></i> Save changes</button>' : '') +
-    '</div>', true);
+  document.getElementById('content').innerHTML =
+    '<div class="card">' +
+      (!canReassignRoles ? '<div class="form-sub" style="margin-bottom:12px">Only a PMO Admin can reassign Sponsor, Manager, or Business Owner.</div>' : '') +
+      fieldRow('Program name', prog.name, 'epg-name') +
+      fieldRow('Description', prog.description, 'epg-desc', true) +
+      fieldRow('Business objective', prog.businessObjective, 'epg-obj', true) +
+      '<div class="grid-2">' + roleRow('Program sponsor', prog.sponsorName, 'epg-sponsor') + roleRow('Program manager', prog.managerName, 'epg-manager') + '</div>' +
+      roleRow('Business owner', prog.businessOwnerName, 'epg-owner') +
+      (canEditProgram || D.role === 'admin'
+        ? '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">' +
+            (D.role === 'admin' ? '<button class="btn btn-danger" onclick="deleteProgram(\'' + prog.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
+            (canEditProgram ? '<button class="btn btn-primary" id="epg-save" onclick="saveProgramFields(\'' + prog.id + '\')"><i class="ti ti-check"></i> Save changes</button>' : '') +
+          '</div>'
+        : '') +
+    '</div>' +
+    '<div class="card mt-16"><div class="section-title">Linked projects (' + linkedProjects.length + ')</div>' +
+      (stageSectionsHtml || '<div class="text-muted" style="font-size:13px">No projects linked yet</div>') +
+    '</div>' +
+    addPanelHtml;
 
   window.filterProgramAddList = function(query) {
     var q = query.trim().toLowerCase();
@@ -6606,7 +6668,7 @@ async function saveProgramFields(id) {
   if (managerEl) updates.manager_resource_id = managerResource ? managerResource.id : null;
   if (ownerEl) updates.business_owner_resource_id = ownerResource ? ownerResource.id : null;
 
-  var btn = document.querySelector('.modal-footer .btn-primary'); if (btn) btn.disabled = true;
+  var btn = document.getElementById('epg-save'); if (btn) btn.disabled = true;
   var result = await sb.from('programs').update(updates).eq('id', id);
   if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
 
@@ -6615,24 +6677,23 @@ async function saveProgramFields(id) {
   if (managerEl) { prog.managerResourceId = updates.manager_resource_id; prog.managerName = managerResource ? managerResource.name : ''; }
   if (ownerEl) { prog.businessOwnerResourceId = updates.business_owner_resource_id; prog.businessOwnerName = ownerResource ? ownerResource.name : ''; }
 
-  closeModal();
   showToast('Program saved');
-  if (currentPage === 'programs') pgPrograms();
+  if (currentPage === 'programDetail') pgProgramDetail(id);
 }
 
 async function deleteProgram(id) {
   if (D.role !== 'admin') return;
   var prog = D.programs.find(function(x){ return x.id === id; });
   if (!prog) return;
-  var msg = 'Delete ' + programLabel(prog) + ' — ' + prog.name + '?' + (prog.projects.length ? ' Its ' + prog.projects.length + ' linked project' + (prog.projects.length===1?'':'s') + ' will keep existing, just with no program.' : '');
+  var linkedCount = programProjects(id).length;
+  var msg = 'Delete ' + programLabel(prog) + ' — ' + prog.name + '?' + (linkedCount ? ' Its ' + linkedCount + ' linked project' + (linkedCount===1?'':'s') + ' will keep existing, just with no program.' : '');
   if (!confirm(msg)) return;
   var result = await sb.from('programs').delete().eq('id', id);
   if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
   D.programs = D.programs.filter(function(x){ return x.id !== id; });
   D.projects.forEach(function(p){ if (p.programId === id) p.programId = null; });
-  closeModal();
   showToast('Program deleted');
-  if (currentPage === 'programs') pgPrograms();
+  nav('programs');
 }
 
 async function addProjectToProgram(programId, projectId) {
@@ -6641,14 +6702,9 @@ async function addProjectToProgram(programId, projectId) {
   if (!prog || !proj) return;
   var result = await sb.from('projects').update({ program_id: programId }).eq('id', projectId);
   if (result.error) { showToast('Could not add project: ' + result.error.message); return; }
-  if (proj.programId) {
-    var oldProg = D.programs.find(function(x){ return x.id === proj.programId; });
-    if (oldProg) oldProg.projects = oldProg.projects.filter(function(x){ return x.id !== projectId; });
-  }
   proj.programId = programId;
-  prog.projects.push({ id: proj.id, name: proj.name });
   showToast(proj.name + ' added to ' + programLabel(prog));
-  openProgramDetailModal(programId);
+  if (currentPage === 'programDetail') pgProgramDetail(programId);
 }
 
 async function removeProjectFromProgram(programId, projectId) {
@@ -6658,9 +6714,8 @@ async function removeProjectFromProgram(programId, projectId) {
   var result = await sb.from('projects').update({ program_id: null }).eq('id', projectId);
   if (result.error) { showToast('Could not remove project: ' + result.error.message); return; }
   proj.programId = null;
-  prog.projects = prog.projects.filter(function(x){ return x.id !== projectId; });
   showToast(proj.name + ' removed from ' + programLabel(prog));
-  openProgramDetailModal(programId);
+  if (currentPage === 'programDetail') pgProgramDetail(programId);
 }
 
 // ── Resource Role Pages ────────────────────────────────────────────────────────
