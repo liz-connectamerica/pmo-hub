@@ -360,22 +360,23 @@ function myProjects() {
   return D.projects;
 }
 
-function myAssignedProjects() {
+function isMyContribution(p) {
   var myId = D.myResourceId;
-  if (!myId) return [];
-  return D.projects.filter(function(p){
-    return (p.teamIds||[]).indexOf(myId) >= 0 || p.ownerId === myId || p.sponsorResourceId === myId ||
-      p.tasks.some(function(t){ return t.assigneeId === myId; });
-  });
+  return !!(myId && ((p.teamIds||[]).indexOf(myId) >= 0 || p.tasks.some(function(t){ return t.assigneeId === myId; })));
+}
+
+function isMyOwnedProject(p) { return !!(D.myResourceId && p.ownerId === D.myResourceId); }
+
+// Any relationship at all to a project (owner, sponsor, contributor), any
+// stage -- used both to decide whether "My Work" shows in the nav at all,
+// and as the base set for the Completed tab on My Projects.
+function hasAnyRoleOn(p) {
+  return isMyOwnedProject(p) || isProjectSponsor(p) || isMyContribution(p);
 }
 
 function hasAssignedWork() {
-  var myId = D.myResourceId;
-  if (!myId) return false;
-  var onActiveProject = D.projects.some(function(p){ return p.stage === 'active' && ((p.teamIds||[]).indexOf(myId) >= 0 || p.ownerId === myId); });
-  var sponsoringAProject = D.projects.some(function(p){ return p.sponsorResourceId === myId; });
-  var hasOpenTask = D.projects.some(function(p){ return p.tasks.some(function(t){ return t.assigneeId === myId && t.status !== 'Done'; }); });
-  return onActiveProject || sponsoringAProject || hasOpenTask;
+  if (!D.myResourceId) return false;
+  return D.projects.some(hasAnyRoleOn);
 }
 
 function currentUser() {
@@ -759,6 +760,7 @@ var allProjectsState = {
 };
 var tagAdminState = { expandedId: null };
 var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
+var myProjectsPageState = { tab:'sponsor' };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
 var rejectedFilterState = { range:'30' };
 
@@ -6372,27 +6374,78 @@ function pgMyRequests() {
 
 // ── Resource Role Pages ────────────────────────────────────────────────────────
 
+function myProjectRoles(p) {
+  var roles = [];
+  if (isMyOwnedProject(p)) roles.push('Owner');
+  if (isProjectSponsor(p)) roles.push('Sponsor');
+  if (isMyContribution(p)) roles.push('Contributor');
+  return roles;
+}
+
+function myProjectCard(p) {
+  var myTasks = p.tasks.filter(function(t){ return t.assignee === currentUser(); });
+  var doneTasks = myTasks.filter(function(t){ return t.status==='Done'; }).length;
+  var roleBadgeClass = { Owner:'badge-blue', Sponsor:'badge-coral', Contributor:'badge-teal' };
+  var roleBadges = myProjectRoles(p).map(function(r){ return '<span class="badge ' + roleBadgeClass[r] + '" style="font-size:10px">' + r + '</span>'; }).join(' ');
+  return '<div class="project-card">' +
+    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
+      '<div><div class="bold mb-12">' + hdot(p.health) + p.name + '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' + roleBadges + ' ' + bdg(p.status) + ' ' + stagePill(p.stage) + ' ' + badgeIf('badge-purple', p.value) + '</div></div>' +
+      '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+    '</div>' +
+    '<div class="grid-2 mt-12" style="font-size:12px;color:#777">' +
+      '<div>Owner: ' + (p.owner||'—') + '</div><div>Due: ' + (p.end||'TBD') + '</div>' +
+      '<div>My tasks: ' + doneTasks + '/' + myTasks.length + ' done</div>' +
+    '</div>' +
+    (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
+  '</div>';
+}
+
 function pgMyProjectsResource() {
   tb('My Projects');
-  var ps = myAssignedProjects();
-  if (!ps.length) { document.getElementById('content').innerHTML = '<div class="empty-state"><i class="ti ti-briefcase"></i><p>You are not assigned to any projects</p></div>'; return; }
-  var cards = ps.map(function(p) {
-    var myTasks = p.tasks.filter(function(t){ return t.assignee === currentUser(); });
-    var doneTasks = myTasks.filter(function(t){ return t.status==='Done'; }).length;
-    return '<div class="project-card">' +
-      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
-        '<div><div class="bold mb-12">' + hdot(p.health) + p.name + '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + (isProjectSponsor(p) ? '<span class="badge badge-coral">Sponsor</span>' : '') + bdg(p.status) + ' ' + stagePill(p.stage) + ' ' + badgeIf('badge-purple', p.value) + '</div></div>' +
-        '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
-      '</div>' +
-      '<div class="grid-2 mt-12" style="font-size:12px;color:#777">' +
-        '<div>Owner: ' + (p.owner||'—') + '</div><div>Due: ' + (p.end||'TBD') + '</div>' +
-        '<div>My tasks: ' + doneTasks + '/' + myTasks.length + ' done</div>' +
-      '</div>' +
-      (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
-    '</div>';
-  }).join('');
-  document.getElementById('content').innerHTML = cards;
+  var nonComplete = D.projects.filter(function(p){ return p.stage !== 'complete'; });
+
+  var buckets = {
+    sponsor: nonComplete.filter(isProjectSponsor),
+    'owner-active': nonComplete.filter(function(p){ return p.stage === 'active' && isMyOwnedProject(p); }),
+    // Hold is grouped with Planned/Backlog here as "not currently active."
+    'owner-notstarted': nonComplete.filter(function(p){ return (p.stage === 'planned' || p.stage === 'backlog' || p.stage === 'hold') && isMyOwnedProject(p); }),
+    contributor: nonComplete.filter(isMyContribution),
+    completed: D.projects.filter(function(p){ return p.stage === 'complete' && hasAnyRoleOn(p); })
+  };
+  // Each tab is an independent role filter -- a project with more than one
+  // role for this person (e.g. owner AND sponsor) shows up in every tab that
+  // applies, not just one.
+
+  var tabDefs = [
+    { key:'sponsor',           label:'Sponsor',           list:buckets.sponsor,           empty:'No projects where you\'re the sponsor' },
+    { key:'owner-active',      label:'Owner: Active',     list:buckets['owner-active'],   empty:'No active projects you own' },
+    { key:'owner-notstarted',  label:'Owner: Not Started',list:buckets['owner-notstarted'],empty:'No planned, backlog, or on-hold projects you own' },
+    { key:'contributor',       label:'Contributor',       list:buckets.contributor,       empty:'No projects where you\'re a contributor' },
+    { key:'completed',         label:'Completed',         list:buckets.completed,         empty:'No completed projects yet' }
+  ];
+
+  var totalCount = tabDefs.reduce(function(sum, t){ return sum + t.list.length; }, 0);
+  if (!totalCount) {
+    document.getElementById('content').innerHTML = '<div class="empty-state"><i class="ti ti-briefcase"></i><p>You are not assigned to any projects</p></div>';
+    return;
+  }
+
+  var st = myProjectsPageState;
+  if (!tabDefs.some(function(t){ return t.key === st.tab; })) st.tab = 'sponsor';
+  var activeTab = tabDefs.filter(function(t){ return t.key === st.tab; })[0];
+
+  var tabHtml = '<div class="tab-bar">' + tabDefs.map(function(t) {
+    return '<div class="tab' + (st.tab===t.key?' active':'') + '" onclick="setMyProjectsTab(\'' + t.key + '\')">' + t.label +
+      (t.list.length ? ' <span class="badge badge-gray" style="font-size:10px">' + t.list.length + '</span>' : '') + '</div>';
+  }).join('') + '</div>';
+
+  var cardsHtml = activeTab.list.length
+    ? activeTab.list.map(myProjectCard).join('')
+    : '<div class="empty-state" style="padding:30px"><p>' + activeTab.empty + '</p></div>';
+
+  document.getElementById('content').innerHTML = tabHtml + cardsHtml;
+  window.setMyProjectsTab = function(k) { st.tab = k; pgMyProjectsResource(); };
 }
 
 function pgMyTasks() {
