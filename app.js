@@ -890,6 +890,18 @@ function hdot(h) {
   return '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + c + ';margin-right:6px;vertical-align:middle"></span>';
 }
 
+// Compact stand-in for a text label: a colored dot, same visual language as
+// hdot(). Rough guess/Somewhat confident/High confidence map red/amber/green.
+function confidenceDot(level) {
+  if (!level) return '';
+  var c = { 'Rough guess':'#E24B4A', 'Somewhat confident':'#EF9F27', 'High confidence':'#1D9E75' }[level] || '#ccc';
+  return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + c + ';margin-left:5px;vertical-align:middle" title="Value confidence: ' + level + '"></span>';
+}
+
+function freqAbbr(freq) {
+  return freq === 'Monthly' ? '/mo' : freq === 'Annually' ? '/yr' : '';
+}
+
 function stagePill(s) {
   var m = { backlog:{bg:'#FAEEDA',c:'#633806',l:'Backlog'}, planned:{bg:'#E6F1FB',c:'#0C447C',l:'Planned'}, active:{bg:'#E1F5EE',c:'#085041',l:'Active'}, complete:{bg:'#f0ede8',c:'#444',l:'Completed'}, hold:{bg:'#FBE7E3',c:'#993C1D',l:'Hold'} };
   var x = m[s] || m.backlog;
@@ -2355,7 +2367,9 @@ function pgPrioritizeBacklog() {
   displaySized.filter(matchesSearch).forEach(function(p){ quadrants[valueBucket(p) + '-' + pbEffortBucket(p)].items.push(p); });
 
   function chip(p) {
-    return '<div class="pb-chip" onclick="goToProject(\'' + p.id + '\')" title="' + p.name.replace(/"/g,'&quot;') + ' — ' + fmtCost(p.estimatedAmount) + ', ' + p.tshirtSize + '">' + p.name + '</div>';
+    var freqLabel = p.estimatedFrequency ? ' ' + p.estimatedFrequency.toLowerCase() : '';
+    var confLabel = p.valueConfidence ? ', ' + p.valueConfidence.toLowerCase() + ' confidence' : '';
+    return '<div class="pb-chip" onclick="goToProject(\'' + p.id + '\')" title="' + p.name.replace(/"/g,'&quot;') + ' — ' + fmtCost(p.estimatedAmount) + freqLabel + ', ' + p.tshirtSize + confLabel + '">' + p.name + '</div>';
   }
 
   var matrixHtml = !displaySized.length
@@ -2382,7 +2396,7 @@ function pgPrioritizeBacklog() {
         '<span class="pb-rank">' + (idx+1) + '</span>' +
         '<span class="pb-name" onclick="goToProject(\'' + p.id + '\')">' + p.name + (p.priorityIsOverride ? ' <span class="badge badge-amber" style="font-size:10px" title="Manually set — won\'t move automatically"><i class="ti ti-pin"></i> Manual</span>' : '') + '</span>' +
         '<span class="pb-cats">' + (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '') + '</span>' +
-        '<span class="pb-value">' + fmtCost(p.estimatedAmount) + '</span>' +
+        '<span class="pb-value">' + fmtCost(p.estimatedAmount) + '<span class="text-muted">' + freqAbbr(p.estimatedFrequency) + '</span>' + confidenceDot(p.valueConfidence) + '</span>' +
         '<span class="pb-size">' + '<span class="badge badge-gray">' + p.tshirtSize + '</span>' + '</span>' +
       '</div>';
     }).join('');
