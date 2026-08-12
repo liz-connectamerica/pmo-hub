@@ -4048,7 +4048,12 @@ function editProject(pid) {
   if (!canEdit(p)) { showToast('You do not have edit access'); return; }
   var statusOpts = (STATUSES.indexOf(p.status) < 0 ? '<option value="" selected>— Not set —</option>' : '') + STATUSES.map(function(s){ return '<option' + (p.status===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var phaseOpts  = (PHASES.indexOf(p.phase) < 0 ? '<option value="" selected>— Not set —</option>' : '') + PHASES.map(function(s){   return '<option' + (p.phase===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  var priorOpts  = (PRIORITIES.indexOf(p.priority) < 0 ? '<option value="" selected>— Not set —</option>' : '') + PRIORITIES.map(function(s){ return '<option' + (p.priority===s?' selected':'') + '>' + s + '</option>'; }).join('');
+  // No recognized priority yet defaults to "Needs prioritization" rather than
+  // a blank "Not set" placeholder; an existing valid value is always kept.
+  var priorOpts  = PRIORITIES.map(function(s){
+    var isSelected = p.priority === s || (PRIORITIES.indexOf(p.priority) < 0 && s === 'Needs prioritization');
+    return '<option' + (isSelected ? ' selected' : '') + '>' + s + '</option>';
+  }).join('');
   var valOpts    = (VALUE_AREAS.indexOf(p.value) < 0 ? '<option value="" selected>— Not set —</option>' : '') + VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var ownerPoolEdit = p.owner && individualResourceNames().indexOf(p.owner) < 0 ? individualResourceNames().concat([p.owner]) : individualResourceNames();
   var ownerOpts     = '<option value="">— None —</option>' + ownerPoolEdit.map(function(n){
@@ -4210,7 +4215,7 @@ async function deleteProject(pid) {
 
 function openNewProjectModal() {
   var valOpts = VALUE_AREAS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
-  var priorOpts = PRIORITIES.map(function(s){ return '<option>' + s + '</option>'; }).join('');
+  var priorOpts = PRIORITIES.map(function(s){ return '<option' + (s==='Needs prioritization'?' selected':'') + '>' + s + '</option>'; }).join('');
   var ownerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var sponsorOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var catCheckboxesNew = CATEGORIES.map(function(s){ return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="np-category-cb" value="' + s + '"> ' + s + '</label>'; }).join('');
