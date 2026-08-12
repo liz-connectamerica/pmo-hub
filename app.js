@@ -3778,33 +3778,73 @@ function openRaidModal(pid, type, idx) {
 
   showModal('<div class="modal-title">' + (isEdit?'Edit ':'Add ') + label + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Description *</div><textarea id="rd-desc" placeholder="Describe this ' + label.toLowerCase() + '…">' + (item ? item.desc : '') + '</textarea></div>' +
-    '<div class="form-group"><div class="form-label">Owner</div><select id="rd-owner" onchange="handleOwnerChange(\'' + pid + '\')">' + ownerOpts + '</select></div>' +
+    '<div class="form-group" id="rd-owner-group"><div class="form-label">Owner</div><select id="rd-owner" onchange="handleOwnerChange(\'' + pid + '\')">' + ownerOpts + '</select></div>' +
     extra +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="rd-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add ' + label) + '</button></div>', true);
 
-  window.handleOwnerChange = async function(pid2) {
+  window.handleOwnerChange = function(pid2) {
     var sel = document.getElementById('rd-owner');
-    if (sel.value === '__add__') {
-      var pr2 = D.projects.find(function(x){ return x.id === pid2; });
-      var nonMembers = individualResourceNames().filter(function(n){ return pr2.team.indexOf(n) < 0; });
-      var chosen = prompt('Select person to add to project:\n' + nonMembers.map(function(n,i){ return (i+1)+'. '+n; }).join('\n') + '\n\nEnter number:');
-      var num = parseInt(chosen);
-      if (num && nonMembers[num-1]) {
-        var chosenName = nonMembers[num-1];
-        var chosenResource = resolveResource(chosenName);
-        if (!chosenResource) { showToast('Could not find that person as a resource'); sel.value = ''; return; }
-        var result = await sb.from('resource_projects').insert({ project_id: pid2, resource_id: chosenResource.id });
-        if (result.error) { showToast('Could not add member: ' + result.error.message); sel.value = ''; return; }
-        pr2.team.push(chosenName);
-        pr2.teamIds.push(chosenResource.id);
-        addNotif(chosenName, 'You have been added to project "' + pr2.name + '".', 'team');
-        showToast(chosenName + ' added to project');
-        var newOpts = '<option value="">— Select —</option>' + pr2.team.map(function(n){ return '<option>' + n + '</option>'; }).join('') + '<option value="__add__">+ Add member to project…</option>';
-        sel.innerHTML = newOpts;
-      } else {
-        sel.value = '';
-      }
+    var existingPanel = document.getElementById('rd-add-member-panel');
+    if (existingPanel) existingPanel.remove();
+    if (sel.value !== '__add__') return;
+
+    var pr2 = D.projects.find(function(x){ return x.id === pid2; });
+    var candidates = individualResourceNames().filter(function(n){ return pr2.team.indexOf(n) < 0; });
+    var listHtml = candidates.length
+      ? candidates.map(function(n) {
+          return '<div class="rd-add-member-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">' +
+            '<span style="font-size:13px">' + n + '</span>' +
+            '<button class="btn btn-sm" onclick="raidAddMemberDirect(\'' + pid2 + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button>' +
+          '</div>';
+        }).join('')
+      : '<span class="text-muted" style="font-size:13px">Everyone is already on the project team</span>';
+
+    var panelHtml = '<div class="card" id="rd-add-member-panel" style="margin-top:8px;background:#fafaf8">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
+        '<div class="form-label" style="margin-bottom:0">Add someone to the project</div>' +
+        '<button class="btn btn-sm" onclick="cancelRaidAddMember()"><i class="ti ti-x"></i></button>' +
+      '</div>' +
+      '<input type="text" id="rd-add-member-search" placeholder="Search people…" oninput="filterRaidAddMemberList(this.value)">' +
+      '<div id="rd-add-member-list" style="max-height:200px;overflow-y:auto;margin-top:8px">' + listHtml + '</div>' +
+    '</div>';
+
+    document.getElementById('rd-owner-group').insertAdjacentHTML('afterend', panelHtml);
+    var searchEl = document.getElementById('rd-add-member-search');
+    if (searchEl) searchEl.focus();
+  };
+
+  window.filterRaidAddMemberList = function(query) {
+    var q = query.trim().toLowerCase();
+    document.querySelectorAll('#rd-add-member-list .rd-add-member-row').forEach(function(row) {
+      row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
+    });
+  };
+
+  window.cancelRaidAddMember = function() {
+    var panel = document.getElementById('rd-add-member-panel');
+    if (panel) panel.remove();
+    var sel = document.getElementById('rd-owner');
+    if (sel && sel.value === '__add__') sel.value = '';
+  };
+
+  window.raidAddMemberDirect = async function(pid2, personName) {
+    var pr2 = D.projects.find(function(x){ return x.id === pid2; });
+    var res = resolveResource(personName);
+    if (!res) { showToast('Could not find that person as a resource'); return; }
+    var result = await sb.from('resource_projects').insert({ project_id: pid2, resource_id: res.id });
+    if (result.error) { showToast('Could not add member: ' + result.error.message); return; }
+    pr2.team.push(personName); pr2.teamIds.push(res.id);
+    addNotif(personName, 'You have been added to project "' + pr2.name + '".', 'team');
+    showToast(personName + ' added to project');
+
+    var panel = document.getElementById('rd-add-member-panel');
+    if (panel) panel.remove();
+    var sel = document.getElementById('rd-owner');
+    if (sel) {
+      sel.innerHTML = '<option value="">— Select —</option>' +
+        pr2.team.map(function(n){ return '<option' + (n===personName?' selected':'') + '>' + n + '</option>'; }).join('') +
+        '<option value="__add__">+ Add member to project…</option>';
     }
   };
 
