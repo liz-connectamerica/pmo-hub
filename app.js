@@ -889,7 +889,7 @@ function badgeIf(cls, s) {
 
 function hdot(h) {
   var c = { green:'#1D9E75', amber:'#EF9F27', red:'#E24B4A' }[h] || '#ccc';
-  return '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + c + ';margin-right:6px;vertical-align:middle"></span>';
+  return '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + c + ';margin-right:6px;vertical-align:middle"' + (h ? '' : ' title="Health not set"') + '></span>';
 }
 
 // Compact stand-in for a text label: a colored dot, same visual language as
@@ -2060,7 +2060,7 @@ async function decideReq(id, decision) {
     var projectRecord = {
       name: r.title, status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
       value_area: valueArea, priority: priority, description: r.description, sponsor: r.sponsor || null,
-      business_unit: businessUnit, tshirt_size: tshirtSize, blockers: '', health: 'green', stage: newStage,
+      business_unit: businessUnit, tshirt_size: tshirtSize, blockers: '', health: null, stage: newStage,
       planned_start: startDate, start_date: startDate, end_date: endDate,
       target_quarter: targetQuarter, target_year: targetYear, target_end_quarter: targetEndQuarter, target_end_year: targetEndYear,
       estimated_amount: r.estimatedAmount, estimated_frequency: r.estimatedFrequency, estimated_type: r.estimatedType,
@@ -2104,7 +2104,7 @@ async function decideReq(id, decision) {
       id: projResult.data.id, name: r.title, owner:'', ownerId:null, sponsor: r.sponsor || '', categories: selectedCategories, businessUnit:businessUnit,
       team: r.team ? r.team.slice() : [], teamIds: teamIds, status: projectRecord.status, phase:'Not Started', progress:0,
       start: startDate, end: endDate, plannedStart: startDate,
-      value: valueArea, priority: priority, description: r.description, blockers:'', health:'green', tshirtSize: tshirtSize,
+      value: valueArea, priority: priority, description: r.description, blockers:'', health:null, tshirtSize: tshirtSize,
       stage: newStage, requestId:r.id, tags: r.tags ? r.tags.slice() : [], dependencies:[],
       estimatedAmount: r.estimatedAmount, estimatedFrequency: r.estimatedFrequency, estimatedType: r.estimatedType,
       valueConfidence: r.valueConfidence, costEstimate: r.costEstimate, costConfidence: r.costConfidence,
@@ -4090,7 +4090,7 @@ function editProject(pid) {
       '<div class="form-group"><div class="form-label">Start date</div><input type="date" id="ep-start" value="' + p.start + '"></div>' +
       '<div class="form-group"><div class="form-label">Target end</div><input type="date" id="ep-end" value="' + p.end + '"></div>' +
       '<div class="form-group"><div class="form-label">Progress (%)</div><input type="number" id="ep-progress" value="' + p.progress + '" min="0" max="100"></div>' +
-      '<div class="form-group"><div class="form-label">Health</div><select id="ep-health"><option value="green"' + (p.health==='green'?' selected':'') + '>Green</option><option value="amber"' + (p.health==='amber'?' selected':'') + '>Amber</option><option value="red"' + (p.health==='red'?' selected':'') + '>Red</option></select></div>' +
+      '<div class="form-group"><div class="form-label">Health</div><select id="ep-health"><option value=""' + (!p.health?' selected':'') + '>— Not set —</option><option value="green"' + (p.health==='green'?' selected':'') + '>Green</option><option value="amber"' + (p.health==='amber'?' selected':'') + '>Amber</option><option value="red"' + (p.health==='red'?' selected':'') + '>Red</option></select></div>' +
       '<div class="form-group"><div class="form-label">Business unit</div><select id="ep-bu">' + buOpts + '</select></div>' +
     '</div>' +
     '<div class="form-group"><div class="form-label">Categories</div><div>' + catCheckboxes + '</div></div>' +
@@ -4127,7 +4127,7 @@ async function saveProject(pid) {
     start_date: document.getElementById('ep-start').value || null,
     end_date: document.getElementById('ep-end').value || null,
     progress: parseInt(document.getElementById('ep-progress').value) || 0,
-    health: document.getElementById('ep-health').value,
+    health: document.getElementById('ep-health').value || null,
     description: document.getElementById('ep-desc').value,
     blockers: document.getElementById('ep-blocker').value
   };
@@ -4257,7 +4257,7 @@ function openNewProjectModal() {
       delivery_methodology: document.getElementById('np-methodology').value || null,
       status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
       value_area: document.getElementById('np-value').value, priority: document.getElementById('np-priority').value,
-      description: document.getElementById('np-desc').value, blockers: '', health: 'green', stage: newStage,
+      description: document.getElementById('np-desc').value, blockers: '', health: null, stage: newStage,
       start_date: startDate, end_date: endDate, planned_start: newStage !== 'backlog' ? startDate : null
     };
     var result = await sb.from('projects').insert(record).select().single();
@@ -4276,7 +4276,7 @@ function openNewProjectModal() {
       categories:selectedCats, businessUnit:record.business_unit, team:[], teamIds:[],
       status:record.status, phase:'Not Started', progress:0, start:startDate||'', end:endDate||'',
       value:record.value_area, priority:record.priority, description:record.description,
-      blockers:'', health:'green', stage:newStage, plannedStart:record.planned_start||'', requestId:'',
+      blockers:'', health:null, stage:newStage, plannedStart:record.planned_start||'', requestId:'',
       deliveryMethodology: record.delivery_methodology, projectNumber: result.data.project_number, createdAt: result.data.created_at,
       milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]},
       documents:[], docFolders:['General'], docFolderIds:{}
@@ -4887,7 +4887,7 @@ function validateImportRow(row, profilesByEmail) {
       progress: progress,
       description: row['Description'] || null,
       blockers: row['Current Blockers'] || null,
-      health: 'green',
+      health: null,
       target_quarter: targetQuarter,
       target_year: targetYear
     }
@@ -5162,7 +5162,7 @@ function pgAllProjects() {
     } else if (field === 'tshirtSize') {
       html = '<div class="form-group"><div class="form-label">New T-shirt size</div><select id="bulk-value-input"><option value="">— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>';
     } else if (field === 'health') {
-      html = '<div class="form-group"><div class="form-label">New health</div><select id="bulk-value-input"><option value="green">Green</option><option value="amber">Amber</option><option value="red">Red</option></select></div>';
+      html = '<div class="form-group"><div class="form-label">New health</div><select id="bulk-value-input"><option value="">— Not set —</option><option value="green">Green</option><option value="amber">Amber</option><option value="red">Red</option></select></div>';
     } else if (field === 'deliveryMethodology') {
       html = '<div class="form-group"><div class="form-label">New delivery methodology</div><select id="bulk-value-input"><option value="">Not selected</option><option>Agile</option><option>Waterfall</option><option>Hybrid</option></select></div>';
     } else if (field === 'estimatedType') {
@@ -5576,7 +5576,7 @@ function exportProjectsToExcel() {
       'Priority Rank': p.priorityRank != null ? p.priorityRank : ''
     };
     Object.assign(row, {
-      'Health': EXPORT_HEALTH_LABELS[p.health] || p.health || '',
+      'Health': EXPORT_HEALTH_LABELS[p.health] || p.health || 'Not set',
       'Progress %': p.progress != null ? p.progress : '',
       'Category': (p.categories || []).join(', '),
       'Tags': (p.tags || []).join(', '),
