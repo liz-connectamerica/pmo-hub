@@ -61,7 +61,7 @@ Each page supports search, category tabs, sorting, and column filters. The actio
 
 Opening a project gives you tabs across the top: **Overview, Team, Milestones, Tasks, RAID log, Documentation, Metadata,** and **Change Log**.
 
-- **Overview** — stage, status, phase, priority, progress, dates, description, sponsor, owner, tags, dependencies, and a mini milestone timeline. Everyone can see this; only the project's **owner** or an admin can edit it or change its stage (put on hold, resume, mark complete).
+- **Overview** — stage, status, phase, priority, progress, dates, description, sponsor, owner, tags, dependencies, program, and a mini milestone timeline. Everyone can see this; only the project's **owner** or an admin can edit it or change its stage (put on hold, resume, mark complete). The **Program** field sits next to Depends on — Add/Change program opens a search-and-pick list, same pattern as adding a dependency; a project can only belong to one program at a time.
 - **Team** — who's assigned. Only the owner or an admin can add or remove people.
 - **Milestones** — anyone can view the list and a milestone's history. Adding, editing, completing, or deleting a milestone is owner/admin-only.
 - **Tasks** — anyone can browse, search, sort, and filter tasks, and expand a task to see its comments and history. **Anyone can post a comment on a task**, regardless of whether they own the project. If a task is assigned to you, you'll see a **Done** button to mark it complete (with an optional closing comment) even if you're not the project owner. Creating, editing, or deleting a task itself is owner/admin-only.
