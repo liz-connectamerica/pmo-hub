@@ -322,7 +322,7 @@ async function loadAllProjects() {
     return {
       id: pr.id, name: pr.name,
       owner: pr.owner_name || (pr.owner_id ? resourceNameById[pr.owner_id] : ''), ownerId: pr.owner_id,
-      sponsor: pr.sponsor, sponsorEmail: pr.sponsor_email, sponsorId: pr.sponsor_id, sponsorResourceId: pr.sponsor_resource_id,
+      sponsor: pr.sponsor, sponsorResourceId: pr.sponsor_resource_id,
       categories: (categoriesByProj[pr.id]||[]).map(function(c){ return c.category; }), businessUnit: pr.business_unit,
       dependencies: (dependenciesByProject[pr.id]||[]).map(function(d){ return projectInfoById[d.depends_on_project_id]; }).filter(Boolean),
       team: teamNames, teamIds: teamIds,
@@ -5584,7 +5584,6 @@ function exportProjectsToExcel() {
       'Value Area': p.value || '',
       'Owner': p.owner || '',
       'Sponsor': p.sponsor || '',
-      'Sponsor Email': p.sponsorEmail || '',
       'Delivery Methodology': p.deliveryMethodology || '',
       'T-shirt Size': p.tshirtSize || '',
       'Start Date': p.start || '',
