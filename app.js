@@ -1525,7 +1525,9 @@ function handleRoute() {
 window.addEventListener('hashchange', handleRoute);
 
 async function bootAppForUser(skipReload) {
-  sb.rpc('touch_last_active'); // fire-and-forget -- every fresh login or resumed session counts as "active"
+  // supabase-js query/RPC builders are lazy thenables -- the request never
+  // actually goes out unless something awaits or .then()s it.
+  sb.rpc('touch_last_active').then(function(){}, function(){});
   var realRole = D.currentProfile.role;
   document.getElementById('current-user-display').textContent =
     D.currentProfile.display_name + ' · ' + roleLabel(realRole);
