@@ -196,6 +196,11 @@ input[type=file] { width: 100%; padding: 8px 10px; border: 1px solid #ddd; borde
 
 /* Task header filter panel */
 .th-filter-btn { background: none; border: none; cursor: pointer; color: #999; padding: 2px 4px; vertical-align: middle; }
+
+/* Rows vary a lot in height (tags, indentation) -- keep every column's
+   content pinned to the top so the action buttons line up row to row
+   instead of drifting to the vertical center of the tallest cell. */
+.tasks-table td { vertical-align: top; }
 .th-filter-btn:hover { color: #534AB7; }
 .th-filter-btn i { font-size: 14px; }
 .th-filter-active { color: #534AB7; }
