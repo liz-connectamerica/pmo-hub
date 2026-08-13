@@ -939,7 +939,7 @@ function taskTimelineBlock(pid2, outlineRows) {
     } else {
       barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">No dates set</span></div>';
     }
-    return '<div class="tl-row"><div class="tl-label" style="padding-left:' + (row.depth * 16) + 'px" title="' + t.title + '">' + chevron + t.title + '</div>' + barHtml + '</div>';
+    return '<div class="tl-row"><div class="tl-label" style="padding-left:' + (row.depth * 16) + 'px" title="' + t.title + '">' + chevron + '<span class="text-muted" style="margin-right:5px">' + row.taskNumber + '</span>' + t.title + '</div>' + barHtml + '</div>';
   }).join('');
 
   return toggleBtn +
