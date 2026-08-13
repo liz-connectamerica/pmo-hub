@@ -51,6 +51,14 @@ module.exports = async (req, res) => {
     return;
   }
 
+  if (action === 'list-logins') {
+    var listResult = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (listResult.error) { res.status(400).json({ error: listResult.error.message }); return; }
+    var logins = (listResult.data.users || []).map(function(u) { return { id: u.id, lastSignInAt: u.last_sign_in_at || null }; });
+    res.status(200).json({ success: true, logins: logins });
+    return;
+  }
+
   if (action === 'create') {
     var email = body.email;
     var firstName = body.firstName || '';

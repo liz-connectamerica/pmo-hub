@@ -1216,7 +1216,7 @@ async function logProjectChanges(projectId, before, after, source) {
     rows.push({
       project_id: projectId, field_name: field, field_label: CHANGE_LOG_FIELDS[field],
       old_value: oldNorm, new_value: newNorm,
-      changed_by_name: D.currentProfile.display_name, source: source
+      changed_by: D.currentProfile.id, changed_by_name: D.currentProfile.display_name, source: source
     });
   });
   if (!rows.length) return;
@@ -1286,6 +1286,11 @@ function fmtCost(n) {
 function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
 }
 
 function bdg(s) {
@@ -6018,19 +6023,137 @@ async function pgAdminUsers() {
     return;
   }
   D.allUsers = result.data.sort(function(a,b){ return (a.display_name||'').localeCompare(b.display_name||''); });
+  userActivityState.expandedId = null;
+  userActivityState.cache = {};
   renderUsersTable();
+
+  var loginResult = await callAdminUsersApi({ action: 'list-logins' });
+  if (loginResult && loginResult.logins) {
+    var byId = {};
+    loginResult.logins.forEach(function(l){ byId[l.id] = l.lastSignInAt; });
+    D.allUsers.forEach(function(u){ u.lastSignInAt = byId[u.id] || null; });
+    renderUsersTable();
+  }
+}
+
+var userActivityState = { expandedId: null, range: 30, cache: {} };
+
+function findTaskActivityContext(taskId) {
+  for (var i = 0; i < D.projects.length; i++) {
+    var p = D.projects[i];
+    var t = p.tasks.find(function(x){ return x.id === taskId; });
+    if (t) return { project: p, label: t.title };
+  }
+  return null;
+}
+function findMilestoneActivityContext(msId) {
+  for (var i = 0; i < D.projects.length; i++) {
+    var p = D.projects[i];
+    var m = p.milestones.find(function(x){ return x.id === msId; });
+    if (m) return { project: p, label: m.name };
+  }
+  return null;
+}
+function findRaidActivityContext(raidId) {
+  for (var i = 0; i < D.projects.length; i++) {
+    var p = D.projects[i];
+    var all = p.raid.risks.concat(p.raid.assumptions, p.raid.issues, p.raid.dependencies);
+    var item = all.find(function(x){ return x.id === raidId; });
+    if (item) return { project: p, label: item.desc };
+  }
+  return null;
+}
+
+async function loadUserActivityIfNeeded(userId) {
+  var key = userId + '|' + userActivityState.range;
+  if (userActivityState.cache[key]) return;
+  var cutoff = new Date(Date.now() - userActivityState.range * 86400000).toISOString();
+  var results = await Promise.all([
+    sb.from('task_log').select('*').eq('actor_id', userId).gte('logged_at', cutoff),
+    sb.from('milestone_log').select('*').eq('actor_id', userId).gte('logged_at', cutoff),
+    sb.from('raid_log').select('*').eq('actor_id', userId).gte('logged_at', cutoff),
+    sb.from('project_change_log').select('*').eq('changed_by', userId).gte('changed_at', cutoff)
+  ]);
+  var entries = [];
+  (results[0].data || []).forEach(function(r) {
+    var ctx = findTaskActivityContext(r.task_id);
+    entries.push({ when: r.logged_at, kind: 'Task', label: ctx ? ctx.label : '(deleted task)', project: ctx ? ctx.project : null, action: r.action, detail: r.detail });
+  });
+  (results[1].data || []).forEach(function(r) {
+    var ctx = findMilestoneActivityContext(r.milestone_id);
+    entries.push({ when: r.logged_at, kind: 'Milestone', label: ctx ? ctx.label : '(deleted milestone)', project: ctx ? ctx.project : null, action: r.action, detail: r.detail });
+  });
+  (results[2].data || []).forEach(function(r) {
+    var ctx = findRaidActivityContext(r.raid_item_id);
+    entries.push({ when: r.logged_at, kind: 'RAID', label: ctx ? ctx.label : '(deleted item)', project: ctx ? ctx.project : null, action: r.action, detail: r.detail });
+  });
+  (results[3].data || []).forEach(function(r) {
+    var proj = D.projects.find(function(p){ return p.id === r.project_id; });
+    entries.push({ when: r.changed_at, kind: 'Project field', label: r.field_label, project: proj || null, action: (r.old_value||'—') + ' → ' + (r.new_value||'—'), detail: SOURCE_LABELS[r.source] || r.source });
+  });
+  entries.sort(function(a,b){ return (b.when||'').localeCompare(a.when||''); });
+  userActivityState.cache[key] = entries;
+}
+
+async function toggleUserActivityExpand(userId) {
+  if (userActivityState.expandedId === userId) { userActivityState.expandedId = null; renderUsersTable(); return; }
+  userActivityState.expandedId = userId;
+  renderUsersTable();
+  await loadUserActivityIfNeeded(userId);
+  renderUsersTable();
+}
+
+async function setUserActivityRange(days) {
+  userActivityState.range = days;
+  renderUsersTable();
+  if (userActivityState.expandedId) {
+    await loadUserActivityIfNeeded(userActivityState.expandedId);
+    renderUsersTable();
+  }
+}
+
+function userActivityPanelHtml() {
+  var range = userActivityState.range;
+  var entries = userActivityState.cache[userActivityState.expandedId + '|' + range];
+  var rangeTabs = [7,30,90].map(function(d){
+    return '<div class="tab' + (range===d?' active':'') + '" onclick="setUserActivityRange(' + d + ')">Last ' + d + ' days</div>';
+  }).join('');
+  var body;
+  if (!entries) {
+    body = '<div class="text-muted" style="padding:20px;text-align:center"><i class="ti ti-loader-2"></i> Loading…</div>';
+  } else if (!entries.length) {
+    body = '<div class="text-muted" style="padding:20px;text-align:center">No activity in this range</div>';
+  } else {
+    body = entries.map(function(e) {
+      return '<div style="padding:8px 0;border-bottom:1px solid #f0ede8;font-size:13px">' +
+        '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">' +
+          '<span><span class="badge badge-gray" style="font-size:10px;margin-right:6px">' + e.kind + '</span>' +
+          (e.project ? '<a href="#" onclick="goToProject(\'' + e.project.id + '\');return false;">' + e.project.name + '</a> — ' : '') +
+          e.label + '</span>' +
+          '<span class="text-muted" style="white-space:nowrap">' + fmtDate(e.when) + '</span>' +
+        '</div>' +
+        '<div class="text-muted" style="margin-top:2px">' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>' +
+      '</div>';
+    }).join('');
+  }
+  return '<tr><td colspan="6" style="padding:16px;background:#fafaf8">' +
+    '<div class="tab-bar" style="margin-bottom:12px">' + rangeTabs + '</div>' + body +
+    '</td></tr>';
 }
 
 function renderUsersTable() {
   var rows = D.allUsers.map(function(u) {
     var isMe = D.currentProfile.id === u.id;
     var active = u.is_active !== false;
-    return '<tr>' +
+    var expanded = userActivityState.expandedId === u.id;
+    var mainRow = '<tr>' +
       '<td>' + (u.display_name||u.email) + (isMe ? ' <span class="text-muted">(you)</span>' : '') + '</td>' +
       '<td class="text-muted">' + u.email + '</td>' +
       '<td>' + bdg(roleLabel(u.role)) + '</td>' +
       '<td>' + (active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Deactivated</span>') + '</td>' +
+      '<td class="text-muted">' + (u.lastSignInAt !== undefined ? (u.lastSignInAt ? fmtDateTime(u.lastSignInAt) : 'Never') : '…') + '</td>' +
       '<td><div style="display:flex;gap:4px">' +
+        '<button class="btn btn-sm" title="Activity history" onclick="toggleUserActivityExpand(\'' + u.id + '\')"><i class="ti ' + (expanded?'ti-chevron-up':'ti-history') + '"></i></button>' +
         '<button class="btn btn-sm" title="Edit" onclick="openEditUserModal(\'' + u.id + '\')"><i class="ti ti-edit"></i></button>' +
         '<button class="btn btn-sm" title="Set new password" onclick="openSetPasswordModal(\'' + u.id + '\',\'' + u.email + '\')"><i class="ti ti-key"></i></button>' +
         (!isMe ? (active
@@ -6039,9 +6162,10 @@ function renderUsersTable() {
           : '') +
       '</div></td>' +
     '</tr>';
+    return mainRow + (expanded ? userActivityPanelHtml() : '');
   }).join('');
   document.getElementById('content').innerHTML =
-    '<div class="card"><div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    '<div class="card"><div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 
 function openEditUserModal(userId) {
