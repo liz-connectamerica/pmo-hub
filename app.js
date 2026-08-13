@@ -7484,6 +7484,7 @@ function pgMyTasks() {
         : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No tasks match your search/filters</p></div>')
       : '<div class="empty-state" style="padding:24px"><i class="ti ti-check"></i><p>' + (st.tab==='open' ? 'No open tasks — nice work!' : 'No completed tasks yet') + '</p></div>') +
     '</div>';
+  renderNav();
 
   window.setMyTasksTab = function(t) { myTasksState.tab = t; pgMyTasks(); };
   window.setMyTasksSort = function(col) {
