@@ -21,7 +21,7 @@ The bar at the top of the page shows the current page's title and any page-speci
 
 The Dashboard opens with four summary tiles — Active projects, On track, At risk, and a fourth tile that's either "Pending requests" (admins) or "In backlog" (everyone else).
 
-Below that is an **Active projects** table. This is portfolio-wide, not just your own projects — you can search by name, sort any column, and filter by Status or Phase, plus a tag filter above the table. Click **View** on any row to open that project.
+Below that is an **Active projects** table. This is portfolio-wide, not just your own projects — you can search by name, sort any column, and filter by Status or Phase, plus a tag filter above the table. A project's tags show as chips under its name, if it has any. Click **View** on any row to open that project.
 
 At the bottom, everyone sees a **Rejected proposals** list — every rejected request across the whole org, not just yours, with a date-range filter (last 30/90 days, last year, all time). This is intentionally visible to everyone, not just the person who submitted it.
 

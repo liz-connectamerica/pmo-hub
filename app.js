@@ -1685,8 +1685,11 @@ function pgDashboard() {
   }
 
   var projRows = displayed.map(function(p) {
+    var tagsLine = (p.tags && p.tags.length)
+      ? '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;font-weight:400">' + p.tags.map(function(tg){ return tagBadge(tg); }).join('') + '</div>'
+      : '';
     return '<tr>' +
-      '<td class="bold">' + hdot(p.health) + p.name + '</td><td>' + bdg(p.status) + '</td><td>' + bdg(p.priority) + '</td>' +
+      '<td class="bold"><div>' + hdot(p.health) + p.name + '</div>' + tagsLine + '</td><td>' + bdg(p.status) + '</td><td>' + bdg(p.priority) + '</td>' +
       '<td>' + badgeIf('badge-gray', p.phase) + '</td>' +
       '<td><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></td>' +
       '<td class="text-muted">' + (p.owner || '—') + '</td>' +
