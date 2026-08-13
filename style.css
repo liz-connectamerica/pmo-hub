@@ -202,6 +202,22 @@ input[type=file] { width: 100%; padding: 8px 10px; border: 1px solid #ddd; borde
    instead of drifting to the vertical center of the tallest cell. */
 .tasks-table td { vertical-align: top; }
 .th-filter-btn:hover { color: #534AB7; }
+
+.task-row-draggable { cursor: grab; }
+.task-row-draggable.task-dragging { opacity: .4; }
+
+.task-action-menu {
+  position: absolute; top: 100%; right: 0; margin-top: 4px; z-index: 50;
+  background: #fff; border: 1px solid #e8e8e5; border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 6px; min-width: 190px;
+  display: flex; flex-direction: column;
+}
+.task-action-menu button {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 10px; border: none; background: none; text-align: left;
+  font-size: 13px; border-radius: 6px; cursor: pointer; font-family: inherit; color: #1a1a1a;
+}
+.task-action-menu button:hover { background: #f5f5f3; }
 .th-filter-btn i { font-size: 14px; }
 .th-filter-active { color: #534AB7; }
 .th-filter-panel { position: fixed; background: #fff; border: 1px solid #e8e8e5; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 10px; z-index: 500; min-width: 170px; font-weight: normal; text-transform: none; }

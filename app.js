@@ -955,6 +955,19 @@ function taskSiblings(tasks, parentId) {
     .sort(function(a,b){ return (a.position||0) - (b.position||0); });
 }
 
+// Deleting a task cascades to its subtree at the DB layer (ON DELETE CASCADE);
+// mirror that locally so orphaned subtask rows don't linger until reload.
+function collectTaskDescendantIds(tasks, rootId) {
+  var ids = [];
+  function walk(parentId) {
+    tasks.forEach(function(t){
+      if ((t.parentTaskId || null) === parentId) { ids.push(t.id); walk(t.id); }
+    });
+  }
+  walk(rootId);
+  return ids;
+}
+
 async function reassignTaskPositions(orderedTasks) {
   for (var i = 0; i < orderedTasks.length; i++) {
     orderedTasks[i].position = i;
@@ -963,6 +976,7 @@ async function reassignTaskPositions(orderedTasks) {
 }
 
 async function demoteTask(pid2, taskId) {
+  taskActionMenuOpen = null;
   var pr = D.projects.find(function(x){ return x.id === pid2; });
   var outline = buildTaskOutline(pr.tasks);
   var idx = outline.findIndex(function(row){ return row.task.id === taskId; });
@@ -979,6 +993,7 @@ async function demoteTask(pid2, taskId) {
 }
 
 async function promoteTask(pid2, taskId) {
+  taskActionMenuOpen = null;
   var pr = D.projects.find(function(x){ return x.id === pid2; });
   var task = pr.tasks.find(function(x){ return x.id === taskId; });
   if (!task.parentTaskId) { showToast('This task is already top-level'); return; }
@@ -992,6 +1007,66 @@ async function promoteTask(pid2, taskId) {
   newSiblings.splice(oldParentIdx + 1, 0, task);
   await reassignTaskPositions(newSiblings);
   refreshTaskView();
+}
+
+async function reorderTask(pid2, fromId, toId) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var fromTask = pr.tasks.find(function(x){ return x.id === fromId; });
+  var toTask = pr.tasks.find(function(x){ return x.id === toId; });
+  if (!fromTask || !toTask) return;
+  if ((fromTask.parentTaskId || null) !== (toTask.parentTaskId || null)) {
+    showToast('Drag within the same level to reorder — use Promote/Demote to move between levels');
+    return;
+  }
+  var siblings = taskSiblings(pr.tasks, fromTask.parentTaskId || null);
+  var fromIdx = siblings.indexOf(fromTask);
+  var toIdx = siblings.indexOf(toTask);
+  if (fromIdx < 0 || toIdx < 0) return;
+  siblings.splice(fromIdx, 1);
+  siblings.splice(toIdx, 0, fromTask);
+  await reassignTaskPositions(siblings);
+  refreshTaskView();
+}
+
+function attachTaskDragHandlers() {
+  var draggedId = null;
+  document.querySelectorAll('.task-row-draggable').forEach(function(el) {
+    el.addEventListener('dragstart', function(ev) {
+      draggedId = el.getAttribute('data-task-id');
+      el.classList.add('task-dragging');
+      ev.dataTransfer.effectAllowed = 'move';
+    });
+    el.addEventListener('dragend', function() { el.classList.remove('task-dragging'); });
+    el.addEventListener('dragover', function(ev) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; });
+    el.addEventListener('drop', function(ev) {
+      ev.preventDefault();
+      var fromId = draggedId;
+      var toId = el.getAttribute('data-task-id');
+      var pid2 = el.getAttribute('data-pid');
+      draggedId = null;
+      if (!fromId || fromId === toId) return;
+      reorderTask(pid2, fromId, toId);
+    });
+  });
+}
+
+var taskActionMenuOpen = null;
+function toggleTaskActionMenu(ev, pid2, taskId) {
+  ev.stopPropagation();
+  taskActionMenuOpen = (taskActionMenuOpen === taskId) ? null : taskId;
+  refreshTaskView();
+}
+document.addEventListener('click', function(ev) {
+  if (taskActionMenuOpen) { taskActionMenuOpen = null; refreshTaskView(); }
+});
+
+function addTaskBefore(pid2, taskId) {
+  taskActionMenuOpen = null;
+  openTaskModal(pid2, null, { relativeToTaskId: taskId, relativePosition: 'before' });
+}
+function addTaskAfter(pid2, taskId) {
+  taskActionMenuOpen = null;
+  openTaskModal(pid2, null, { relativeToTaskId: taskId, relativePosition: 'after' });
 }
 
 function teamNames() {
@@ -3580,15 +3655,31 @@ function pgProjectDetail(pid, tab) {
             (editable ? '<button class="btn btn-sm" style="padding:1px 6px" title="Edit tags" onclick="openTaskTagPicker(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-tag"></i></button>' : '') +
             '</div>' : '') +
           '</div>';
-        return '<tr><td class="text-muted">' + row.taskNumber + '</td><td>' + titleCell + '</td><td' + (task.assignee ? '' : ' class="text-muted"') + '>' + taskAssigneeLabel(task) + '</td><td>' + bdg(task.status) + '</td><td class="text-muted">' + taskDatesLabel(task) + '</td>' +
-          '<td><div style="display:flex;gap:4px;flex-wrap:wrap">' +
+        var menuOpen = taskActionMenuOpen === task.id;
+        var menuItems =
+          (hierarchyEditable ? '<button onclick="demoteTask(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-indent-increase"></i> Demote</button>' +
+            '<button onclick="promoteTask(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-indent-decrease"></i> Promote</button>' : '') +
+          '<button onclick="addTaskBefore(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-plus"></i> Add task before</button>' +
+          '<button onclick="addTaskAfter(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-plus"></i> Add task after</button>' +
+          '<button onclick="openEditTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i> Edit</button>' +
+          '<button onclick="deleteTask(\'' + p.id + '\',' + idx + ')" style="color:#A32D2D"><i class="ti ti-trash"></i> Delete</button>';
+        var actionMenu = editable ? (
+          '<div style="position:relative;display:inline-block">' +
+          '<button class="btn btn-sm task-action-menu-btn" title="More actions" onclick="toggleTaskActionMenu(event,\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-dots-vertical"></i></button>' +
+          (menuOpen ? '<div class="task-action-menu" onclick="event.stopPropagation()">' + menuItems + '</div>' : '') +
+          '</div>'
+        ) : '';
+        var trAttrs = hierarchyEditable
+          ? ' class="task-row task-row-draggable" draggable="true" data-task-id="' + task.id + '" data-pid="' + p.id + '"'
+          : '';
+        return '<tr' + trAttrs + '><td class="text-muted">' + row.taskNumber + '</td><td>' + titleCell + '</td><td' + (task.assignee ? '' : ' class="text-muted"') + '>' + taskAssigneeLabel(task) + '</td><td>' + bdg(task.status) + '</td><td class="text-muted">' + taskDatesLabel(task) + '</td>' +
+          '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' +
           '<button class="btn btn-sm" title="Description" onclick="toggleTaskDescription(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
           '<button class="btn btn-sm" title="Checklist" onclick="toggleTaskChecklist(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (clOpenNow?'ti-chevron-up':'ti-list-check') + '"></i>' + (checklist.length ? ' ' + doneCount + '/' + checklist.length : '') + '</button>' +
           '<button class="btn btn-sm" title="Comments" onclick="toggleTaskComments(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (comments.length ? ' ' + comments.length : '') + '</button>' +
           '<button class="btn btn-sm" title="Change log" onclick="toggleTaskLog(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
-          (hierarchyEditable ? '<button class="btn btn-sm" title="Demote (make subtask)" onclick="demoteTask(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-indent-increase"></i></button><button class="btn btn-sm" title="Promote" onclick="promoteTask(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-indent-decrease"></i></button>' : '') +
-          (editable ? '<button class="btn btn-sm" onclick="openEditTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
           (myTask && task.status !== 'Done' ? '<button class="btn btn-sm btn-success" onclick="openCompleteTaskPrompt(\'' + p.id + '\',' + idx + ')"><i class="ti ti-check"></i> Done</button>' : '') +
+          actionMenu +
           '</div></td></tr>' + descRow + checklistRow + logRow + commentsRow;
       }).join('');
 
@@ -3724,6 +3815,7 @@ function pgProjectDetail(pid, tab) {
     '<div class="tab-bar">' + tabsHtml + '</div>' +
     '<div id="ptab-content">' + tabC(tab) + '</div>' +
     '</div>';
+  if (tab === 'tasks') attachTaskDragHandlers();
 
   window.openProjectTagPicker = function(pid2) {
     var pr = D.projects.find(function(x){ return x.id === pid2; });
@@ -3856,6 +3948,7 @@ function pgProjectDetail(pid, tab) {
   window.switchPTab = function(t) {
     tbs.forEach(function(x){ var e = document.getElementById('ptab-' + x); if (e) e.className = 'tab' + (x===t?' active':''); });
     document.getElementById('ptab-content').innerHTML = tabC(t);
+    if (t === 'tasks') attachTaskDragHandlers();
     var h = '#/project/' + pid + '/' + t;
     if (location.hash !== h) location.hash = h;
     };
@@ -3884,12 +3977,16 @@ function pgProjectDetail(pid, tab) {
   };
   window.openEditMilestone = function(pid2, idx){ openMilestoneModal(pid2, idx); };
   window.deleteTask = async function(pid2,idx){
+    taskActionMenuOpen = null;
     var pr=D.projects.find(function(x){return x.id===pid2;});
     var tk = pr.tasks[idx];
+    var descendantIds = collectTaskDescendantIds(pr.tasks, tk.id);
     var result = await sb.from('tasks').delete().eq('id', tk.id);
     if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
-    pr.tasks.splice(idx,1);
+    var removeIds = [tk.id].concat(descendantIds);
+    pr.tasks = pr.tasks.filter(function(t){ return removeIds.indexOf(t.id) < 0; });
     document.getElementById('ptab-content').innerHTML=tabC('tasks');
+    attachTaskDragHandlers();
   };
   window.deleteRaid = async function(pid2,type,idx){
     var pr=D.projects.find(function(x){return x.id===pid2;});
@@ -3901,7 +3998,7 @@ function pgProjectDetail(pid, tab) {
   };
   window.openAddMilestone = function(pid2){ openMilestoneModal(pid2); };
   window.openAddTask      = function(pid2){ openTaskModal(pid2, null); };
-  window.openEditTask     = function(pid2,idx){ openTaskModal(pid2, idx); };
+  window.openEditTask     = function(pid2,idx){ taskActionMenuOpen = null; openTaskModal(pid2, idx); };
   window.openAddRaid      = function(pid2,type){ openRaidModal(pid2, type, null); };
   window.openEditRaid     = function(pid2,type,idx){ openRaidModal(pid2, type, idx); };
   window.onTaskSearch = function(pid2, val) {
@@ -4107,7 +4204,8 @@ function openCompleteMilestoneModal(pid, idx) {
   };
 }
 
-function openTaskModal(pid, idx) {
+function openTaskModal(pid, idx, opts) {
+  opts = opts || {};
   var p = D.projects.find(function(x){ return x.id === pid; });
   var task = idx != null ? p.tasks[idx] : null;
   // only project members + all people for admin/pm
@@ -4204,17 +4302,22 @@ function openTaskModal(pid, idx) {
       if (changes.length) task.log.push(await writeLog('task_log', 'task_id', task.id, 'Updated', changes.join('; ')));
       await ensureOnTeam(p, assigneeResource);
     } else {
-      var topLevelSiblings = taskSiblings(p.tasks, null);
-      var nextPosition = topLevelSiblings.length ? topLevelSiblings[topLevelSiblings.length - 1].position + 1 : 0;
+      var relTask = opts.relativeToTaskId ? p.tasks.find(function(x){ return x.id === opts.relativeToTaskId; }) : null;
+      var parentIdForInsert = relTask ? (relTask.parentTaskId || null) : null;
       var insertResult = await sb.from('tasks').insert({
         project_id: pid, title: newVals.title, description: newVals.description || null, assignee_id: assigneeResource ? assigneeResource.id : null,
         assignee_name: newVals.assignee || null, status: newVals.status, start_date: newVals.start || null, end_date: newVals.end || null,
-        parent_task_id: null, position: nextPosition
+        parent_task_id: parentIdForInsert, position: 0
       }).select().single();
       if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
-      var t2 = {id:insertResult.data.id,title:newVals.title,description:newVals.description,assignee:newVals.assignee,assigneeId:assigneeResource?assigneeResource.id:null,status:newVals.status,start:newVals.start,end:newVals.end,parentTaskId:null,position:nextPosition,log:[],comments:[],checklist:[],tags:[]};
+      var t2 = {id:insertResult.data.id,title:newVals.title,description:newVals.description,assignee:newVals.assignee,assigneeId:assigneeResource?assigneeResource.id:null,status:newVals.status,start:newVals.start,end:newVals.end,parentTaskId:parentIdForInsert,position:0,log:[],comments:[],checklist:[],tags:[]};
       t2.log.push(await writeLog('task_log', 'task_id', t2.id, 'Created', ''));
       p.tasks.push(t2);
+      var newSiblings = taskSiblings(p.tasks, parentIdForInsert).filter(function(x){ return x.id !== t2.id; });
+      var relIdx = relTask ? newSiblings.findIndex(function(x){ return x.id === relTask.id; }) : -1;
+      if (relIdx < 0) { newSiblings.push(t2); }
+      else { newSiblings.splice(opts.relativePosition === 'before' ? relIdx : relIdx + 1, 0, t2); }
+      await reassignTaskPositions(newSiblings);
       await ensureOnTeam(p, assigneeResource);
     }
     showToast(idx!=null?'Task updated':'Task added'); closeModal(); if (window.switchPTab) window.switchPTab('tasks');
