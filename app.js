@@ -693,6 +693,27 @@ async function completeMyTask(pid2, idx, commentText) {
   showToast('Task marked complete');
 }
 
+function toggleTaskDoneIcon(pid2, idx) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var task = pr.tasks[idx];
+  if (!task) return;
+  if (task.status === 'Done') reopenTask(pid2, task.id);
+  else openCompleteTaskPrompt(pid2, idx);
+}
+
+async function reopenTask(pid2, taskId) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var task = pr.tasks.find(function(x){ return x.id === taskId; });
+  var old = task.status;
+  var result = await sb.from('tasks').update({ status: 'To Do' }).eq('id', taskId);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  task.status = 'To Do';
+  task.log = task.log || [];
+  task.log.push(await writeLog('task_log', 'task_id', taskId, 'Updated', 'Status: "' + old + '" → "To Do"'));
+  refreshTaskView();
+  showToast('Task reopened');
+}
+
 function toggleTaskComments(pid2, taskId) {
   var key = pid2 + '|' + taskId;
   taskCommentsOpen[key] = !taskCommentsOpen[key];
@@ -3588,6 +3609,7 @@ function pgProjectDetail(pid, tab) {
         var task = row.task;
         var idx = p.tasks.indexOf(task);
         var myTask = !!(task.assigneeId && D.myResourceId && task.assigneeId === D.myResourceId);
+        var canCheck = editable || myTask;
         var logKey = p.id + '|' + task.id;
         var logOpenNow = !!taskLogOpen[logKey];
         var logRow = '';
@@ -3629,7 +3651,6 @@ function pgProjectDetail(pid, tab) {
         var doneCount = checklist.filter(function(c){ return c.done; }).length;
         var checklistRow = '';
         if (clOpenNow) {
-          var canCheck = editable || myTask;
           var itemsHtml = checklist.length ? checklist.map(function(c) {
             return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px' + (canCheck ? ';cursor:pointer' : '') + '">' +
               '<input type="checkbox"' + (c.done ? ' checked' : '') + (canCheck ? ' onchange="toggleChecklistItem(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')"' : ' disabled') + '>' +
@@ -3645,8 +3666,11 @@ function pgProjectDetail(pid, tab) {
         var taskTags = task.tags || [];
         var collapsedNow = !!taskOutlineCollapsed[task.id];
         var indentPx = row.depth * 22;
+        var doneIconHtml = '<i class="ti ' + (task.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;color:' + (task.status==='Done' ? '#1D9E75' : '#ccc') + (canCheck ? ';cursor:pointer' : '') + '"' +
+          (canCheck ? ' title="' + (task.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTaskDoneIcon(\'' + p.id + '\',' + idx + ')"' : '') + '></i>';
         var titleCell = '<div style="white-space:normal;word-break:break-word;padding-left:' + indentPx + 'px">' +
           '<div style="display:flex;align-items:baseline;gap:6px">' +
+          doneIconHtml +
           (row.hasChildren ? '<button class="btn btn-sm" style="padding:1px 4px" onclick="toggleTaskOutlineCollapse(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (collapsedNow?'ti-chevron-right':'ti-chevron-down') + '"></i></button>' : '<span style="display:inline-block;width:22px"></span>') +
           '<span style="font-size:13px' + (task.status==='Done' ? ';color:#999' : '') + '">' + task.title + '</span>' +
           '</div>' +
@@ -3673,12 +3697,11 @@ function pgProjectDetail(pid, tab) {
           ? ' class="task-row task-row-draggable" draggable="true" data-task-id="' + task.id + '" data-pid="' + p.id + '"'
           : '';
         return '<tr' + trAttrs + '><td class="text-muted">' + row.taskNumber + '</td><td>' + titleCell + '</td><td' + (task.assignee ? '' : ' class="text-muted"') + '>' + taskAssigneeLabel(task) + '</td><td>' + bdg(task.status) + '</td><td class="text-muted">' + taskDatesLabel(task) + '</td>' +
-          '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' +
+          '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
           '<button class="btn btn-sm" title="Description" onclick="toggleTaskDescription(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
           '<button class="btn btn-sm" title="Checklist" onclick="toggleTaskChecklist(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (clOpenNow?'ti-chevron-up':'ti-list-check') + '"></i>' + (checklist.length ? ' ' + doneCount + '/' + checklist.length : '') + '</button>' +
           '<button class="btn btn-sm" title="Comments" onclick="toggleTaskComments(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (comments.length ? ' ' + comments.length : '') + '</button>' +
           '<button class="btn btn-sm" title="Change log" onclick="toggleTaskLog(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
-          (myTask && task.status !== 'Done' ? '<button class="btn btn-sm btn-success" onclick="openCompleteTaskPrompt(\'' + p.id + '\',' + idx + ')"><i class="ti ti-check"></i> Done</button>' : '') +
           actionMenu +
           '</div></td></tr>' + descRow + checklistRow + logRow + commentsRow;
       }).join('');
@@ -7357,8 +7380,47 @@ function pgMyTasks() {
   }
 
   var rows = displayed.map(function(item) {
-    var p = item.project, task = item.task;
+    var p = item.project, task = item.task, idx = item.idx;
     var canEditThis = canEdit(p);
+
+    var descKey = p.id + '|' + task.id;
+    var descOpenNow = !!taskDescOpen[descKey];
+    var descRow = '';
+    if (descOpenNow) {
+      descRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+        (task.description ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + task.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
+        '</div></td></tr>';
+    }
+
+    var checklist = task.checklist || [];
+    var clKey = p.id + '|' + task.id;
+    var clOpenNow = !!taskChecklistOpen[clKey];
+    var doneCount = checklist.filter(function(c){ return c.done; }).length;
+    var checklistRow = '';
+    if (clOpenNow) {
+      var itemsHtml = checklist.length ? checklist.map(function(c) {
+        return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;cursor:pointer">' +
+          '<input type="checkbox"' + (c.done ? ' checked' : '') + ' onchange="toggleChecklistItem(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')">' +
+          '<span style="flex:1' + (c.done ? ';text-decoration:line-through;color:#999' : '') + '">' + c.text + '</span>' +
+          (canEditThis ? '<button class="btn btn-sm btn-danger" onclick="deleteChecklistItem(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')"><i class="ti ti-x"></i></button>' : '') +
+          '</label>';
+      }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No checklist items yet</div>';
+      checklistRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+        itemsHtml +
+        (canEditThis ? '<div class="comment-add-row"><input type="text" id="cl-input-' + task.id + '" style="flex:1" placeholder="Add a checklist item…"><button class="btn btn-sm btn-primary" onclick="addChecklistItem(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-plus"></i> Add</button></div>' : '') +
+        '</div></td></tr>';
+    }
+
+    var logKey = p.id + '|' + task.id;
+    var logOpenNow = !!taskLogOpen[logKey];
+    var logRow = '';
+    if (logOpenNow) {
+      var entries = (task.log && task.log.length) ? task.log.slice().reverse().map(function(e){
+        return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+      }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+      logRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+    }
+
     var comments = task.comments || [];
     var cKey = p.id + '|' + task.id;
     var cOpenNow = !!taskCommentsOpen[cKey];
@@ -7377,15 +7439,30 @@ function pgMyTasks() {
         '<div class="comment-add-row"><textarea id="cmt-input-' + task.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addComment(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
         '</div></td></tr>';
     }
-    return '<tr><td class="bold">' + task.title + '</td>' +
+
+    var taskTags = task.tags || [];
+    var doneIconHtml = '<i class="ti ' + (task.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;cursor:pointer;color:' + (task.status==='Done' ? '#1D9E75' : '#ccc') + '" title="' + (task.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTaskDoneIcon(\'' + p.id + '\',' + idx + ')"></i>';
+    var titleCell = '<div style="display:flex;align-items:flex-start;gap:8px">' +
+      doneIconHtml +
+      '<div style="flex:1;min-width:0">' +
+      '<div class="bold" style="font-size:13px' + (task.status==='Done' ? ';color:#999' : '') + '">' + task.title + '</div>' +
+      ((canEditThis || taskTags.length) ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">' +
+        taskTags.map(function(tg){ return tagBadge(tg); }).join('') +
+        (canEditThis ? '<button class="btn btn-sm" style="padding:1px 6px" title="Edit tags" onclick="openTaskTagPicker(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-tag"></i></button>' : '') +
+        '</div>' : '') +
+      '</div></div>';
+
+    return '<tr><td>' + titleCell + '</td>' +
       '<td>' + p.name + ' ' +
         '<button class="btn btn-sm" title="View project overview" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-info-circle"></i></button> ' +
         '<button class="btn btn-sm" title="View this project\'s task list" onclick="goToProject(\'' + p.id + '\',\'tasks\')"><i class="ti ti-list"></i></button></td>' +
       '<td>' + bdg(task.status) + '</td><td class="text-muted">' + (task.end || '—') + '</td>' +
-      '<td><div style="display:flex;gap:4px;flex-wrap:wrap">' +
+      '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
+        '<button class="btn btn-sm" title="Description" onclick="toggleTaskDescription(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
+        '<button class="btn btn-sm" title="Checklist" onclick="toggleTaskChecklist(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (clOpenNow?'ti-chevron-up':'ti-list-check') + '"></i>' + (checklist.length ? ' ' + doneCount + '/' + checklist.length : '') + '</button>' +
         '<button class="btn btn-sm" title="Comments" onclick="toggleTaskComments(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (comments.length ? ' ' + comments.length : '') + '</button>' +
-        (task.status!=='Done' ? '<button class="btn btn-sm btn-success" onclick="openCompleteTaskPrompt(\'' + p.id + '\',' + item.idx + ')"><i class="ti ti-check"></i> Mark done</button>' : '') +
-      '</div></td></tr>' + commentsRow;
+        '<button class="btn btn-sm" title="Change log" onclick="toggleTaskLog(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+      '</div></td></tr>' + descRow + checklistRow + logRow + commentsRow;
   }).join('');
 
   var searchBar = '<div class="task-filter-bar"><input type="text" id="my-tasks-search" placeholder="Search your tasks…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onMyTasksSearch(this.value)"></div>';
