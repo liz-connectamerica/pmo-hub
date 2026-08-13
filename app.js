@@ -4300,12 +4300,13 @@ function openTaskModal(pid, idx, opts) {
   document.getElementById('tm-save').onclick = async function() {
     var title = document.getElementById('tm-title').value.trim();
     if (!title){ showToast('Task title required'); return; }
-    var btn = document.getElementById('tm-save'); btn.disabled = true;
     var newVals = {
       title: title, description: document.getElementById('tm-desc').value.trim(),
       assignee: selectedAssignee, status: document.getElementById('tm-status').value,
       start: document.getElementById('tm-start').value, end: document.getElementById('tm-end').value
     };
+    if (newVals.start && newVals.end && newVals.end < newVals.start) { showToast('End date cannot be before start date'); return; }
+    var btn = document.getElementById('tm-save'); btn.disabled = true;
     var assigneeResource = resolveResource(newVals.assignee);
 
     if (idx!=null) {
