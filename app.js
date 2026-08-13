@@ -121,7 +121,8 @@ async function loadTags() {
   var results = await Promise.all([
     sb.from('tags').select('*'),
     sb.from('project_tags').select('*'),
-    sb.from('resource_tags').select('*')
+    sb.from('resource_tags').select('*'),
+    sb.from('task_tags').select('*')
   ]);
   for (var i = 0; i < results.length; i++) {
     if (results[i].error) { console.error('loadTags query failed:', results[i].error); return { tags: [], projectTagsByProject: {}, resourceTagsByResource: {} }; }
@@ -129,18 +130,23 @@ async function loadTags() {
   var tagRows = results[0].data || [];
   var projectTagRows = results[1].data || [];
   var resourceTagRows = results[2].data || [];
+  var taskTagRows = results[3].data || [];
   var nameById = {};
   tagRows.forEach(function(t){ nameById[t.id] = t.name; });
   var projectTagsByProject = groupBy(projectTagRows, 'project_id');
   var resourceTagsByResource = groupBy(resourceTagRows, 'resource_id');
+  var taskTagsByTask = groupBy(taskTagRows, 'task_id');
   var projectTagNames = {};
   Object.keys(projectTagsByProject).forEach(function(pid){ projectTagNames[pid] = projectTagsByProject[pid].map(function(r){ return nameById[r.tag_id]; }).filter(Boolean); });
   var resourceTagNames = {};
   Object.keys(resourceTagsByResource).forEach(function(rid){ resourceTagNames[rid] = resourceTagsByResource[rid].map(function(r){ return nameById[r.tag_id]; }).filter(Boolean); });
+  var taskTagNames = {};
+  Object.keys(taskTagsByTask).forEach(function(tid){ taskTagNames[tid] = taskTagsByTask[tid].map(function(r){ return nameById[r.tag_id]; }).filter(Boolean); });
   return {
     tags: tagRows.map(function(t){ return { id: t.id, name: t.name }; }).sort(function(a,b){ return a.name.localeCompare(b.name); }),
     projectTagNames: projectTagNames,
-    resourceTagNames: resourceTagNames
+    resourceTagNames: resourceTagNames,
+    taskTagNames: taskTagNames
   };
 }
 
@@ -221,6 +227,7 @@ async function loadAllProjects() {
     sb.from('tasks').select('*'),
     sb.from('task_log').select('*'),
     sb.from('task_comments').select('*'),
+    sb.from('task_checklist_items').select('*'),
     sb.from('raid_items').select('*'),
     sb.from('raid_log').select('*'),
     sb.from('doc_folders').select('*'),
@@ -249,13 +256,14 @@ async function loadAllProjects() {
   var taskRows          = results[5].data || [];
   var taskLogRows       = results[6].data || [];
   var commentRows       = results[7].data || [];
-  var raidRows          = results[8].data || [];
-  var raidLogRows       = results[9].data || [];
-  var folderRows        = results[10].data || [];
-  var docRows           = results[11].data || [];
-  var resourceMiniRows  = results[12].data || [];
-  var categoryRows      = results[13].data || [];
-  var dependencyRows    = results[14].data || [];
+  var checklistRows     = results[8].data || [];
+  var raidRows          = results[9].data || [];
+  var raidLogRows       = results[10].data || [];
+  var folderRows        = results[11].data || [];
+  var docRows           = results[12].data || [];
+  var resourceMiniRows  = results[13].data || [];
+  var categoryRows      = results[14].data || [];
+  var dependencyRows    = results[15].data || [];
   var priorityRankByProj = {};
   priorityRankRows.forEach(function(r){ priorityRankByProj[r.project_id] = { rank: r.rank, isOverride: r.is_override }; });
 
@@ -279,6 +287,7 @@ async function loadAllProjects() {
   var tasksByProj        = groupBy(taskRows, 'project_id');
   var taskLogByTask      = groupBy(taskLogRows, 'task_id');
   var commentsByTask     = groupBy(commentRows, 'task_id');
+  var checklistByTask    = groupBy(checklistRows, 'task_id');
   var raidByProj         = groupBy(raidRows, 'project_id');
   var raidLogByItem      = groupBy(raidLogRows, 'raid_item_id');
   var foldersByProj      = groupBy(folderRows, 'project_id');
@@ -307,12 +316,15 @@ async function loadAllProjects() {
 
     var tasks = (tasksByProj[pr.id] || []).map(function(t) {
       return {
-        id: t.id, title: t.title,
+        id: t.id, title: t.title, description: t.description || '',
         assignee: t.assignee_name || (t.assignee_id ? resourceNameById[t.assignee_id] : ''),
-        assigneeId: t.assignee_id, status: t.status, due: t.due_date,
+        assigneeId: t.assignee_id, status: t.status, start: t.start_date, end: t.end_date,
         log: mapLog(taskLogByTask[t.id]),
         comments: (commentsByTask[t.id] || []).map(function(c) {
           return { id: c.id, text: c.body, author: c.author_name, date: ymd(c.created_at) };
+        }),
+        checklist: (checklistByTask[t.id] || []).slice().sort(function(a,b){ return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0; }).map(function(c) {
+          return { id: c.id, text: c.text, done: c.done };
         })
       };
     });
@@ -727,6 +739,131 @@ async function deleteComment(pid2, taskId, cid) {
   showToast('Comment deleted');
 }
 
+function toggleTaskChecklist(pid2, taskId) {
+  var key = pid2 + '|' + taskId;
+  taskChecklistOpen[key] = !taskChecklistOpen[key];
+  refreshTaskView();
+}
+
+async function addChecklistItem(pid2, taskId) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var tk = pr.tasks.find(function(x){ return x.id === taskId; });
+  var el = document.getElementById('cl-input-' + taskId);
+  var text = el ? el.value.trim() : '';
+  if (!text) { showToast('Checklist item cannot be empty'); return; }
+  var result = await sb.from('task_checklist_items').insert({ task_id: taskId, text: text }).select().single();
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  tk.checklist = tk.checklist || [];
+  tk.checklist.push({ id: result.data.id, text: text, done: false });
+  refreshTaskView();
+}
+
+async function toggleChecklistItem(pid2, taskId, itemId) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var tk = pr.tasks.find(function(x){ return x.id === taskId; });
+  var item = tk.checklist.find(function(x){ return x.id === itemId; });
+  if (!item) return;
+  var result = await sb.from('task_checklist_items').update({ done: !item.done }).eq('id', itemId);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  item.done = !item.done;
+  refreshTaskView();
+}
+
+async function deleteChecklistItem(pid2, taskId, itemId) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var tk = pr.tasks.find(function(x){ return x.id === taskId; });
+  var result = await sb.from('task_checklist_items').delete().eq('id', itemId);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  tk.checklist = tk.checklist.filter(function(x){ return x.id !== itemId; });
+  refreshTaskView();
+}
+
+function toggleTaskTimeline(pid2) {
+  taskTimelineOpen[pid2] = !taskTimelineOpen[pid2];
+  refreshTaskView();
+}
+
+function openTaskTagPicker(pid2, taskId) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var tk = pr.tasks.find(function(x){ return x.id === taskId; });
+  openTagPicker(tk.tags || [], async function(newTags) {
+    var oldTags = tk.tags || [];
+    var toAdd = newTags.filter(function(n){ return oldTags.indexOf(n) < 0; });
+    var toRemove = oldTags.filter(function(n){ return newTags.indexOf(n) < 0; });
+    for (var i = 0; i < toAdd.length; i++) {
+      var tag = D.tags.find(function(t){ return t.name === toAdd[i]; });
+      if (tag) await sb.from('task_tags').insert({ task_id: taskId, tag_id: tag.id });
+    }
+    for (var j = 0; j < toRemove.length; j++) {
+      var tagR = D.tags.find(function(t){ return t.name === toRemove[j]; });
+      if (tagR) await sb.from('task_tags').delete().eq('task_id', taskId).eq('tag_id', tagR.id);
+    }
+    tk.tags = newTags;
+    showToast('Tags updated');
+    refreshTaskView();
+  });
+}
+
+function taskAssigneeLabel(tk) { return tk.assignee || 'Unassigned'; }
+
+function taskDatesLabel(tk) {
+  if (tk.start && tk.end) return tk.start + ' – ' + tk.end;
+  if (tk.end) return tk.end;
+  if (tk.start) return 'Start ' + tk.start;
+  return '—';
+}
+
+function taskTimelineBlock(pid2, tasks) {
+  var dated = tasks.filter(function(t){ return t.start && t.end; });
+  var openNow = !!taskTimelineOpen[pid2];
+  var toggleBtn = '<button class="btn btn-sm mb-12" onclick="toggleTaskTimeline(\'' + pid2 + '\')"><i class="ti ' + (openNow ? 'ti-chevron-up' : 'ti-chevron-down') + '"></i> Timeline' + (dated.length ? ' (' + dated.length + ')' : '') + '</button>';
+  if (!openNow) return toggleBtn;
+  if (!dated.length) return toggleBtn + '<div class="text-muted" style="font-size:12px;margin-bottom:12px">No tasks have both a start and end date yet</div>';
+
+  var minStart = dated.reduce(function(m,t){ return t.start < m ? t.start : m; }, dated[0].start);
+  var maxEnd = dated.reduce(function(m,t){ return t.end > m ? t.end : m; }, dated[0].end);
+  var winStartRaw = new Date(minStart + 'T00:00:00');
+  var winStart = new Date(winStartRaw.getFullYear(), winStartRaw.getMonth(), 1);
+  var winEndDate = new Date(maxEnd + 'T00:00:00');
+  var windowMonths = (winEndDate.getFullYear() - winStart.getFullYear()) * 12 + (winEndDate.getMonth() - winStart.getMonth()) + 1;
+  if (windowMonths < 1) windowMonths = 1;
+
+  var monthLabels = [];
+  for (var mi = 0; mi < windowMonths; mi++) {
+    var md = new Date(winStart.getFullYear(), winStart.getMonth() + mi, 1);
+    monthLabels.push(md.toLocaleString('en-US', { month: 'short' }) + (md.getMonth() === 0 ? " '" + String(md.getFullYear()).slice(2) : ''));
+  }
+
+  function monthsFromStart(dateStr) {
+    var d = new Date(dateStr + 'T00:00:00');
+    var yearDiff = d.getFullYear() - winStart.getFullYear();
+    var monthDiff = d.getMonth() - winStart.getMonth();
+    var dayFrac = (d.getDate() - 1) / 30.44;
+    return yearDiff * 12 + monthDiff + dayFrac;
+  }
+
+  var sorted = dated.slice().sort(function(a,b){ return a.start < b.start ? -1 : a.start > b.start ? 1 : 0; });
+  var rows = sorted.map(function(t) {
+    var startOffset = Math.max(0, monthsFromStart(t.start));
+    var endOffset = Math.min(windowMonths, monthsFromStart(t.end) + (1 / 30.44));
+    var widthPct = Math.max(1, endOffset - startOffset) / windowMonths * 100;
+    var leftPct = startOffset / windowMonths * 100;
+    var barColor = TASK_STATUS_COLORS[t.status] || '#534AB7';
+    return '<div class="tl-row"><div class="tl-label" title="' + t.title + '">' + t.title + '</div>' +
+      '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + '">' + t.status + '</div></div></div>';
+  }).join('');
+
+  var legend = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">' + Object.keys(TASK_STATUS_COLORS).map(function(s){
+    return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#666"><span style="width:10px;height:10px;border-radius:3px;background:' + TASK_STATUS_COLORS[s] + ';display:inline-block"></span>' + s + '</div>';
+  }).join('') + '</div>';
+
+  return toggleBtn +
+    '<div class="card mb-16" style="background:#faf9f7">' + legend +
+    '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + m + '</div>'; }).join('') + '</div>' +
+    rows +
+    '</div>';
+}
+
 function teamNames() {
   return (D.resources || []).filter(function(r){ return r.type === 'team'; }).map(function(r){ return r.name; });
 }
@@ -757,7 +894,7 @@ function pushLog(item, action, detail) {
 
 var taskViewState = {};
 function getTaskState(pid) {
-  if (!taskViewState[pid]) taskViewState[pid] = { sort:'due', dir:'asc', search:'', fAssignee:[], fStatus:[], openFilter:null };
+  if (!taskViewState[pid]) taskViewState[pid] = { sort:'end', dir:'asc', search:'', fAssignee:[], fStatus:[], openFilter:null };
   return taskViewState[pid];
 }
 
@@ -765,11 +902,14 @@ var raidLogOpen = {};
 var taskLogOpen = {};
 var milestoneLogOpen = {};
 var taskCommentsOpen = {};
+var taskChecklistOpen = {};
+var taskTimelineOpen = {};
 var raidSearchState = {};
 var docFolderState = {};
 var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fStatus:[], openFilter:null };
 var roadmapCategoryFilter = 'All';
 var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#534AB7', 'Build':'#1D9E75', 'Testing':'#EF9F27', 'Deployment':'#D85A30', 'Monitor':'#993556' };
+var TASK_STATUS_COLORS = { 'To Do':'#9B9B93', 'In Progress':'#534AB7', 'Done':'#1D9E75' };
 var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null, tagFilter:[] };
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
 var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null };
@@ -794,7 +934,7 @@ var allProjectsState = {
   openFilter: null
 };
 var tagAdminState = { expandedId: null };
-var myTasksState = { sort:'due', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
+var myTasksState = { sort:'end', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var myProjectsPageState = { tab:'sponsor' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
@@ -1161,7 +1301,7 @@ async function bootAppForUser(skipReload) {
     var tagData = loaded[3];
     D.programs = loaded[5];
     D.tags = tagData.tags;
-    D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; });
+    D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; p.tasks.forEach(function(t){ t.tags = tagData.taskTagNames[t.id] || []; }); });
     D.resources.forEach(function(r){ r.tags = tagData.resourceTagNames[r.id] || []; });
     await autoActivatePlannedProjects();
   }
@@ -1258,7 +1398,7 @@ async function refreshRequests() {
 async function refreshTags() {
   var tagData = await loadTags();
   D.tags = tagData.tags;
-  D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; });
+  D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; p.tasks.forEach(function(t){ t.tags = tagData.taskTagNames[t.id] || []; }); });
   D.resources.forEach(function(r){ r.tags = tagData.resourceTagNames[r.id] || []; });
 }
 
@@ -3223,7 +3363,7 @@ function pgProjectDetail(pid, tab) {
       }
 
       var assigneeChoices = [];
-      p.tasks.forEach(function(tk){ if (assigneeChoices.indexOf(tk.assignee) < 0) assigneeChoices.push(tk.assignee); });
+      p.tasks.forEach(function(tk){ var lbl = taskAssigneeLabel(tk); if (assigneeChoices.indexOf(lbl) < 0) assigneeChoices.push(lbl); });
       var statusChoices = ['To Do','In Progress','Done'];
 
       function filterIcon(col, active) {
@@ -3236,7 +3376,7 @@ function pgProjectDetail(pid, tab) {
 
       var list = p.tasks.slice();
       if (st.search) { var q = st.search.toLowerCase(); list = list.filter(function(tk){ return tk.title.toLowerCase().indexOf(q) >= 0; }); }
-      if (st.fAssignee.length) list = list.filter(function(tk){ return st.fAssignee.indexOf(tk.assignee) >= 0; });
+      if (st.fAssignee.length) list = list.filter(function(tk){ return st.fAssignee.indexOf(taskAssigneeLabel(tk)) >= 0; });
       if (st.fStatus.length) list = list.filter(function(tk){ return st.fStatus.indexOf(tk.status) >= 0; });
       if (st.sort) {
         list.sort(function(a,b){
@@ -3277,21 +3417,51 @@ function pgProjectDetail(pid, tab) {
             '<div class="comment-add-row"><textarea id="cmt-input-' + task.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addComment(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
             '</div></td></tr>';
         }
-        return '<tr><td style="white-space:normal;word-break:break-word">' + task.title + '</td><td>' + task.assignee + '</td><td>' + bdg(task.status) + '</td><td class="text-muted">' + task.due + '</td>' +
-          '<td><div style="display:flex;gap:4px">' +
+        var checklist = task.checklist || [];
+        var clKey = p.id + '|' + task.id;
+        var clOpenNow = !!taskChecklistOpen[clKey];
+        var doneCount = checklist.filter(function(c){ return c.done; }).length;
+        var checklistRow = '';
+        if (clOpenNow) {
+          var canCheck = editable || myTask;
+          var itemsHtml = checklist.length ? checklist.map(function(c) {
+            return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px' + (canCheck ? ';cursor:pointer' : '') + '">' +
+              '<input type="checkbox"' + (c.done ? ' checked' : '') + (canCheck ? ' onchange="toggleChecklistItem(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')"' : ' disabled') + '>' +
+              '<span style="flex:1' + (c.done ? ';text-decoration:line-through;color:#999' : '') + '">' + c.text + '</span>' +
+              (editable ? '<button class="btn btn-sm btn-danger" onclick="deleteChecklistItem(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')"><i class="ti ti-x"></i></button>' : '') +
+              '</label>';
+          }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No checklist items yet</div>';
+          checklistRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+            itemsHtml +
+            (editable ? '<div class="comment-add-row"><input type="text" id="cl-input-' + task.id + '" style="flex:1" placeholder="Add a checklist item…"><button class="btn btn-sm btn-primary" onclick="addChecklistItem(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-plus"></i> Add</button></div>' : '') +
+            '</div></td></tr>';
+        }
+        var taskTags = task.tags || [];
+        var titleCell = '<div style="white-space:normal;word-break:break-word">' +
+          '<div style="font-size:13px' + (task.status==='Done' ? ';color:#999' : '') + '">' + task.title + '</div>' +
+          (task.description ? '<div style="font-size:12px;color:#555;white-space:normal;background:#f5f5f3;padding:6px 8px;border-radius:6px;line-height:1.5;margin-top:4px">' + task.description + '</div>' : '') +
+          ((editable || taskTags.length) ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">' +
+            taskTags.map(function(tg){ return tagBadge(tg); }).join('') +
+            (editable ? '<button class="btn btn-sm" style="padding:1px 6px" title="Edit tags" onclick="openTaskTagPicker(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-tag"></i></button>' : '') +
+            '</div>' : '') +
+          '</div>';
+        return '<tr><td>' + titleCell + '</td><td' + (task.assignee ? '' : ' class="text-muted"') + '>' + taskAssigneeLabel(task) + '</td><td>' + bdg(task.status) + '</td><td class="text-muted">' + taskDatesLabel(task) + '</td>' +
+          '<td><div style="display:flex;gap:4px;flex-wrap:wrap">' +
+          '<button class="btn btn-sm" title="Checklist" onclick="toggleTaskChecklist(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (clOpenNow?'ti-chevron-up':'ti-list-check') + '"></i>' + (checklist.length ? ' ' + doneCount + '/' + checklist.length : '') + '</button>' +
           '<button class="btn btn-sm" title="Comments" onclick="toggleTaskComments(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (comments.length ? ' ' + comments.length : '') + '</button>' +
           '<button class="btn btn-sm" title="Change log" onclick="toggleTaskLog(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
           (editable ? '<button class="btn btn-sm" onclick="openEditTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
           (myTask && task.status !== 'Done' ? '<button class="btn btn-sm btn-success" onclick="openCompleteTaskPrompt(\'' + p.id + '\',' + idx + ')"><i class="ti ti-check"></i> Done</button>' : '') +
-          '</div></td></tr>' + logRow + commentsRow;
+          '</div></td></tr>' + checklistRow + logRow + commentsRow;
       }).join('');
 
       var header = '<tr><th>Task</th>' +
         '<th class="sortable-th"><span onclick="setTaskSort(\'' + p.id + '\',\'assignee\')">Assignee ' + arrow('assignee') + '</span>' + filterIcon('assignee', st.fAssignee.length>0) + '</th>' +
         '<th class="sortable-th"><span onclick="setTaskSort(\'' + p.id + '\',\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.fStatus.length>0) + '</th>' +
-        '<th class="sortable-th" onclick="setTaskSort(\'' + p.id + '\',\'due\')">Due ' + arrow('due') + '</th><th></th></tr>';
+        '<th class="sortable-th" onclick="setTaskSort(\'' + p.id + '\',\'end\')">Dates ' + arrow('end') + '</th><th></th></tr>';
 
       return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddTask(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add task</button>' : '') +
+        taskTimelineBlock(p.id, p.tasks) +
         searchBar +
         (p.tasks.length
           ? (list.length ? '<table><thead>' + header + '</thead><tbody>' + trows + '</tbody></table>' : '<div class="empty-state" style="padding:30px"><i class="ti ti-search"></i><p>No tasks match your filters</p></div>')
@@ -3615,7 +3785,7 @@ function pgProjectDetail(pid, tab) {
     var choices;
     if (col === 'assignee') {
       choices = [];
-      pr.tasks.forEach(function(tk){ if (choices.indexOf(tk.assignee) < 0) choices.push(tk.assignee); });
+      pr.tasks.forEach(function(tk){ var lbl = taskAssigneeLabel(tk); if (choices.indexOf(lbl) < 0) choices.push(lbl); });
     } else {
       choices = ['To Do','In Progress','Done'];
     }
@@ -3809,52 +3979,105 @@ function openTaskModal(pid, idx) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   var task = idx != null ? p.tasks[idx] : null;
   // only project members + all people for admin/pm
-  var pool = canEdit(p) ? individualResourceNames().concat(teamNames()) : p.team;
+  var pool = canEdit(p) ? individualResourceNames().concat(teamNames()) : p.team.slice();
   if (task && task.assignee && pool.indexOf(task.assignee) < 0) pool = pool.concat([task.assignee]);
-  var assigneeOpts = pool.map(function(n){
-    var isInactiveCurrent = task && task.assignee === n && individualResourceNames().indexOf(n) < 0 && teamNames().indexOf(n) < 0;
-    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (task && task.assignee===n ? ' selected' : '') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
-  }).join('');
+
+  var selectedAssignee = task ? (task.assignee || '') : '';
+  var assigneePickerOpen = false;
+  var assigneeQuery = '';
+
+  function assigneePanelHtml() {
+    var q = assigneeQuery.trim().toLowerCase();
+    var matches = pool.filter(function(n){ return n.toLowerCase().indexOf(q) >= 0; });
+    var rows = matches.map(function(n){
+      var isTeam = teamNames().indexOf(n) >= 0;
+      var isInactiveCurrent = task && task.assignee === n && individualResourceNames().indexOf(n) < 0 && teamNames().indexOf(n) < 0;
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">' +
+        '<span style="font-size:13px"><i class="ti ' + (isTeam ? 'ti-users' : 'ti-user') + '" style="margin-right:6px;color:#888"></i>' + n + (isInactiveCurrent ? ' <span class="text-muted">(no longer a resource)</span>' : '') + '</span>' +
+        '<button type="button" class="btn btn-sm" onclick="window.__taskAssigneePick(\'' + n.replace(/'/g,"\\'") + '\')">Select</button>' +
+        '</div>';
+    }).join('');
+    return '<div style="border:1px solid #e8e8e5;border-radius:8px;padding:10px;margin-top:8px">' +
+      '<button type="button" class="btn btn-sm" style="margin-bottom:8px" onclick="window.__taskAssigneePick(\'\')"><i class="ti ti-user-off"></i> Unassigned</button>' +
+      '<input type="text" id="tm-assignee-search" placeholder="Search people or teams…" value="' + assigneeQuery.replace(/"/g,'&quot;') + '" oninput="window.__taskAssigneeSearch(this.value)">' +
+      '<div style="max-height:180px;overflow-y:auto;margin-top:8px">' + (rows || '<span class="text-muted" style="font-size:13px">No matches</span>') + '</div>' +
+      '</div>';
+  }
+
+  function assigneeFieldInner() {
+    return '<div style="display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:13px' + (selectedAssignee ? '' : ';color:#999') + '">' + (selectedAssignee || 'Unassigned') + '</span>' +
+      '<button type="button" class="btn btn-sm" onclick="window.__taskAssigneeToggle()">' + (selectedAssignee ? 'Change' : 'Assign') + '</button>' +
+      '</div>' +
+      (assigneePickerOpen ? assigneePanelHtml() : '');
+  }
+
+  window.__taskAssigneeToggle = function() {
+    assigneePickerOpen = !assigneePickerOpen;
+    assigneeQuery = '';
+    document.getElementById('tm-assignee-field').innerHTML = assigneeFieldInner();
+    var s = document.getElementById('tm-assignee-search');
+    if (s) s.focus();
+  };
+  window.__taskAssigneeSearch = function(val) {
+    assigneeQuery = val;
+    document.getElementById('tm-assignee-field').innerHTML = assigneeFieldInner();
+    var s = document.getElementById('tm-assignee-search');
+    if (s) { s.focus(); s.selectionStart = s.selectionEnd = s.value.length; }
+  };
+  window.__taskAssigneePick = function(name) {
+    selectedAssignee = name;
+    assigneePickerOpen = false;
+    document.getElementById('tm-assignee-field').innerHTML = assigneeFieldInner();
+  };
+
   showModal('<div class="modal-title">' + (task?'Edit task':'Add task') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Task title *</div><input type="text" id="tm-title" value="' + (task?task.title:'') + '" placeholder="Task name"></div>' +
-    '<div class="form-group"><div class="form-label">Assignee</div><select id="tm-assignee">' + assigneeOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Description</div><textarea id="tm-desc" rows="3" placeholder="Details, context, links…">' + (task ? (task.description||'') : '') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Assignee</div><div id="tm-assignee-field">' + assigneeFieldInner() + '</div></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Status</div><select id="tm-status">' +
       '<option' + (!task||task.status==='To Do'?' selected':'') + '>To Do</option>' +
       '<option' + (task&&task.status==='In Progress'?' selected':'') + '>In Progress</option>' +
       '<option' + (task&&task.status==='Done'?' selected':'') + '>Done</option></select></div>' +
-    '<div class="form-group"><div class="form-label">Due date</div><input type="date" id="tm-due" value="' + (task?task.due:'') + '"></div></div>' +
+    '<div></div></div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">Start date</div><input type="date" id="tm-start" value="' + (task?(task.start||''):'') + '"></div>' +
+    '<div class="form-group"><div class="form-label">End date</div><input type="date" id="tm-end" value="' + (task?(task.end||''):'') + '"></div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="tm-save"><i class="ti ti-check"></i> ' + (task?'Save changes':'Add task') + '</button></div>');
   document.getElementById('tm-save').onclick = async function() {
     var title = document.getElementById('tm-title').value.trim();
     if (!title){ showToast('Task title required'); return; }
     var btn = document.getElementById('tm-save'); btn.disabled = true;
-    var newVals = {title:title,assignee:document.getElementById('tm-assignee').value,status:document.getElementById('tm-status').value,due:document.getElementById('tm-due').value};
+    var newVals = {
+      title: title, description: document.getElementById('tm-desc').value.trim(),
+      assignee: selectedAssignee, status: document.getElementById('tm-status').value,
+      start: document.getElementById('tm-start').value, end: document.getElementById('tm-end').value
+    };
     var assigneeResource = resolveResource(newVals.assignee);
 
     if (idx!=null) {
-      var fieldLabels = {title:'Title',assignee:'Assignee',status:'Status',due:'Due date'};
+      var fieldLabels = {title:'Title',description:'Description',assignee:'Assignee',status:'Status',start:'Start date',end:'End date'};
       var changes = [];
-      ['title','assignee','status','due'].forEach(function(f){
-        if (task[f] !== newVals[f]) changes.push(fieldLabels[f] + ': "' + (task[f]||'—') + '" → "' + (newVals[f]||'—') + '"');
+      ['title','description','assignee','status','start','end'].forEach(function(f){
+        if ((task[f]||'') !== (newVals[f]||'')) changes.push(fieldLabels[f] + ': "' + (task[f]||'—') + '" → "' + (newVals[f]||'—') + '"');
       });
       var result = await sb.from('tasks').update({
-        title: newVals.title, assignee_id: assigneeResource ? assigneeResource.id : null,
-        assignee_name: newVals.assignee, status: newVals.status, due_date: newVals.due || null
+        title: newVals.title, description: newVals.description || null, assignee_id: assigneeResource ? assigneeResource.id : null,
+        assignee_name: newVals.assignee || null, status: newVals.status, start_date: newVals.start || null, end_date: newVals.end || null
       }).eq('id', task.id);
       if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
-      task.title = newVals.title; task.assignee = newVals.assignee; task.assigneeId = assigneeResource ? assigneeResource.id : null;
-      task.status = newVals.status; task.due = newVals.due;
+      task.title = newVals.title; task.description = newVals.description; task.assignee = newVals.assignee; task.assigneeId = assigneeResource ? assigneeResource.id : null;
+      task.status = newVals.status; task.start = newVals.start; task.end = newVals.end;
       task.log = task.log || [];
       if (changes.length) task.log.push(await writeLog('task_log', 'task_id', task.id, 'Updated', changes.join('; ')));
       await ensureOnTeam(p, assigneeResource);
     } else {
       var insertResult = await sb.from('tasks').insert({
-        project_id: pid, title: newVals.title, assignee_id: assigneeResource ? assigneeResource.id : null,
-        assignee_name: newVals.assignee, status: newVals.status, due_date: newVals.due || null
+        project_id: pid, title: newVals.title, description: newVals.description || null, assignee_id: assigneeResource ? assigneeResource.id : null,
+        assignee_name: newVals.assignee || null, status: newVals.status, start_date: newVals.start || null, end_date: newVals.end || null
       }).select().single();
       if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
-      var t2 = {id:insertResult.data.id,title:newVals.title,assignee:newVals.assignee,assigneeId:assigneeResource?assigneeResource.id:null,status:newVals.status,due:newVals.due,log:[],comments:[]};
+      var t2 = {id:insertResult.data.id,title:newVals.title,description:newVals.description,assignee:newVals.assignee,assigneeId:assigneeResource?assigneeResource.id:null,status:newVals.status,start:newVals.start,end:newVals.end,log:[],comments:[],checklist:[],tags:[]};
       t2.log.push(await writeLog('task_log', 'task_id', t2.id, 'Created', ''));
       p.tasks.push(t2);
       await ensureOnTeam(p, assigneeResource);
@@ -6881,7 +7104,7 @@ function pgMyTasks() {
       if (st.sort === 'task') { av = a.task.title.toLowerCase(); bv = b.task.title.toLowerCase(); }
       else if (st.sort === 'project') { av = a.project.name.toLowerCase(); bv = b.project.name.toLowerCase(); }
       else if (st.sort === 'status') { av = a.task.status || ''; bv = b.task.status || ''; }
-      else { av = a.task.due || ''; bv = b.task.due || ''; }
+      else { av = a.task.end || ''; bv = b.task.end || ''; }
       if (av < bv) return st.dir === 'asc' ? -1 : 1;
       if (av > bv) return st.dir === 'asc' ? 1 : -1;
       return 0;
@@ -6920,7 +7143,7 @@ function pgMyTasks() {
       '<td>' + p.name + ' ' +
         '<button class="btn btn-sm" title="View project overview" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-info-circle"></i></button> ' +
         '<button class="btn btn-sm" title="View this project\'s task list" onclick="goToProject(\'' + p.id + '\',\'tasks\')"><i class="ti ti-list"></i></button></td>' +
-      '<td>' + bdg(task.status) + '</td><td class="text-muted">' + (task.due || '—') + '</td>' +
+      '<td>' + bdg(task.status) + '</td><td class="text-muted">' + (task.end || '—') + '</td>' +
       '<td><div style="display:flex;gap:4px;flex-wrap:wrap">' +
         '<button class="btn btn-sm" title="Comments" onclick="toggleTaskComments(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (comments.length ? ' ' + comments.length : '') + '</button>' +
         (task.status!=='Done' ? '<button class="btn btn-sm btn-success" onclick="openCompleteTaskPrompt(\'' + p.id + '\',' + item.idx + ')"><i class="ti ti-check"></i> Mark done</button>' : '') +
@@ -6941,7 +7164,7 @@ function pgMyTasks() {
           '<th class="sortable-th" onclick="setMyTasksSort(\'task\')">Task ' + arrow('task') + '</th>' +
           '<th class="sortable-th"><span onclick="setMyTasksSort(\'project\')">Project ' + arrow('project') + '</span>' + filterIcon('fProject', projectChoices) + '</th>' +
           '<th class="sortable-th"><span onclick="setMyTasksSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('fStatus', statusChoices) + '</th>' +
-          '<th class="sortable-th" onclick="setMyTasksSort(\'due\')">Due ' + arrow('due') + '</th><th></th></tr></thead>' +
+          '<th class="sortable-th" onclick="setMyTasksSort(\'end\')">End ' + arrow('end') + '</th><th></th></tr></thead>' +
           '<tbody>' + rows + '</tbody></table></div>'
         : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No tasks match your search/filters</p></div>')
       : '<div class="empty-state" style="padding:24px"><i class="ti ti-check"></i><p>' + (st.tab==='open' ? 'No open tasks — nice work!' : 'No completed tasks yet') + '</p></div>') +
