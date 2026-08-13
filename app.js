@@ -1525,6 +1525,7 @@ function handleRoute() {
 window.addEventListener('hashchange', handleRoute);
 
 async function bootAppForUser(skipReload) {
+  sb.rpc('touch_last_active'); // fire-and-forget -- every fresh login or resumed session counts as "active"
   var realRole = D.currentProfile.role;
   document.getElementById('current-user-display').textContent =
     D.currentProfile.display_name + ' · ' + roleLabel(realRole);
@@ -6017,7 +6018,7 @@ async function pgAdminUsers() {
     return;
   }
   document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading users…</p></div>';
-  var result = await sb.from('profiles').select('id, email, first_name, last_name, display_name, role, is_active');
+  var result = await sb.from('profiles').select('id, email, first_name, last_name, display_name, role, is_active, last_active_at');
   if (result.error) {
     document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:40px"><p>Could not load users: ' + result.error.message + '</p></div>';
     return;
@@ -6026,14 +6027,6 @@ async function pgAdminUsers() {
   userActivityState.expandedId = null;
   userActivityState.cache = {};
   renderUsersTable();
-
-  var loginResult = await callAdminUsersApi({ action: 'list-logins' });
-  if (loginResult && loginResult.logins) {
-    var byId = {};
-    loginResult.logins.forEach(function(l){ byId[l.id] = l.lastSignInAt; });
-    D.allUsers.forEach(function(u){ u.lastSignInAt = byId[u.id] || null; });
-    renderUsersTable();
-  }
 }
 
 var userActivityState = { expandedId: null, range: 30, cache: {} };
@@ -6151,7 +6144,7 @@ function renderUsersTable() {
       '<td class="text-muted">' + u.email + '</td>' +
       '<td>' + bdg(roleLabel(u.role)) + '</td>' +
       '<td>' + (active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Deactivated</span>') + '</td>' +
-      '<td class="text-muted">' + (u.lastSignInAt !== undefined ? (u.lastSignInAt ? fmtDateTime(u.lastSignInAt) : 'Never') : '…') + '</td>' +
+      '<td class="text-muted">' + (u.last_active_at ? fmtDateTime(u.last_active_at) : 'Never') + '</td>' +
       '<td><div style="display:flex;gap:4px">' +
         '<button class="btn btn-sm" title="Activity history" onclick="toggleUserActivityExpand(\'' + u.id + '\')"><i class="ti ' + (expanded?'ti-chevron-up':'ti-history') + '"></i></button>' +
         '<button class="btn btn-sm" title="Edit" onclick="openEditUserModal(\'' + u.id + '\')"><i class="ti ti-edit"></i></button>' +
@@ -6165,7 +6158,7 @@ function renderUsersTable() {
     return mainRow + (expanded ? userActivityPanelHtml() : '');
   }).join('');
   document.getElementById('content').innerHTML =
-    '<div class="card"><div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    '<div class="card"><div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last active</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 
 function openEditUserModal(userId) {
