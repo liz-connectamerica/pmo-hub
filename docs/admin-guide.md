@@ -103,6 +103,8 @@ One click downloads every project's scalar fields (not tasks, milestones, RAID, 
 
 Create accounts, edit name/role (Admin or Member), reset a password, or deactivate/reactivate someone (you can't deactivate yourself). Passwords are set directly and must be shared with the person yourself — **no email is ever sent** by this app for account creation or password resets.
 
+Each row also shows **Last login** (from Supabase Auth directly — "Never" if they haven't signed in yet), and a history icon opens that user's **activity** — everything they've logged across every project (task/milestone/RAID changes, field edits) — filterable to the last 7, 30, or 90 days, each entry linking back to its project.
+
 This is separate from **Resources**: an account's role lives on the `profiles` record managed here, while a person's project-staffing record lives on Resources. The two link automatically when the email addresses match — there's no manual "link account" button.
 
 ## Manage Tags
@@ -126,3 +128,4 @@ Lets you preview the app as a generic Member, or as a specific person (even some
 - Requests still list "Approved" as a possible status in some places, but the approval flow always writes Backlog/Planned/Active instead — you won't see "Approved" persist.
 - The Portfolio page's "Estimated cost" line reads from a legacy `requests.cost` column, separate from the `cost_estimate` field used everywhere else, and isn't gated by financial-view permission. Nothing in the current app writes to that legacy column anymore, so this should be dormant — but if old data still has it populated, it would show a dollar figure to non-admins. Worth a periodic spot-check.
 - A "Dept" field appears in a couple of admin views but has no corresponding input anywhere in the current request forms — expect it to always be blank.
+- A user's activity history on Manage Users only goes back to when per-user attribution was added to project field-change logging. Older project-level field changes were logged with just a name, not an account id, so they won't show up under that person's activity (task/milestone/RAID activity isn't affected — those were always logged with an id).
