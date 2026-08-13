@@ -103,7 +103,7 @@ One click downloads every project's scalar fields (not tasks, milestones, RAID, 
 
 Create accounts, edit name/role (Admin or Member), reset a password, or deactivate/reactivate someone (you can't deactivate yourself). Passwords are set directly and must be shared with the person yourself — **no email is ever sent** by this app for account creation or password resets.
 
-Each row also shows **Last login** (from Supabase Auth directly — "Never" if they haven't signed in yet), and a history icon opens that user's **activity** — everything they've logged across every project (task/milestone/RAID changes, field edits) — filterable to the last 7, 30, or 90 days, each entry linking back to its project.
+Each row also shows **Last active** — updated every time that person opens or reloads the app, not just when they type in a password, so it reflects real usage rather than sitting frozen at whenever their browser session happened to start ("Never" if they haven't opened the app at all yet). A history icon opens that user's **activity** — everything they've logged across every project (task/milestone/RAID changes, field edits) — filterable to the last 7, 30, or 90 days, each entry linking back to its project.
 
 This is separate from **Resources**: an account's role lives on the `profiles` record managed here, while a person's project-staffing record lives on Resources. The two link automatically when the email addresses match — there's no manual "link account" button.
 
