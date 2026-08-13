@@ -869,7 +869,11 @@ function taskTimelineWindow(pid2) {
   return { start: today, end: new Date(today.getFullYear(), today.getMonth() + months, today.getDate()) };
 }
 
-function taskTimelineBlock(pid2, tasks) {
+// outlineRows is the SAME array the task list renders (in the same order,
+// same depth/collapse state, same search/filter already applied) so the
+// timeline always matches the list exactly -- drags, promote/demote moves,
+// and expand/collapse all just fall out of reusing that one source of truth.
+function taskTimelineBlock(pid2, outlineRows) {
   var openNow = !!taskTimelineOpen[pid2];
   var toggleBtn = '<button class="btn btn-sm mb-12" onclick="toggleTaskTimeline(\'' + pid2 + '\')"><i class="ti ' + (openNow ? 'ti-chevron-up' : 'ti-chevron-down') + '"></i> Timeline</button>';
   if (!openNow) return toggleBtn;
@@ -890,19 +894,13 @@ function taskTimelineBlock(pid2, tasks) {
       '<input type="date" id="tl-custom-end-' + pid2 + '" value="' + (r.customEnd||'') + '" onchange="setTaskTimelineCustomDates(\'' + pid2 + '\',document.getElementById(\'tl-custom-start-' + pid2 + '\').value,this.value)">' +
       '</div>' : '');
 
-  var dated = tasks.filter(function(t){
-    if (!t.start || !t.end) return false;
-    var s = new Date(t.start + 'T00:00:00'), e = new Date(t.end + 'T00:00:00');
-    return e >= winStart && s <= winEnd;
-  });
-
   var legend = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin:14px 0">' + Object.keys(TASK_STATUS_COLORS).map(function(s){
     return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#666"><span style="width:10px;height:10px;border-radius:3px;background:' + TASK_STATUS_COLORS[s] + ';display:inline-block"></span>' + s + '</div>';
   }).join('') + '</div>';
 
-  if (!dated.length) {
+  if (!outlineRows.length) {
     return toggleBtn + '<div class="card mb-16" style="background:#faf9f7">' + rangeControl + legend +
-      '<div class="text-muted" style="font-size:12px">No tasks with dates fall in this window</div></div>';
+      '<div class="text-muted" style="font-size:12px">No tasks to show</div></div>';
   }
 
   function dayOffset(dateStr) {
@@ -918,15 +916,30 @@ function taskTimelineBlock(pid2, tasks) {
   }
   var headerRow = '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + tickLabels.map(function(lbl){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + lbl + '</div>'; }).join('') + '</div>';
 
-  var sorted = dated.slice().sort(function(a,b){ return a.start < b.start ? -1 : a.start > b.start ? 1 : 0; });
-  var rows = sorted.map(function(t) {
-    var startOffset = Math.max(0, dayOffset(t.start));
-    var endOffset = Math.min(totalDays, dayOffset(t.end) + 1);
-    var widthPct = Math.max(1, endOffset - startOffset) / totalDays * 100;
-    var leftPct = startOffset / totalDays * 100;
-    var barColor = TASK_STATUS_COLORS[t.status] || '#534AB7';
-    return '<div class="tl-row"><div class="tl-label" title="' + t.title + '">' + t.title + '</div>' +
-      '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + '">' + t.status + '</div></div></div>';
+  var rows = outlineRows.map(function(row) {
+    var t = row.task;
+    var collapsedNow = !!taskOutlineCollapsed[t.id];
+    var chevron = row.hasChildren
+      ? '<button class="btn btn-sm" style="padding:1px 4px;margin-right:4px" onclick="toggleTaskOutlineCollapse(\'' + pid2 + '\',\'' + t.id + '\')"><i class="ti ' + (collapsedNow?'ti-chevron-right':'ti-chevron-down') + '"></i></button>'
+      : '<span style="display:inline-block;width:22px"></span>';
+
+    var barHtml;
+    if (t.start && t.end) {
+      var s = new Date(t.start + 'T00:00:00'), e = new Date(t.end + 'T00:00:00');
+      if (e >= winStart && s <= winEnd) {
+        var startOffset = Math.max(0, dayOffset(t.start));
+        var endOffset = Math.min(totalDays, dayOffset(t.end) + 1);
+        var widthPct = Math.max(1, endOffset - startOffset) / totalDays * 100;
+        var leftPct = startOffset / totalDays * 100;
+        var barColor = TASK_STATUS_COLORS[t.status] || '#534AB7';
+        barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + '">' + t.status + '</div></div>';
+      } else {
+        barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">Outside this range</span></div>';
+      }
+    } else {
+      barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">No dates set</span></div>';
+    }
+    return '<div class="tl-row"><div class="tl-label" style="padding-left:' + (row.depth * 16) + 'px" title="' + t.title + '">' + chevron + t.title + '</div>' + barHtml + '</div>';
   }).join('');
 
   return toggleBtn +
@@ -3712,7 +3725,7 @@ function pgProjectDetail(pid, tab) {
         '<th>Dates</th><th></th></tr>';
 
       return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddTask(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add task</button>' : '') +
-        taskTimelineBlock(p.id, p.tasks) +
+        taskTimelineBlock(p.id, list) +
         searchBar +
         (p.tasks.length
           ? (list.length ? '<table class="tasks-table"><thead>' + header + '</thead><tbody>' + trows + '</tbody></table>' : '<div class="empty-state" style="padding:30px"><i class="ti ti-search"></i><p>No tasks match your filters</p></div>')
