@@ -6089,7 +6089,10 @@ async function pgDeletedItems() {
         rows.map(function(r) {
           return '<tr><td class="bold">' + r.name + '</td><td>' + (EXPORT_STAGE_LABELS[r.stage]||r.stage) + '</td><td class="text-muted">' + (r.owner||'—') + '</td>' +
             '<td class="text-muted">' + fmtDateTime(r.deletedAt) + '</td><td class="text-muted">' + r.deletedByName + '</td>' +
-            '<td><button class="btn btn-sm btn-primary" onclick="restoreDeletedProject(\'' + r.id + '\')"><i class="ti ti-arrow-back-up"></i> Restore</button></td></tr>';
+            '<td><div style="display:flex;gap:4px">' +
+            '<button class="btn btn-sm" onclick="openDeletedProjectModal(\'' + r.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+            '<button class="btn btn-sm btn-primary" onclick="restoreDeletedProject(\'' + r.id + '\')"><i class="ti ti-arrow-back-up"></i> Restore</button>' +
+            '</div></td></tr>';
         }).join('') + '</tbody></table></div></div>'
       : '<div class="empty-state" style="padding:30px"><i class="ti ti-trash-off"></i><p>No deleted projects</p></div>');
   } else {
@@ -6099,7 +6102,10 @@ async function pgDeletedItems() {
         rows2.map(function(r) {
           return '<tr><td class="bold">' + r.title + '</td><td>' + bdg(r.status) + '</td><td class="text-muted">' + (r.submitter||'—') + '</td>' +
             '<td class="text-muted">' + fmtDateTime(r.deletedAt) + '</td><td class="text-muted">' + r.deletedByName + '</td>' +
-            '<td><button class="btn btn-sm btn-primary" onclick="restoreDeletedRequest(\'' + r.id + '\')"><i class="ti ti-arrow-back-up"></i> Restore</button></td></tr>';
+            '<td><div style="display:flex;gap:4px">' +
+            '<button class="btn btn-sm" onclick="openDeletedRequestModal(\'' + r.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+            '<button class="btn btn-sm btn-primary" onclick="restoreDeletedRequest(\'' + r.id + '\')"><i class="ti ti-arrow-back-up"></i> Restore</button>' +
+            '</div></td></tr>';
         }).join('') + '</tbody></table></div></div>'
       : '<div class="empty-state" style="padding:30px"><i class="ti ti-trash-off"></i><p>No deleted requests</p></div>');
   }
@@ -6127,6 +6133,174 @@ async function restoreDeletedRequest(id) {
   showToast('Request restored');
   renderNav();
   pgDeletedItems();
+}
+
+// Deleted items are read-only previews shown in a modal rather than the
+// live, fully-interactive project/request views -- those are wired up with
+// edit actions in dozens of places (every tab, every button), and none of
+// it reads from a deleted row today since it's excluded from D.projects /
+// D.requests. A dedicated read-only render is the only way to guarantee
+// nothing here is editable, rather than trying to flip every one of those
+// switches off for a single preview.
+async function openDeletedProjectModal(pid) {
+  showModal('<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>', true);
+  var results = await Promise.all([
+    sb.from('projects').select('*').eq('id', pid).single(),
+    sb.from('resource_projects').select('*').eq('project_id', pid),
+    sb.from('milestones').select('*').eq('project_id', pid),
+    sb.from('tasks').select('*').eq('project_id', pid),
+    sb.from('raid_items').select('*').eq('project_id', pid),
+    sb.from('documents').select('*').eq('project_id', pid),
+    sb.from('project_categories').select('*').eq('project_id', pid),
+    sb.from('resources').select('id, name')
+  ]);
+  if (results[0].error || !results[0].data) { closeModal(); showToast('Could not load project'); return; }
+  var pr = results[0].data;
+  var teamRows = results[1].data || [];
+  var milestoneRows = (results[2].data || []).slice().sort(function(a,b){ return (a.target_date||'') < (b.target_date||'') ? -1 : 1; });
+  var taskRows = (results[3].data || []).slice().sort(function(a,b){ return (a.position||0) - (b.position||0); });
+  var raidRows = results[4].data || [];
+  var docRows = results[5].data || [];
+  var catRows = results[6].data || [];
+  var resourceNameById = {}; (results[7].data || []).forEach(function(r){ resourceNameById[r.id] = r.name; });
+  var nameById = await resolveProfileNames([pr.deleted_by]);
+  var deletedByName = nameById[pr.deleted_by] || '—';
+
+  var teamNamesList = teamRows.map(function(t){ return resourceNameById[t.resource_id] || '(no longer a resource)'; });
+
+  var milestonesHtml = milestoneRows.length ? milestoneRows.map(function(m) {
+    return '<div style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:13px">' +
+      '<i class="ti ' + (m.done ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="color:' + (m.done ? '#1D9E75' : '#ccc') + ';margin-right:6px"></i>' +
+      m.name + ' <span class="text-muted">' + (m.done ? 'Completed ' + (m.completed_date || m.target_date) : 'Target ' + m.target_date) + '</span></div>';
+  }).join('') : '<div class="text-muted" style="font-size:13px">None</div>';
+
+  // Hierarchy depth isn't reconstructed here -- a flat, position-ordered
+  // list is enough for a read-only review.
+  var tasksHtml = taskRows.length ? taskRows.map(function(t) {
+    return '<div style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:13px">' +
+      t.title + ' <span class="text-muted">— ' + (t.assignee_name || 'Unassigned') + '</span> ' + bdg(t.status) +
+      (t.start_date || t.end_date ? ' <span class="text-muted">' + (t.start_date||'') + (t.start_date && t.end_date ? ' – ' : '') + (t.end_date||'') + '</span>' : '') +
+      '</div>';
+  }).join('') : '<div class="text-muted" style="font-size:13px">None</div>';
+
+  var raidByType = { risk: [], assumption: [], issue: [], dependency: [] };
+  raidRows.forEach(function(r){ if (raidByType[r.type]) raidByType[r.type].push(r); });
+  function raidSectionHtml(label, items) {
+    if (!items.length) return '';
+    return '<div class="bold" style="margin-top:10px;font-size:13px">' + label + '</div>' +
+      items.map(function(r) {
+        return '<div style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:13px">' + r.description +
+          (r.owner_name ? ' <span class="text-muted">— ' + r.owner_name + '</span>' : '') +
+          (r.status ? ' ' + bdg(r.status) : '') + '</div>';
+      }).join('');
+  }
+  var raidHtml = raidSectionHtml('Risks', raidByType.risk) + raidSectionHtml('Assumptions', raidByType.assumption) +
+    raidSectionHtml('Issues', raidByType.issue) + raidSectionHtml('Dependencies', raidByType.dependency);
+  if (!raidHtml) raidHtml = '<div class="text-muted" style="font-size:13px">None</div>';
+
+  var docsHtml = docRows.length ? docRows.map(function(d) {
+    return '<div style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:13px"><i class="ti ' + (d.source_type==='link'?'ti-link':'ti-file-text') + '" style="margin-right:6px;color:#888"></i>' +
+      d.name + ' <span class="text-muted">— ' + d.category + '</span></div>';
+  }).join('') : '<div class="text-muted" style="font-size:13px">None</div>';
+
+  var categoriesHtml = catRows.length ? catRows.map(function(c){ return '<span class="badge badge-blue" style="margin-right:4px">' + c.category + '</span>'; }).join('') : '<span class="text-muted">—</span>';
+  var financialsHtml = (pr.estimated_amount != null || pr.cost_estimate != null)
+    ? '<div class="form-group"><div class="form-label">Financials</div><div style="font-size:13px">' +
+      (pr.estimated_amount != null ? 'Estimated value: ' + fmtCost(pr.estimated_amount) : '') +
+      (pr.cost_estimate != null ? (pr.estimated_amount != null ? ' · ' : '') + 'Cost estimate: ' + fmtCost(pr.cost_estimate) : '') +
+      '</div></div>'
+    : '';
+
+  showModal(
+    '<div class="modal-title">' + pr.name + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="info-banner info-amber" style="margin-bottom:16px"><i class="ti ti-trash" style="font-size:20px;flex-shrink:0"></i>' +
+      '<div><strong>You are viewing a deleted project.</strong> Deleted ' + fmtDateTime(pr.deleted_at) + ' by ' + deletedByName + '. This view is read-only.' +
+      '<div style="margin-top:8px"><button class="btn btn-sm btn-primary" onclick="restoreDeletedProjectFromModal(\'' + pid + '\')"><i class="ti ti-arrow-back-up"></i> Restore this project</button></div>' +
+      '</div></div>' +
+    '<div class="grid-2 mb-16">' +
+      '<div><div class="form-label">Stage</div>' + stagePill(pr.stage) + '</div>' +
+      '<div><div class="form-label">Status</div>' + (pr.status ? bdg(pr.status) : '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Phase</div>' + (pr.phase || '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Priority</div>' + (pr.priority ? bdg(pr.priority) : '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Owner</div>' + (pr.owner_name || '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Sponsor</div>' + (pr.sponsor || '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Start</div>' + (pr.start_date || '—') + '</div>' +
+      '<div><div class="form-label">Target end</div>' + (pr.end_date || '—') + '</div>' +
+    '</div>' +
+    '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (pr.description || '<span class="text-muted">—</span>') + '</div></div>' +
+    '<div class="form-group"><div class="form-label">Categories</div>' + categoriesHtml + '</div>' +
+    financialsHtml +
+    '<div class="form-group"><div class="form-label">Team</div><div style="font-size:13px">' + (teamNamesList.length ? teamNamesList.join(', ') : '<span class="text-muted">—</span>') + '</div></div>' +
+    '<div class="form-group"><div class="form-label">Milestones</div>' + milestonesHtml + '</div>' +
+    '<div class="form-group"><div class="form-label">Tasks</div>' + tasksHtml + '</div>' +
+    '<div class="form-group"><div class="form-label">RAID Log</div>' + raidHtml + '</div>' +
+    '<div class="form-group"><div class="form-label">Documents</div>' + docsHtml + '</div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button></div>',
+    true
+  );
+}
+
+async function restoreDeletedProjectFromModal(pid) {
+  if (!confirm('Restore this project?')) return;
+  closeModal();
+  await restoreDeletedProject(pid);
+}
+
+async function openDeletedRequestModal(id) {
+  showModal('<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>', true);
+  var results = await Promise.all([
+    sb.from('requests').select('*').eq('id', id).single(),
+    sb.from('request_team').select('*').eq('request_id', id),
+    sb.from('request_tags').select('*').eq('request_id', id),
+    sb.from('resources').select('id, name'),
+    sb.from('tags').select('id, name')
+  ]);
+  if (results[0].error || !results[0].data) { closeModal(); showToast('Could not load request'); return; }
+  var r = results[0].data;
+  var teamRows = results[1].data || [];
+  var tagRows = results[2].data || [];
+  var resourceNameById = {}; (results[3].data || []).forEach(function(x){ resourceNameById[x.id] = x.name; });
+  var tagNameById = {}; (results[4].data || []).forEach(function(x){ tagNameById[x.id] = x.name; });
+  var nameById = await resolveProfileNames([r.deleted_by]);
+  var deletedByName = nameById[r.deleted_by] || '—';
+
+  var teamNamesList = teamRows.map(function(t){ return resourceNameById[t.resource_id] || '(no longer a resource)'; });
+  var tagNamesList = tagRows.map(function(t){ return tagNameById[t.tag_id]; }).filter(Boolean);
+  var financialsHtml = (r.estimated_amount != null || r.cost_estimate != null)
+    ? '<div class="form-group"><div class="form-label">Financials</div><div style="font-size:13px">' +
+      (r.estimated_amount != null ? 'Estimated value: ' + fmtCost(r.estimated_amount) : '') +
+      (r.cost_estimate != null ? (r.estimated_amount != null ? ' · ' : '') + 'Cost estimate: ' + fmtCost(r.cost_estimate) : '') +
+      '</div></div>'
+    : '';
+
+  showModal(
+    '<div class="modal-title">' + r.title + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="info-banner info-amber" style="margin-bottom:16px"><i class="ti ti-trash" style="font-size:20px;flex-shrink:0"></i>' +
+      '<div><strong>You are viewing a deleted request.</strong> Deleted ' + fmtDateTime(r.deleted_at) + ' by ' + deletedByName + '. This view is read-only.' +
+      '<div style="margin-top:8px"><button class="btn btn-sm btn-primary" onclick="restoreDeletedRequestFromModal(\'' + id + '\')"><i class="ti ti-arrow-back-up"></i> Restore this request</button></div>' +
+      '</div></div>' +
+    '<div class="grid-2 mb-16">' +
+      '<div><div class="form-label">Status</div>' + bdg(r.status) + '</div>' +
+      '<div><div class="form-label">Priority</div>' + (r.priority ? bdg(r.priority) : '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Submitter</div>' + (r.submitter_name || '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Business Unit</div>' + (r.business_unit || '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Value Area</div>' + (r.value_area || '<span class="text-muted">—</span>') + '</div>' +
+    '</div>' +
+    '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (r.description || '<span class="text-muted">—</span>') + '</div></div>' +
+    (r.feedback ? '<div class="form-group"><div class="form-label">Feedback</div><div style="font-size:13px;line-height:1.6">' + r.feedback + '</div></div>' : '') +
+    financialsHtml +
+    '<div class="form-group"><div class="form-label">Proposed Team</div><div style="font-size:13px">' + (teamNamesList.length ? teamNamesList.join(', ') : '<span class="text-muted">—</span>') + '</div></div>' +
+    '<div class="form-group"><div class="form-label">Tags</div>' + (tagNamesList.length ? tagNamesList.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted">—</span>') + '</div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button></div>',
+    true
+  );
+}
+
+async function restoreDeletedRequestFromModal(id) {
+  if (!confirm('Restore this request?')) return;
+  closeModal();
+  await restoreDeletedRequest(id);
 }
 
 async function pgAdminUsers() {
