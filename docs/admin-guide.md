@@ -117,7 +117,10 @@ Manages three independent dropdown lists: **Value Area**, **Business Unit**, and
 
 ## Deleted Items
 
-Deleting a project or request no longer erases it — it's hidden from everyone (including other admins, everywhere it would normally show up) until someone restores it from here, in its own tab (**Projects** / **Requests**). Restoring puts it right back where it was, fully intact — tasks, milestones, RAID items, documents, team, everything, since none of that was ever actually removed. Each row shows who deleted it and when.
+Deleting a project or request no longer erases it — it's hidden from everyone (including other admins, everywhere it would normally show up) until someone restores it from here, in its own tab (**Projects** / **Requests**). Each row shows who deleted it and when, plus two actions:
+
+- **View** opens a read-only summary — everything the item had (for a project: overview fields, team, milestones, tasks, RAID log, documents; for a request: its full proposal) — with a banner confirming you're looking at a deleted item and a **Restore** button right there. Nothing in this view is editable; it's a preview, not the live project/request page.
+- **Restore** puts it right back where it was, fully intact — tasks, milestones, RAID items, documents, team, everything, since none of that was ever actually removed.
 
 This only protects deletes that happen going forward — anything deleted before this existed is really gone, same as before.
 
