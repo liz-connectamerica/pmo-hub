@@ -1336,14 +1336,21 @@ function stagePill(s) {
 // the top -- fine for navigation, disruptive for something like toggling a
 // checkbox in a long list. Wrap the re-render so the user stays put.
 function withScrollPreserved(fn) {
-  // #content itself scrolls (overflow-y: auto) -- the window/body never
-  // does -- and its own scrollTop resets to 0 when its innerHTML is
-  // replaced, even though the element isn't recreated.
-  var el = document.getElementById('content');
-  var y = el ? el.scrollTop : 0;
+  // #content scrolls (overflow-y: auto), and a long table inside it is
+  // often further wrapped in its own .table-wrap (overflow: auto, capped
+  // height) that scrolls independently. The window/body never scrolls at
+  // all. Both #content and .table-wrap get torn down and rebuilt by the
+  // innerHTML replace, so both reset to scrollTop 0 -- save and restore
+  // whichever of the two is actually holding the scroll position.
+  var contentEl = document.getElementById('content');
+  var contentY = contentEl ? contentEl.scrollTop : 0;
+  var wrapEl = contentEl ? contentEl.querySelector('.table-wrap') : null;
+  var wrapY = wrapEl ? wrapEl.scrollTop : 0;
   fn();
-  el = document.getElementById('content');
-  if (el) el.scrollTop = y;
+  contentEl = document.getElementById('content');
+  if (contentEl) contentEl.scrollTop = contentY;
+  wrapEl = contentEl ? contentEl.querySelector('.table-wrap') : null;
+  if (wrapEl) wrapEl.scrollTop = wrapY;
 }
 
 function showToast(msg, type) {
