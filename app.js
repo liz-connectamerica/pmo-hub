@@ -1336,10 +1336,14 @@ function stagePill(s) {
 // the top -- fine for navigation, disruptive for something like toggling a
 // checkbox in a long list. Wrap the re-render so the user stays put.
 function withScrollPreserved(fn) {
-  var y = window.scrollY;
+  // #content itself scrolls (overflow-y: auto) -- the window/body never
+  // does -- and its own scrollTop resets to 0 when its innerHTML is
+  // replaced, even though the element isn't recreated.
+  var el = document.getElementById('content');
+  var y = el ? el.scrollTop : 0;
   fn();
-  window.scrollTo(0, y);
-  requestAnimationFrame(function(){ window.scrollTo(0, y); });
+  el = document.getElementById('content');
+  if (el) el.scrollTop = y;
 }
 
 function showToast(msg, type) {
