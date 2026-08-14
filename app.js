@@ -6033,7 +6033,7 @@ function pgAdminTags() {
   };
 }
 
-var deletedItemsState = { tab: 'projects' };
+var deletedItemsState = { tab: 'projects', search: '', projectsData: null, requestsData: null };
 
 async function resolveProfileNames(ids) {
   var uniqueIds = ids.filter(function(id, i){ return id && ids.indexOf(id) === i; });
@@ -6079,12 +6079,27 @@ async function pgDeletedItems() {
       '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access Deleted Items.</p></div>';
     return;
   }
-  document.getElementById('content').innerHTML =
-    deletedItemsTabsHtml() + '<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>';
   var st = deletedItemsState;
+  if (st.tab === 'projects' && st.projectsData === null) {
+    document.getElementById('content').innerHTML =
+      deletedItemsTabsHtml() + '<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>';
+    st.projectsData = await loadDeletedProjects();
+  } else if (st.tab === 'requests' && st.requestsData === null) {
+    document.getElementById('content').innerHTML =
+      deletedItemsTabsHtml() + '<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>';
+    st.requestsData = await loadDeletedRequests();
+  }
+  renderDeletedItemsBody();
+}
+
+function renderDeletedItemsBody() {
+  var st = deletedItemsState;
+  var q = st.search.trim().toLowerCase();
+  var searchBar = '<div class="task-filter-bar"><input type="text" id="deleted-items-search" placeholder="Search by ' + (st.tab==='projects'?'project name':'request title') + '…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onDeletedItemsSearch(this.value)"></div>';
+
   if (st.tab === 'projects') {
-    var rows = await loadDeletedProjects();
-    document.getElementById('content').innerHTML = deletedItemsTabsHtml() + (rows.length
+    var rows = (st.projectsData || []).filter(function(r){ return !q || r.name.toLowerCase().indexOf(q) >= 0; });
+    document.getElementById('content').innerHTML = deletedItemsTabsHtml() + searchBar + (rows.length
       ? '<div class="card"><div class="table-wrap"><table><thead><tr><th>Project</th><th>Stage</th><th>Owner</th><th>Deleted</th><th>Deleted by</th><th></th></tr></thead><tbody>' +
         rows.map(function(r) {
           return '<tr><td class="bold">' + r.name + '</td><td>' + (EXPORT_STAGE_LABELS[r.stage]||r.stage) + '</td><td class="text-muted">' + (r.owner||'—') + '</td>' +
@@ -6094,10 +6109,10 @@ async function pgDeletedItems() {
             '<button class="btn btn-sm btn-primary" onclick="restoreDeletedProject(\'' + r.id + '\')"><i class="ti ti-arrow-back-up"></i> Restore</button>' +
             '</div></td></tr>';
         }).join('') + '</tbody></table></div></div>'
-      : '<div class="empty-state" style="padding:30px"><i class="ti ti-trash-off"></i><p>No deleted projects</p></div>');
+      : '<div class="empty-state" style="padding:30px"><i class="ti ' + (q?'ti-search':'ti-trash-off') + '"></i><p>No deleted projects' + (q ? ' match your search' : '') + '</p></div>');
   } else {
-    var rows2 = await loadDeletedRequests();
-    document.getElementById('content').innerHTML = deletedItemsTabsHtml() + (rows2.length
+    var rows2 = (st.requestsData || []).filter(function(r){ return !q || r.title.toLowerCase().indexOf(q) >= 0; });
+    document.getElementById('content').innerHTML = deletedItemsTabsHtml() + searchBar + (rows2.length
       ? '<div class="card"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Status</th><th>Submitter</th><th>Deleted</th><th>Deleted by</th><th></th></tr></thead><tbody>' +
         rows2.map(function(r) {
           return '<tr><td class="bold">' + r.title + '</td><td>' + bdg(r.status) + '</td><td class="text-muted">' + (r.submitter||'—') + '</td>' +
@@ -6107,11 +6122,18 @@ async function pgDeletedItems() {
             '<button class="btn btn-sm btn-primary" onclick="restoreDeletedRequest(\'' + r.id + '\')"><i class="ti ti-arrow-back-up"></i> Restore</button>' +
             '</div></td></tr>';
         }).join('') + '</tbody></table></div></div>'
-      : '<div class="empty-state" style="padding:30px"><i class="ti ti-trash-off"></i><p>No deleted requests</p></div>');
+      : '<div class="empty-state" style="padding:30px"><i class="ti ' + (q?'ti-search':'ti-trash-off') + '"></i><p>No deleted requests' + (q ? ' match your search' : '') + '</p></div>');
   }
 }
 
-window.setDeletedItemsTab = function(t) { deletedItemsState.tab = t; pgDeletedItems(); };
+window.setDeletedItemsTab = function(t) { deletedItemsState.tab = t; deletedItemsState.search = ''; pgDeletedItems(); };
+
+window.onDeletedItemsSearch = function(val) {
+  deletedItemsState.search = val;
+  renderDeletedItemsBody();
+  var el = document.getElementById('deleted-items-search');
+  if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+};
 
 async function restoreDeletedProject(pid) {
   var result = await sb.from('projects').update({ deleted_at: null, deleted_by: null }).eq('id', pid);
@@ -6123,6 +6145,7 @@ async function restoreDeletedProject(pid) {
   D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; p.tasks.forEach(function(t){ t.tags = tagData.taskTagNames[t.id] || []; }); });
   showToast('Project restored');
   renderNav();
+  deletedItemsState.projectsData = null;
   pgDeletedItems();
 }
 
@@ -6132,6 +6155,7 @@ async function restoreDeletedRequest(id) {
   D.requests = await loadRequests();
   showToast('Request restored');
   renderNav();
+  deletedItemsState.requestsData = null;
   pgDeletedItems();
 }
 
