@@ -54,7 +54,7 @@ function groupBy(rows, key) {
 
 async function loadRequests() {
   var results = await Promise.all([
-    sb.from('requests').select('*'),
+    sb.from('requests').select('*').is('deleted_at', null),
     sb.from('request_tags').select('*'),
     sb.from('request_team').select('*'),
     sb.from('tags').select('id, name'),
@@ -219,7 +219,7 @@ async function loadPrograms() {
 
 async function loadAllProjects() {
   var results = await Promise.all([
-    sb.from('projects').select('*'),
+    sb.from('projects').select('*').is('deleted_at', null),
     sb.from('profiles').select('id, display_name, is_active'),
     sb.from('resource_projects').select('*'),
     sb.from('milestones').select('*'),
@@ -1332,6 +1332,16 @@ function stagePill(s) {
   return '<span class="stage-pill" style="background:' + x.bg + ';color:' + x.c + '">' + x.l + '</span>';
 }
 
+// Re-rendering a page replaces #content wholesale, which resets scroll to
+// the top -- fine for navigation, disruptive for something like toggling a
+// checkbox in a long list. Wrap the re-render so the user stays put.
+function withScrollPreserved(fn) {
+  var y = window.scrollY;
+  fn();
+  window.scrollTo(0, y);
+  requestAnimationFrame(function(){ window.scrollTo(0, y); });
+}
+
 function showToast(msg, type) {
   var t = document.getElementById('toast');
   t.textContent = msg;
@@ -1389,7 +1399,8 @@ var NAV_DEF = {
       {id:'admin-users', icon:'ti-users-group', label:'Manage Users'},
       {id:'admin-tags', icon:'ti-tag', label:'Manage Tags'},
       {id:'admin-values', icon:'ti-list-details', label:'Manage Values'},
-      {id:'all-projects', icon:'ti-table', label:'All Projects'}
+      {id:'all-projects', icon:'ti-table', label:'All Projects'},
+      {id:'deleted-items', icon:'ti-trash', label:'Deleted Items'}
     ]}
   ],
   member: [
@@ -1471,7 +1482,7 @@ var PAGE_RENDERERS = {
   submit:pgSubmit, 'my-requests':pgMyRequests,
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks,
   'import-projects':pgImportProjects, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
-  'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms
+  'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems
 };
 
 function pageAllowedForRole(page, role) {
@@ -2452,13 +2463,12 @@ async function deleteRequest(id) {
   var r = D.requests.find(function(x){ return x.id === id; });
   if (!r) return;
   var linkedP = r.linkedProject ? D.projects.find(function(p){ return p.id === r.linkedProject; }) : null;
-  var msg = 'Delete this request? This cannot be undone.' +
+  var msg = 'Delete this request? An admin can restore it later from Administration → Deleted Items.' +
     (linkedP ? ' Its linked project ("' + linkedP.name + '") will NOT be deleted — it will just no longer be connected to this request.' : '');
   if (!confirm(msg)) return;
-  var result = await sb.from('requests').delete().eq('id', id);
+  var result = await sb.from('requests').update({ deleted_at: new Date().toISOString(), deleted_by: D.currentProfile.id }).eq('id', id);
   if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
   D.requests = D.requests.filter(function(x){ return x.id !== id; });
-  if (linkedP) linkedP.requestId = null;
   closeModal(); showToast('Request deleted'); renderNav();
   if (currentPage === 'requests') pgRequests(); else if (currentPage === 'my-requests') pgMyRequests();
 }
@@ -4818,8 +4828,8 @@ async function saveProject(pid) {
 }
 
 async function deleteProject(pid) {
-  if (!confirm('Delete this project? This cannot be undone.')) return;
-  var result = await sb.from('projects').delete().eq('id', pid);
+  if (!confirm('Delete this project? An admin can restore it later from Administration → Deleted Items.')) return;
+  var result = await sb.from('projects').update({ deleted_at: new Date().toISOString(), deleted_by: D.currentProfile.id }).eq('id', pid);
   if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
   D.projects = D.projects.filter(function(x){ return x.id !== pid; });
   closeModal(); showToast('Project deleted'); renderNav();
@@ -5736,9 +5746,9 @@ function pgAllProjects() {
     if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; }
     pgAllProjects();
   };
-  window.toggleAllProjSelect = function(id, checked) { st.selected[id] = checked; pgAllProjects(); };
-  window.toggleAllProjSelectAll = function(checked) { visibleIds.forEach(function(id){ st.selected[id] = checked; }); pgAllProjects(); };
-  window.clearAllProjSelection = function() { st.selected = {}; pgAllProjects(); };
+  window.toggleAllProjSelect = function(id, checked) { st.selected[id] = checked; withScrollPreserved(pgAllProjects); };
+  window.toggleAllProjSelectAll = function(checked) { visibleIds.forEach(function(id){ st.selected[id] = checked; }); withScrollPreserved(pgAllProjects); };
+  window.clearAllProjSelection = function() { st.selected = {}; withScrollPreserved(pgAllProjects); };
 
   window.toggleAllProjFilter = function(col) {
     var labelMap = { category:'Category', businessUnit:'Business Unit', stage:'Stage', status:'Status', phase:'Phase', priority:'Priority', value:'Value Area', sponsor:'Sponsor', owner:'Owner' };
@@ -6010,6 +6020,102 @@ function pgAdminTags() {
     showToast('Tag deleted');
     pgAdminTags();
   };
+}
+
+var deletedItemsState = { tab: 'projects' };
+
+async function resolveProfileNames(ids) {
+  var uniqueIds = ids.filter(function(id, i){ return id && ids.indexOf(id) === i; });
+  if (!uniqueIds.length) return {};
+  var result = await sb.from('profiles').select('id, display_name').in('id', uniqueIds);
+  var map = {};
+  (result.data || []).forEach(function(p){ map[p.id] = p.display_name; });
+  return map;
+}
+
+async function loadDeletedProjects() {
+  var result = await sb.from('projects').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending: false });
+  if (result.error) { showToast('Could not load deleted projects: ' + result.error.message); return []; }
+  var rows = result.data || [];
+  var nameById = await resolveProfileNames(rows.map(function(r){ return r.deleted_by; }));
+  return rows.map(function(r){
+    return { id: r.id, name: r.name, stage: r.stage, owner: r.owner_name, deletedAt: r.deleted_at, deletedByName: nameById[r.deleted_by] || '—' };
+  });
+}
+
+async function loadDeletedRequests() {
+  var result = await sb.from('requests').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending: false });
+  if (result.error) { showToast('Could not load deleted requests: ' + result.error.message); return []; }
+  var rows = result.data || [];
+  var nameById = await resolveProfileNames(rows.map(function(r){ return r.deleted_by; }));
+  return rows.map(function(r){
+    return { id: r.id, title: r.title, status: r.status, submitter: r.submitter_name, deletedAt: r.deleted_at, deletedByName: nameById[r.deleted_by] || '—' };
+  });
+}
+
+function deletedItemsTabsHtml() {
+  var st = deletedItemsState;
+  return '<div class="tab-bar" style="margin-bottom:16px">' +
+    '<div class="tab' + (st.tab==='projects'?' active':'') + '" onclick="setDeletedItemsTab(\'projects\')">Projects</div>' +
+    '<div class="tab' + (st.tab==='requests'?' active':'') + '" onclick="setDeletedItemsTab(\'requests\')">Requests</div>' +
+    '</div>';
+}
+
+async function pgDeletedItems() {
+  tb('Deleted Items');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access Deleted Items.</p></div>';
+    return;
+  }
+  document.getElementById('content').innerHTML =
+    deletedItemsTabsHtml() + '<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>';
+  var st = deletedItemsState;
+  if (st.tab === 'projects') {
+    var rows = await loadDeletedProjects();
+    document.getElementById('content').innerHTML = deletedItemsTabsHtml() + (rows.length
+      ? '<div class="card"><div class="table-wrap"><table><thead><tr><th>Project</th><th>Stage</th><th>Owner</th><th>Deleted</th><th>Deleted by</th><th></th></tr></thead><tbody>' +
+        rows.map(function(r) {
+          return '<tr><td class="bold">' + r.name + '</td><td>' + (EXPORT_STAGE_LABELS[r.stage]||r.stage) + '</td><td class="text-muted">' + (r.owner||'—') + '</td>' +
+            '<td class="text-muted">' + fmtDateTime(r.deletedAt) + '</td><td class="text-muted">' + r.deletedByName + '</td>' +
+            '<td><button class="btn btn-sm btn-primary" onclick="restoreDeletedProject(\'' + r.id + '\')"><i class="ti ti-arrow-back-up"></i> Restore</button></td></tr>';
+        }).join('') + '</tbody></table></div></div>'
+      : '<div class="empty-state" style="padding:30px"><i class="ti ti-trash-off"></i><p>No deleted projects</p></div>');
+  } else {
+    var rows2 = await loadDeletedRequests();
+    document.getElementById('content').innerHTML = deletedItemsTabsHtml() + (rows2.length
+      ? '<div class="card"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Status</th><th>Submitter</th><th>Deleted</th><th>Deleted by</th><th></th></tr></thead><tbody>' +
+        rows2.map(function(r) {
+          return '<tr><td class="bold">' + r.title + '</td><td>' + bdg(r.status) + '</td><td class="text-muted">' + (r.submitter||'—') + '</td>' +
+            '<td class="text-muted">' + fmtDateTime(r.deletedAt) + '</td><td class="text-muted">' + r.deletedByName + '</td>' +
+            '<td><button class="btn btn-sm btn-primary" onclick="restoreDeletedRequest(\'' + r.id + '\')"><i class="ti ti-arrow-back-up"></i> Restore</button></td></tr>';
+        }).join('') + '</tbody></table></div></div>'
+      : '<div class="empty-state" style="padding:30px"><i class="ti ti-trash-off"></i><p>No deleted requests</p></div>');
+  }
+}
+
+window.setDeletedItemsTab = function(t) { deletedItemsState.tab = t; pgDeletedItems(); };
+
+async function restoreDeletedProject(pid) {
+  var result = await sb.from('projects').update({ deleted_at: null, deleted_by: null }).eq('id', pid);
+  if (result.error) { showToast('Could not restore: ' + result.error.message); return; }
+  var loaded = await Promise.all([loadAllProjects(), loadTags()]);
+  D.projects = loaded[0];
+  var tagData = loaded[1];
+  D.tags = tagData.tags;
+  D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; p.tasks.forEach(function(t){ t.tags = tagData.taskTagNames[t.id] || []; }); });
+  showToast('Project restored');
+  renderNav();
+  pgDeletedItems();
+}
+
+async function restoreDeletedRequest(id) {
+  var result = await sb.from('requests').update({ deleted_at: null, deleted_by: null }).eq('id', id);
+  if (result.error) { showToast('Could not restore: ' + result.error.message); return; }
+  D.requests = await loadRequests();
+  showToast('Request restored');
+  renderNav();
+  pgDeletedItems();
 }
 
 async function pgAdminUsers() {

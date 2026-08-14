@@ -31,7 +31,7 @@ A full project record is created immediately — not a placeholder — carrying 
 
 **On Reject**, the request becomes **Rejected** with your feedback attached and a rejected-date stamp (this is what powers the Dashboard's rejected-proposals age filter, which everyone can see).
 
-You also have a **Delete** button on any request — this only unlinks it from its project if one exists; it does not delete the project itself.
+You also have a **Delete** button on any request — it does not touch the project itself even if one is linked; the request is just hidden (see **Deleted Items** below) until restored, at which point the link, if there was one, is exactly as it was.
 
 ## Programs
 
@@ -114,6 +114,12 @@ Tags are a single shared pool used across projects, resources, and requests — 
 ## Manage Values
 
 Manages three independent dropdown lists: **Value Area**, **Business Unit**, and **Category**. Renaming cascades everywhere that value is currently used. Deleting only removes it from the picker for *new* selections — anything already using that value keeps displaying it as-is, it just can't be newly assigned going forward.
+
+## Deleted Items
+
+Deleting a project or request no longer erases it — it's hidden from everyone (including other admins, everywhere it would normally show up) until someone restores it from here, in its own tab (**Projects** / **Requests**). Restoring puts it right back where it was, fully intact — tasks, milestones, RAID items, documents, team, everything, since none of that was ever actually removed. Each row shows who deleted it and when.
+
+This only protects deletes that happen going forward — anything deleted before this existed is really gone, same as before.
 
 ## Financial data & permissions
 
