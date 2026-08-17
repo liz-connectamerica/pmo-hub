@@ -24,6 +24,9 @@ var D = {
   requests: [
   ],
 
+  workRequests: [
+  ],
+
   projects: [
     { id:'p1', name:'Inventory Management System', pm:'Alex Turner', sponsor:'Casey Morgan', category:'Transformation', businessUnit:'Supply Chain', team:['Alex Turner','Mia Nguyen','Jordan Lee'], status:'On Track', phase:'Build', progress:45, start:'2025-04-01', end:'2025-09-30', value:'Operational Efficiency', priority:'Critical', description:'End-to-end inventory tracking and forecasting system replacing manual spreadsheet processes.', blockers:'Vendor API docs delayed by 1 week', health:'green', stage:'active', plannedStart:'2025-04-01', requestId:'r2',
       milestones:[{id:'m1',name:'Discovery complete',date:'2025-04-30',done:true,completedDate:'2025-04-28',log:[{date:'2025-04-01',actor:'Alex Turner',action:'Created',detail:''},{date:'2025-04-28',actor:'Alex Turner',action:'Completed',detail:'Completed date: 2025-04-28'}]},{id:'m2',name:'Design approved',date:'2025-05-31',done:true,completedDate:'2025-06-03',log:[{date:'2025-04-01',actor:'Alex Turner',action:'Created',detail:''},{date:'2025-06-03',actor:'Mia Nguyen',action:'Completed',detail:'Completed date: 2025-06-03 (target was 2025-05-31)'}]},{id:'m3',name:'Alpha build',date:'2025-07-31',done:false,log:[{date:'2025-04-01',actor:'Alex Turner',action:'Created',detail:''}]},{id:'m4',name:'UAT',date:'2025-09-01',done:false,log:[{date:'2025-04-01',actor:'Alex Turner',action:'Created',detail:''}]},{id:'m5',name:'Go-live',date:'2025-09-30',done:false,log:[{date:'2025-04-01',actor:'Alex Turner',action:'Created',detail:''}]}],

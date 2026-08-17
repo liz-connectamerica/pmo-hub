@@ -61,6 +61,8 @@ Manage the roster of **individuals** and **teams** (tabs at the top). For an ind
 
 A team can be assigned to a project directly (separately from its individual members each being assigned) — this matters for how the Capacity page reads team workload, below.
 
+An individual's row also shows a **Work requests** column — a plain-text count of their open (Accepted, not yet Complete) work requests, with total estimated hours if any have been given. Teams don't get this column, since work requests are always assigned to an individual, never a team.
+
 ## Capacity
 
 A month-by-month timeline showing how loaded each individual or team is, so you can see who's about to be slammed vs. who's freeing up. Switch between **Individuals** and **Teams** tabs — these are always shown separately, never blended together.
@@ -71,6 +73,7 @@ A month-by-month timeline showing how loaded each individual or team is, so you 
 - **Teams** show their own row for projects assigned directly to the team, plus one row per member underneath for that person's own individual load — these are intentionally kept separate rather than combined into one number, since "the team has 2 direct projects" and "one member is swamped" are different facts worth seeing independently.
 - Rows are sorted by how many projects are actually shown on the timeline (most first), then alphabetically as a tiebreaker (last name for individuals, team name for teams).
 - This page is read-only — to actually change a project's schedule or target quarter, use Future Planning or the project's own Edit modal.
+- Each individual row also carries a trailing **Work requests** column, separate from the month grid — it's a plain hours/count summary of that person's open work requests, not folded into the project-count coloring, since work requests measure hours rather than project overlap. Teams don't get this column.
 
 ## Future Planning
 
@@ -99,6 +102,15 @@ Every row is validated before you commit anything — you'll see a green check o
 
 One click downloads every project's scalar fields (not tasks, milestones, RAID, documents, or team) as an Excel file — status, dates, financials, and a single `Priority Rank` column reflecting its position in the one overall Prioritize Backlog ranking.
 
+## Work Requests
+
+An admin-only oversight page listing every work request across the org, regardless of who submitted or was assigned it — searchable and filterable by status. Two things are only available here:
+
+- **Reassign** — move a work request to a different individual resource. Useful if the wrong person was picked at submission, or someone's out and their open requests need to move.
+- **Delete** — same soft-delete pattern as projects and requests; it disappears from every view (including the assignee's and requester's own pages) until restored from **Deleted Items**.
+
+Unlike project requests, work requests never pass through an approval queue — there's no admin gate here to review or approve, by design. This page exists purely for visibility and cleanup, not gatekeeping. See the [User Guide](../user-guide/) for how submission, acceptance, and the full status lifecycle (New → Needs Info / Accepted / Declined / Withdrawn → Complete) work from a regular user's side.
+
 ## Manage Users
 
 Create accounts, edit name/role (Admin or Member), reset a password, or deactivate/reactivate someone (you can't deactivate yourself). Passwords are set directly and must be shared with the person yourself — **no email is ever sent** by this app for account creation or password resets.
@@ -117,7 +129,7 @@ Manages three independent dropdown lists: **Value Area**, **Business Unit**, and
 
 ## Deleted Items
 
-Deleting a project or request no longer erases it — it's hidden from everyone (including other admins, everywhere it would normally show up) until someone restores it from here, in its own tab (**Projects** / **Requests**). Each row shows who deleted it and when, plus two actions:
+Deleting a project, request, or work request no longer erases it — it's hidden from everyone (including other admins, everywhere it would normally show up) until someone restores it from here, in its own tab (**Projects** / **Requests** / **Work Requests**). Each row shows who deleted it and when, plus two actions:
 
 - **View** opens a read-only summary — everything the item had (for a project: overview fields, team, milestones, tasks, RAID log, documents; for a request: its full proposal) — with a banner confirming you're looking at a deleted item and a **Restore** button right there. Nothing in this view is editable; it's a preview, not the live project/request page.
 - **Restore** puts it right back where it was, fully intact — tasks, milestones, RAID items, documents, team, everything, since none of that was ever actually removed.

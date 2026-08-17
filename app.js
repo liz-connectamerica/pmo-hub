@@ -52,6 +52,12 @@ function groupBy(rows, key) {
   return out;
 }
 
+function mapLog(rows) {
+  return (rows || []).map(function(r){
+    return { date: ymd(r.logged_at), actor: r.actor_name, action: r.action, detail: r.detail || '' };
+  });
+}
+
 async function loadRequests() {
   var results = await Promise.all([
     sb.from('requests').select('*').is('deleted_at', null),
@@ -85,6 +91,35 @@ async function loadRequests() {
       editedByName: r.edited_by_name, editedAt: r.edited_at,
       tags: (tagsByRequest[r.id] || []).map(function(t){ return tagNameById[t.tag_id]; }).filter(Boolean),
       team: (teamByRequest[r.id] || []).map(function(t){ return resourceNameById[t.resource_id]; }).filter(Boolean)
+    };
+  });
+}
+
+async function loadWorkRequests() {
+  var results = await Promise.all([
+    sb.from('work_requests').select('*').is('deleted_at', null),
+    sb.from('work_request_log').select('*'),
+    sb.from('profiles').select('id, display_name'),
+    sb.from('resources').select('id, name')
+  ]);
+  for (var i = 0; i < results.length; i++) {
+    if (results[i].error) { console.error('loadWorkRequests query failed:', results[i].error); return []; }
+  }
+  var rows = results[0].data || [];
+  var logRows = results[1].data || [];
+  var logByWorkRequest = groupBy(logRows, 'work_request_id');
+  var profileNameById = {}; (results[2].data || []).forEach(function(p){ profileNameById[p.id] = p.display_name; });
+  var resourceNameById = {}; (results[3].data || []).forEach(function(r){ resourceNameById[r.id] = r.name; });
+
+  return rows.map(function(r) {
+    return {
+      id: r.id, title: r.title, description: r.description,
+      requesterId: r.requester_id, requesterName: profileNameById[r.requester_id] || '(no longer an account)',
+      resourceId: r.resource_id, resourceName: resourceNameById[r.resource_id] || '(no longer a resource)',
+      status: r.status, infoNote: r.info_note,
+      estimatedHours: r.estimated_hours, estimatedCompletionDate: r.estimated_completion_date,
+      acceptedAt: r.accepted_at, completedAt: r.completed_at, createdAt: r.created_at,
+      log: mapLog(logByWorkRequest[r.id])
     };
   });
 }
@@ -392,6 +427,19 @@ function myOpenTasksCount() {
   if (!myId) return 0;
   var count = 0;
   D.projects.forEach(function(p){ p.tasks.forEach(function(t){ if (t.assigneeId === myId && t.status !== 'Done') count++; }); });
+  return count;
+}
+
+// Things needing this person's attention right now: a Work Request assigned
+// to them that hasn't been triaged yet, or one they submitted that's
+// waiting on a reply from them.
+function myActionableWorkRequestsCount() {
+  var myId = D.myResourceId;
+  var count = 0;
+  (D.workRequests || []).forEach(function(w){
+    if (myId && w.resourceId === myId && w.status === 'New') count++;
+    else if (w.requesterId === D.currentProfile.id && w.status === 'Needs Info') count++;
+  });
   return count;
 }
 
@@ -1388,7 +1436,9 @@ var NAV_DEF = {
     { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
-      {id:'my-requests',  icon:'ti-clock', label:'My Requests'}
+      {id:'my-requests',  icon:'ti-clock', label:'My Requests'},
+      {id:'submit-work-request', icon:'ti-tool', label:'Submit a Work Request'},
+      {id:'my-work-requests', icon:'ti-list-check', label:'My Work Requests', badge:'my-work-requests'}
     ]},
     { s:'Projects', items:[
       {id:'projects', icon:'ti-briefcase',      label:'Active'},
@@ -1411,6 +1461,7 @@ var NAV_DEF = {
       {id:'admin-tags', icon:'ti-tag', label:'Manage Tags'},
       {id:'admin-values', icon:'ti-list-details', label:'Manage Values'},
       {id:'all-projects', icon:'ti-table', label:'All Projects'},
+      {id:'admin-work-requests', icon:'ti-clipboard-list', label:'Work Requests'},
       {id:'deleted-items', icon:'ti-trash', label:'Deleted Items'}
     ]}
   ],
@@ -1423,7 +1474,9 @@ var NAV_DEF = {
     ]},
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
-      {id:'my-requests',  icon:'ti-clock', label:'My Requests'}
+      {id:'my-requests',  icon:'ti-clock', label:'My Requests'},
+      {id:'submit-work-request', icon:'ti-tool', label:'Submit a Work Request'},
+      {id:'my-work-requests', icon:'ti-list-check', label:'My Work Requests', badge:'my-work-requests'}
     ]},
     { s:'Projects', items:[
       {id:'projects',  icon:'ti-briefcase',      label:'Active'},
@@ -1469,7 +1522,7 @@ function renderNav() {
       '<span>' + sec.s + '</span><i class="ti ti-chevron-' + (collapsed ? 'right' : 'down') + '"></i></div>';
     if (!collapsed) {
       sec.items.forEach(function(item) {
-        var cnt = item.badge === 'pending' ? pendingCount() : item.badge === 'backlog' ? backlogCount() : item.badge === 'my-tasks' ? myOpenTasksCount() : 0;
+        var cnt = item.badge === 'pending' ? pendingCount() : item.badge === 'backlog' ? backlogCount() : item.badge === 'my-tasks' ? myOpenTasksCount() : item.badge === 'my-work-requests' ? myActionableWorkRequestsCount() : 0;
         var badge = cnt > 0 ? '<span class="nav-badge">' + cnt + '</span>' : '';
         h += '<div class="nav-item' + (currentPage === item.id ? ' active' : '') + '" onclick="nav(\'' + item.id + '\')">' +
              '<i class="ti ' + item.icon + '"></i>' + item.label + badge + '</div>';
@@ -1493,7 +1546,8 @@ var PAGE_RENDERERS = {
   submit:pgSubmit, 'my-requests':pgMyRequests,
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks,
   'import-projects':pgImportProjects, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
-  'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems
+  'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems,
+  'submit-work-request':pgSubmitWorkRequest, 'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests
 };
 
 function pageAllowedForRole(page, role) {
@@ -1565,12 +1619,13 @@ async function bootAppForUser(skipReload) {
 
   if (!skipReload) {
     document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading your projects…</p></div>';
-    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests(), loadTags(), loadFieldOptions(), loadPrograms()]);
+    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests(), loadTags(), loadFieldOptions(), loadPrograms(), loadWorkRequests()]);
     D.projects = loaded[0];
     D.resources = loaded[1];
     D.requests = loaded[2];
     var tagData = loaded[3];
     D.programs = loaded[5];
+    D.workRequests = loaded[6];
     D.tags = tagData.tags;
     D.projects.forEach(function(p){ p.tags = tagData.projectTagNames[p.id] || []; p.tasks.forEach(function(t){ t.tags = tagData.taskTagNames[t.id] || []; }); });
     D.resources.forEach(function(r){ r.tags = tagData.resourceTagNames[r.id] || []; });
@@ -6033,7 +6088,7 @@ function pgAdminTags() {
   };
 }
 
-var deletedItemsState = { tab: 'projects', search: '', projectsData: null, requestsData: null };
+var deletedItemsState = { tab: 'projects', search: '', projectsData: null, requestsData: null, workRequestsData: null };
 
 async function resolveProfileNames(ids) {
   var uniqueIds = ids.filter(function(id, i){ return id && ids.indexOf(id) === i; });
@@ -6064,11 +6119,26 @@ async function loadDeletedRequests() {
   });
 }
 
+async function loadDeletedWorkRequests() {
+  var result = await sb.from('work_requests').select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending: false });
+  if (result.error) { showToast('Could not load deleted work requests: ' + result.error.message); return []; }
+  var rows = result.data || [];
+  var deleterIds = rows.map(function(r){ return r.deleted_by; });
+  var resourceIds = rows.map(function(r){ return r.resource_id; });
+  var nameById = await resolveProfileNames(deleterIds);
+  var resourceResult = await sb.from('resources').select('id, name').in('id', resourceIds.length ? resourceIds : ['00000000-0000-0000-0000-000000000000']);
+  var resourceNameById = {}; (resourceResult.data || []).forEach(function(r){ resourceNameById[r.id] = r.name; });
+  return rows.map(function(r){
+    return { id: r.id, title: r.title, status: r.status, resource: resourceNameById[r.resource_id] || '—', deletedAt: r.deleted_at, deletedByName: nameById[r.deleted_by] || '—' };
+  });
+}
+
 function deletedItemsTabsHtml() {
   var st = deletedItemsState;
   return '<div class="tab-bar" style="margin-bottom:16px">' +
     '<div class="tab' + (st.tab==='projects'?' active':'') + '" onclick="setDeletedItemsTab(\'projects\')">Projects</div>' +
     '<div class="tab' + (st.tab==='requests'?' active':'') + '" onclick="setDeletedItemsTab(\'requests\')">Requests</div>' +
+    '<div class="tab' + (st.tab==='workRequests'?' active':'') + '" onclick="setDeletedItemsTab(\'workRequests\')">Work Requests</div>' +
     '</div>';
 }
 
@@ -6088,6 +6158,10 @@ async function pgDeletedItems() {
     document.getElementById('content').innerHTML =
       deletedItemsTabsHtml() + '<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>';
     st.requestsData = await loadDeletedRequests();
+  } else if (st.tab === 'workRequests' && st.workRequestsData === null) {
+    document.getElementById('content').innerHTML =
+      deletedItemsTabsHtml() + '<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>';
+    st.workRequestsData = await loadDeletedWorkRequests();
   }
   renderDeletedItemsBody();
 }
@@ -6095,7 +6169,24 @@ async function pgDeletedItems() {
 function renderDeletedItemsBody() {
   var st = deletedItemsState;
   var q = st.search.trim().toLowerCase();
-  var searchBar = '<div class="task-filter-bar"><input type="text" id="deleted-items-search" placeholder="Search by ' + (st.tab==='projects'?'project name':'request title') + '…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onDeletedItemsSearch(this.value)"></div>';
+  var searchPlaceholder = st.tab==='projects' ? 'project name' : st.tab==='requests' ? 'request title' : 'work request title';
+  var searchBar = '<div class="task-filter-bar"><input type="text" id="deleted-items-search" placeholder="Search by ' + searchPlaceholder + '…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onDeletedItemsSearch(this.value)"></div>';
+
+  if (st.tab === 'workRequests') {
+    var rows3 = (st.workRequestsData || []).filter(function(r){ return !q || r.title.toLowerCase().indexOf(q) >= 0; });
+    document.getElementById('content').innerHTML = deletedItemsTabsHtml() + searchBar + (rows3.length
+      ? '<div class="card"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Status</th><th>Assigned to</th><th>Deleted</th><th>Deleted by</th><th></th></tr></thead><tbody>' +
+        rows3.map(function(r) {
+          return '<tr><td class="bold">' + r.title + '</td><td><span class="badge ' + workRequestStatusBadgeClass(r.status) + '">' + r.status + '</span></td><td class="text-muted">' + (r.resource||'—') + '</td>' +
+            '<td class="text-muted">' + fmtDateTime(r.deletedAt) + '</td><td class="text-muted">' + r.deletedByName + '</td>' +
+            '<td><div style="display:flex;gap:4px">' +
+            '<button class="btn btn-sm" onclick="openDeletedWorkRequestModal(\'' + r.id + '\')"><i class="ti ti-eye"></i> View</button>' +
+            '<button class="btn btn-sm btn-primary" onclick="restoreDeletedWorkRequest(\'' + r.id + '\')"><i class="ti ti-arrow-back-up"></i> Restore</button>' +
+            '</div></td></tr>';
+        }).join('') + '</tbody></table></div></div>'
+      : '<div class="empty-state" style="padding:30px"><i class="ti ' + (q?'ti-search':'ti-trash-off') + '"></i><p>No deleted work requests' + (q ? ' match your search' : '') + '</p></div>');
+    return;
+  }
 
   if (st.tab === 'projects') {
     var rows = (st.projectsData || []).filter(function(r){ return !q || r.name.toLowerCase().indexOf(q) >= 0; });
@@ -6157,6 +6248,64 @@ async function restoreDeletedRequest(id) {
   renderNav();
   deletedItemsState.requestsData = null;
   pgDeletedItems();
+}
+
+async function restoreDeletedWorkRequest(id) {
+  var result = await sb.from('work_requests').update({ deleted_at: null, deleted_by: null }).eq('id', id);
+  if (result.error) { showToast('Could not restore: ' + result.error.message); return; }
+  D.workRequests = await loadWorkRequests();
+  showToast('Work request restored');
+  renderNav();
+  deletedItemsState.workRequestsData = null;
+  pgDeletedItems();
+}
+
+async function openDeletedWorkRequestModal(id) {
+  showModal('<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>', true);
+  var results = await Promise.all([
+    sb.from('work_requests').select('*').eq('id', id).single(),
+    sb.from('work_request_log').select('*').eq('work_request_id', id),
+    sb.from('resources').select('id, name')
+  ]);
+  if (results[0].error || !results[0].data) { closeModal(); showToast('Could not load work request'); return; }
+  var w = results[0].data;
+  var logRows = mapLog(results[1].data || []);
+  var resourceNameById = {}; (results[2].data || []).forEach(function(r){ resourceNameById[r.id] = r.name; });
+  var nameById = await resolveProfileNames([w.deleted_by, w.requester_id]);
+  var deletedByName = nameById[w.deleted_by] || '—';
+  var requesterName = nameById[w.requester_id] || '(no longer an account)';
+  var resourceName = resourceNameById[w.resource_id] || '(no longer a resource)';
+
+  var logHtml = logRows.length ? logRows.slice().reverse().map(function(e) {
+    return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+  }).join('') : '<div class="text-muted" style="font-size:13px">No history recorded</div>';
+
+  showModal(
+    '<div class="modal-title">' + w.title + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="info-banner info-amber" style="margin-bottom:16px"><i class="ti ti-trash" style="font-size:20px;flex-shrink:0"></i>' +
+      '<div><strong>You are viewing a deleted work request.</strong> Deleted ' + fmtDateTime(w.deleted_at) + ' by ' + deletedByName + '. This view is read-only.' +
+      '<div style="margin-top:8px"><button class="btn btn-sm btn-primary" onclick="restoreDeletedWorkRequestFromModal(\'' + id + '\')"><i class="ti ti-arrow-back-up"></i> Restore this work request</button></div>' +
+      '</div></div>' +
+    '<div class="grid-2 mb-16">' +
+      '<div><div class="form-label">Status</div><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span></div>' +
+      '<div><div class="form-label">Assigned to</div>' + resourceName + '</div>' +
+      '<div><div class="form-label">Requested by</div>' + requesterName + '</div>' +
+      '<div><div class="form-label">Submitted</div>' + fmtDate(w.created_at) + '</div>' +
+      '<div><div class="form-label">Estimated hours</div>' + (w.estimated_hours != null ? w.estimated_hours : '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Estimated completion</div>' + (w.estimated_completion_date || '<span class="text-muted">—</span>') + '</div>' +
+    '</div>' +
+    '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (w.description || '<span class="text-muted">—</span>') + '</div></div>' +
+    (w.info_note ? '<div class="form-group"><div class="form-label">Note</div><div style="font-size:13px;line-height:1.6">' + w.info_note + '</div></div>' : '') +
+    '<div class="form-group"><div class="form-label">History</div>' + logHtml + '</div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button></div>',
+    true
+  );
+}
+
+async function restoreDeletedWorkRequestFromModal(id) {
+  if (!confirm('Restore this work request?')) return;
+  closeModal();
+  await restoreDeletedWorkRequest(id);
 }
 
 // Deleted items are read-only previews shown in a modal rather than the
@@ -6325,6 +6474,334 @@ async function restoreDeletedRequestFromModal(id) {
   if (!confirm('Restore this request?')) return;
   closeModal();
   await restoreDeletedRequest(id);
+}
+
+// ── Work Requests ────────────────────────────────────────────────────────
+// Small asks for a resource's time -- deliberately standalone from
+// Projects/Requests: no approval gate, no Roadmap/Future Planning presence,
+// and it feeds Resources/Capacity as hours rather than a project-count.
+
+function workRequestStatusBadgeClass(status) {
+  return { 'New':'badge-amber', 'Needs Info':'badge-red', 'Accepted':'badge-blue', 'Complete':'badge-green', 'Declined':'badge-gray', 'Withdrawn':'badge-gray' }[status] || 'badge-gray';
+}
+
+function refreshWorkRequestView() {
+  renderNav();
+  if (currentPage === 'my-work-requests') pgMyWorkRequests();
+  else if (currentPage === 'admin-work-requests') pgAdminWorkRequests();
+}
+
+function pgSubmitWorkRequest() {
+  tb('Submit a Work Request');
+  var pool = individualResourceNames();
+  var selectedResource = '';
+  var pickerOpen = false;
+  var query = '';
+
+  function pickerPanelHtml() {
+    var q = query.trim().toLowerCase();
+    var matches = pool.filter(function(n){ return n.toLowerCase().indexOf(q) >= 0; });
+    var rows = matches.map(function(n){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">' +
+        '<span style="font-size:13px"><i class="ti ti-user" style="margin-right:6px;color:#888"></i>' + n + '</span>' +
+        '<button type="button" class="btn btn-sm" onclick="window.__wrResourcePick(\'' + n.replace(/'/g,"\\'") + '\')">Select</button>' +
+        '</div>';
+    }).join('');
+    return '<div style="border:1px solid #e8e8e5;border-radius:8px;padding:10px;margin-top:8px">' +
+      '<input type="text" id="wr-resource-search" placeholder="Search people…" value="' + query.replace(/"/g,'&quot;') + '" oninput="window.__wrResourceSearch(this.value)">' +
+      '<div style="max-height:180px;overflow-y:auto;margin-top:8px">' + (rows || '<span class="text-muted" style="font-size:13px">No matches</span>') + '</div>' +
+      '</div>';
+  }
+  function resourceFieldInner() {
+    return '<div style="display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:13px' + (selectedResource ? '' : ';color:#999') + '">' + (selectedResource || 'Choose who this is for') + '</span>' +
+      '<button type="button" class="btn btn-sm" onclick="window.__wrResourceToggle()">' + (selectedResource ? 'Change' : 'Select') + '</button>' +
+      '</div>' + (pickerOpen ? pickerPanelHtml() : '');
+  }
+
+  window.__wrResourceToggle = function() {
+    pickerOpen = !pickerOpen; query = '';
+    document.getElementById('wr-resource-field').innerHTML = resourceFieldInner();
+    var s = document.getElementById('wr-resource-search'); if (s) s.focus();
+  };
+  window.__wrResourceSearch = function(val) {
+    query = val;
+    document.getElementById('wr-resource-field').innerHTML = resourceFieldInner();
+    var s = document.getElementById('wr-resource-search'); if (s) { s.focus(); s.selectionStart = s.selectionEnd = s.value.length; }
+  };
+  window.__wrResourcePick = function(name) {
+    selectedResource = name; pickerOpen = false;
+    document.getElementById('wr-resource-field').innerHTML = resourceFieldInner();
+  };
+
+  document.getElementById('content').innerHTML =
+    '<div class="card" style="max-width:660px;margin:0 auto">' +
+    '<div class="section-title mb-16">Submit a work request</div>' +
+    '<p class="text-muted" style="font-size:13px;margin-bottom:16px">A smaller ask for someone\'s time — not a full project. No approval needed; it goes straight to the person you pick.</p>' +
+    '<div class="form-group"><div class="form-label">Title *</div><input type="text" id="wr-title" placeholder="What do you need?"></div>' +
+    '<div class="form-group"><div class="form-label">Description</div><textarea id="wr-desc" rows="4" placeholder="Any detail that will help them scope it"></textarea></div>' +
+    '<div class="form-group"><div class="form-label">Who is this for? *</div><div id="wr-resource-field">' + resourceFieldInner() + '</div></div>' +
+    '<div class="modal-footer" style="border-top:none;padding-top:0;justify-content:flex-start"><button class="btn btn-primary" id="wr-submit"><i class="ti ti-send"></i> Submit</button></div>' +
+    '</div>';
+
+  document.getElementById('wr-submit').onclick = async function() {
+    var title = document.getElementById('wr-title').value.trim();
+    var desc = document.getElementById('wr-desc').value.trim();
+    if (!title) { showToast('Title required'); return; }
+    if (!selectedResource) { showToast('Choose who this work request is for'); return; }
+    var resource = resolveResource(selectedResource);
+    if (!resource) { showToast('Could not find that resource'); return; }
+    var btn = document.getElementById('wr-submit'); btn.disabled = true;
+    var result = await sb.from('work_requests').insert({
+      title: title, description: desc || null, requester_id: D.currentProfile.id, resource_id: resource.id, status: 'New'
+    }).select().single();
+    if (result.error) { showToast('Could not submit: ' + result.error.message); btn.disabled = false; return; }
+    var w = {
+      id: result.data.id, title: title, description: desc,
+      requesterId: D.currentProfile.id, requesterName: D.currentProfile.display_name,
+      resourceId: resource.id, resourceName: resource.name,
+      status: 'New', infoNote: null, estimatedHours: null, estimatedCompletionDate: null,
+      acceptedAt: null, completedAt: null, createdAt: new Date().toISOString(), log: []
+    };
+    w.log.push(await writeLog('work_request_log', 'work_request_id', w.id, 'Submitted', ''));
+    D.workRequests.push(w);
+    showToast('Work request submitted');
+    renderNav();
+    nav('my-work-requests');
+  };
+}
+
+var myWorkRequestsState = { tab: 'assigned' };
+var workRequestLogOpen = {};
+
+function toggleWorkRequestLog(id) {
+  workRequestLogOpen[id] = !workRequestLogOpen[id];
+  refreshWorkRequestView();
+}
+
+window.setMyWorkRequestsTab = function(t) { myWorkRequestsState.tab = t; pgMyWorkRequests(); };
+
+function pgMyWorkRequests() {
+  tb('My Work Requests');
+  var st = myWorkRequestsState;
+  var myId = D.myResourceId;
+  var assigned = (D.workRequests || []).filter(function(w){ return myId && w.resourceId === myId; });
+  var submitted = (D.workRequests || []).filter(function(w){ return w.requesterId === D.currentProfile.id; });
+
+  var tabsHtml = '<div class="tab-bar" style="margin-bottom:16px">' +
+    '<div class="tab' + (st.tab==='assigned'?' active':'') + '" onclick="setMyWorkRequestsTab(\'assigned\')">Assigned to me <span class="badge badge-gray">' + assigned.length + '</span></div>' +
+    '<div class="tab' + (st.tab==='submitted'?' active':'') + '" onclick="setMyWorkRequestsTab(\'submitted\')">Submitted by me <span class="badge badge-gray">' + submitted.length + '</span></div>' +
+    '</div>';
+
+  var list = (st.tab === 'assigned' ? assigned : submitted).slice().sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); });
+
+  var rows = list.map(function(w) {
+    var logOpenNow = !!workRequestLogOpen[w.id];
+    var logRow = '';
+    if (logOpenNow) {
+      var entries = (w.log && w.log.length) ? w.log.slice().reverse().map(function(e){
+        return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+      }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+      logRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+    }
+
+    var actions = '';
+    if (st.tab === 'assigned') {
+      if (w.status === 'New') {
+        actions = '<button class="btn btn-sm btn-primary" onclick="openAcceptWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-check"></i> Accept</button>' +
+          '<button class="btn btn-sm" onclick="openSendBackModal(\'' + w.id + '\')"><i class="ti ti-corner-up-left"></i> Send back</button>' +
+          '<button class="btn btn-sm btn-danger" onclick="openDeclineWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-x"></i> Decline</button>';
+      } else if (w.status === 'Needs Info') {
+        actions = '<span class="text-muted" style="font-size:12px">Waiting on ' + w.requesterName + '</span>';
+      } else if (w.status === 'Accepted') {
+        actions = '<button class="btn btn-sm btn-success" onclick="completeWorkRequest(\'' + w.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>';
+      }
+    } else {
+      if (w.status === 'New') {
+        actions = '<span class="text-muted" style="font-size:12px">Waiting on ' + w.resourceName + '</span> <button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>';
+      } else if (w.status === 'Needs Info') {
+        actions = '<button class="btn btn-sm btn-primary" onclick="openReplyWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-message-2"></i> Reply</button>';
+      }
+    }
+
+    var detailLine = '';
+    if (w.status === 'Needs Info' && w.infoNote) detailLine += '<div style="font-size:12px;color:#555;margin-top:4px;background:#f5f5f3;padding:6px 8px;border-radius:6px">' + w.infoNote + '</div>';
+    if ((w.status === 'Accepted' || w.status === 'Complete') && w.estimatedCompletionDate) detailLine += '<div class="text-muted" style="font-size:12px;margin-top:4px">Est. ' + (w.estimatedHours!=null?w.estimatedHours + ' hrs, ':'') + 'due ' + w.estimatedCompletionDate + '</div>';
+
+    return '<tr><td class="bold">' + w.title + (w.description ? '<div style="font-size:12px;color:#777;margin-top:4px;font-weight:400">' + w.description + '</div>' : '') + detailLine + '</td>' +
+      '<td>' + (st.tab==='assigned' ? w.requesterName : w.resourceName) + '</td>' +
+      '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span></td>' +
+      '<td class="text-muted">' + fmtDate(w.createdAt) + '</td>' +
+      '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + actions +
+        '<button class="btn btn-sm" title="History" onclick="toggleWorkRequestLog(\'' + w.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+      '</div></td></tr>' + logRow;
+  }).join('');
+
+  var header = '<tr><th>Request</th><th>' + (st.tab==='assigned'?'From':'Assigned to') + '</th><th>Status</th><th>Submitted</th><th></th></tr>';
+
+  document.getElementById('content').innerHTML = tabsHtml +
+    (list.length
+      ? '<div class="card"><div class="table-wrap"><table><thead>' + header + '</thead><tbody>' + rows + '</tbody></table></div></div>'
+      : '<div class="empty-state" style="padding:30px"><i class="ti ti-inbox"></i><p>Nothing here yet</p></div>');
+}
+
+function openAcceptWorkRequestModal(id) {
+  var w = D.workRequests.find(function(x){ return x.id === id; });
+  showModal('<div class="modal-title">Accept "' + w.title + '" <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">Estimated hours *</div><input type="number" id="awr-hours" min="0" step="0.5" placeholder="e.g. 4"></div>' +
+    '<div class="form-group"><div class="form-label">Estimated completion date *</div><input type="date" id="awr-date"></div></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="awr-save"><i class="ti ti-check"></i> Accept</button></div>');
+  document.getElementById('awr-save').onclick = async function() {
+    var hours = document.getElementById('awr-hours').value;
+    var date = document.getElementById('awr-date').value;
+    if (!hours || !date) { showToast('Enter both estimated hours and a completion date'); return; }
+    var btn = document.getElementById('awr-save'); btn.disabled = true;
+    await acceptWorkRequest(id, parseFloat(hours), date);
+    closeModal();
+  };
+}
+
+function openNoteModal(id, title, placeholder, actionFn, btnLabel) {
+  showModal('<div class="modal-title">' + title + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><textarea id="wr-note-input" rows="3" placeholder="' + placeholder + '"></textarea></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="wr-note-save"><i class="ti ti-check"></i> ' + btnLabel + '</button></div>');
+  document.getElementById('wr-note-save').onclick = async function() {
+    var note = document.getElementById('wr-note-input').value.trim();
+    var btn = document.getElementById('wr-note-save'); btn.disabled = true;
+    await actionFn(id, note);
+    closeModal();
+  };
+}
+
+function openSendBackModal(id) { openNoteModal(id, 'Send back for more info', 'What do you need to know?', sendBackWorkRequest, 'Send back'); }
+function openDeclineWorkRequestModal(id) { openNoteModal(id, 'Decline this request', 'Optional reason (visible to the requester)', declineWorkRequest, 'Decline'); }
+function openReplyWorkRequestModal(id) { openNoteModal(id, 'Reply with the missing detail', 'Add what they asked for…', replyWorkRequest, 'Send reply'); }
+
+async function acceptWorkRequest(id, hours, date) {
+  var w = D.workRequests.find(function(x){ return x.id === id; });
+  var result = await sb.from('work_requests').update({ status: 'Accepted', estimated_hours: hours, estimated_completion_date: date, accepted_at: new Date().toISOString() }).eq('id', id);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  w.status = 'Accepted'; w.estimatedHours = hours; w.estimatedCompletionDate = date; w.acceptedAt = new Date().toISOString();
+  w.log = w.log || [];
+  w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Accepted', 'Est. ' + hours + ' hrs, due ' + date));
+  showToast('Accepted');
+  refreshWorkRequestView();
+}
+
+async function sendBackWorkRequest(id, note) {
+  var w = D.workRequests.find(function(x){ return x.id === id; });
+  var result = await sb.from('work_requests').update({ status: 'Needs Info', info_note: note || null }).eq('id', id);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  w.status = 'Needs Info'; w.infoNote = note;
+  w.log = w.log || [];
+  w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Sent back for more info', note || ''));
+  showToast('Sent back to requester');
+  refreshWorkRequestView();
+}
+
+async function declineWorkRequest(id, note) {
+  var w = D.workRequests.find(function(x){ return x.id === id; });
+  var result = await sb.from('work_requests').update({ status: 'Declined', info_note: note || null }).eq('id', id);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  w.status = 'Declined'; w.infoNote = note;
+  w.log = w.log || [];
+  w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Declined', note || ''));
+  showToast('Declined');
+  refreshWorkRequestView();
+}
+
+async function replyWorkRequest(id, reply) {
+  if (!reply) { showToast('Add a reply before sending'); return; }
+  var w = D.workRequests.find(function(x){ return x.id === id; });
+  var result = await sb.from('work_requests').update({ status: 'New', info_note: null }).eq('id', id);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  w.status = 'New'; w.infoNote = null;
+  w.log = w.log || [];
+  w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Replied', reply));
+  showToast('Reply sent');
+  refreshWorkRequestView();
+}
+
+async function completeWorkRequest(id) {
+  var w = D.workRequests.find(function(x){ return x.id === id; });
+  var result = await sb.from('work_requests').update({ status: 'Complete', completed_at: new Date().toISOString() }).eq('id', id);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  w.status = 'Complete'; w.completedAt = new Date().toISOString();
+  w.log = w.log || [];
+  w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Marked complete', ''));
+  showToast('Marked complete');
+  refreshWorkRequestView();
+}
+
+async function withdrawWorkRequest(id) {
+  if (!confirm('Withdraw this work request?')) return;
+  var w = D.workRequests.find(function(x){ return x.id === id; });
+  var result = await sb.from('work_requests').update({ status: 'Withdrawn' }).eq('id', id);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  w.status = 'Withdrawn';
+  w.log = w.log || [];
+  w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Withdrawn', ''));
+  showToast('Withdrawn');
+  refreshWorkRequestView();
+}
+
+function pgAdminWorkRequests() {
+  tb('Work Requests');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access this page.</p></div>';
+    return;
+  }
+  var list = (D.workRequests || []).slice().sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); });
+  var rows = list.map(function(w) {
+    return '<tr><td class="bold">' + w.title + '</td><td>' + w.requesterName + '</td><td>' + w.resourceName + '</td>' +
+      '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span></td>' +
+      '<td class="text-muted">' + (w.estimatedHours!=null ? w.estimatedHours : '—') + '</td>' +
+      '<td class="text-muted">' + (w.estimatedCompletionDate || '—') + '</td>' +
+      '<td><div style="display:flex;gap:4px">' +
+      '<button class="btn btn-sm" onclick="openReassignWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-user-exchange"></i> Reassign</button>' +
+      '<button class="btn btn-sm btn-danger" onclick="deleteWorkRequest(\'' + w.id + '\')"><i class="ti ti-trash"></i></button>' +
+      '</div></td></tr>';
+  }).join('');
+  document.getElementById('content').innerHTML = list.length
+    ? '<div class="card"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Requester</th><th>Assigned to</th><th>Status</th><th>Est. hrs</th><th>Due</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>'
+    : '<div class="empty-state" style="padding:30px"><i class="ti ti-inbox"></i><p>No work requests yet</p></div>';
+}
+
+function openReassignWorkRequestModal(id) {
+  var w = D.workRequests.find(function(x){ return x.id === id; });
+  var pool = individualResourceNames();
+  var opts = pool.map(function(n){ return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (n===w.resourceName?' selected':'') + '>' + n + '</option>'; }).join('');
+  showModal('<div class="modal-title">Reassign "' + w.title + '" <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Assign to</div><select id="rwr-resource">' + opts + '</select></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="rwr-save"><i class="ti ti-check"></i> Reassign</button></div>');
+  document.getElementById('rwr-save').onclick = async function() {
+    var name = document.getElementById('rwr-resource').value;
+    var resource = resolveResource(name);
+    if (!resource) { showToast('Choose a resource'); return; }
+    var btn = document.getElementById('rwr-save'); btn.disabled = true;
+    var result = await sb.from('work_requests').update({ resource_id: resource.id }).eq('id', id);
+    if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+    var old = w.resourceName;
+    w.resourceId = resource.id; w.resourceName = resource.name;
+    w.log = w.log || [];
+    w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Reassigned', old + ' → ' + resource.name));
+    showToast('Reassigned');
+    closeModal();
+    refreshWorkRequestView();
+  };
+}
+
+async function deleteWorkRequest(id) {
+  if (!confirm('Delete this work request? An admin can restore it later from Administration → Deleted Items.')) return;
+  var result = await sb.from('work_requests').update({ deleted_at: new Date().toISOString(), deleted_by: D.currentProfile.id }).eq('id', id);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  D.workRequests = D.workRequests.filter(function(x){ return x.id !== id; });
+  showToast('Work request deleted');
+  refreshWorkRequestView();
 }
 
 async function pgAdminUsers() {
@@ -6667,6 +7144,21 @@ function resourceOpenTaskCount(r) {
   return count;
 }
 
+// "Open" here means still active in some form -- New/Needs Info/Accepted --
+// as opposed to Complete/Declined/Withdrawn.
+function resourceOpenWorkRequests(r) {
+  return (D.workRequests || []).filter(function(w){
+    return w.resourceId === r.id && (w.status === 'New' || w.status === 'Needs Info' || w.status === 'Accepted');
+  });
+}
+
+function resourceWorkRequestSummary(r) {
+  var open = resourceOpenWorkRequests(r);
+  if (!open.length) return '<span class="text-muted">—</span>';
+  var hrs = open.reduce(function(sum, w){ return sum + (w.estimatedHours || 0); }, 0);
+  return open.length + ' open' + (hrs > 0 ? ' · ' + hrs + ' hrs' : '');
+}
+
 function resourceCombinedProjectIds(r) {
   var ids = (r.projects || []).slice();
   var ownedIds = [];
@@ -6747,8 +7239,9 @@ function pgResources() {
         '<td class="text-muted">' + (r.teamName||'—') + '</td>' +
         '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + combinedCount + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
         '<td class="text-muted">' + (taskCount === null ? '—' : taskCount) + '</td>' +
+        '<td class="text-muted">' + resourceWorkRequestSummary(r) + '</td>' +
         '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button></td>' +
-        '</tr>' + projectExpandRow(r, 8);
+        '</tr>' + projectExpandRow(r, 9);
     }).join('');
     tableHtml = '<table><thead><tr>' +
       '<th class="sortable-th" onclick="setResourceSort(\'firstName\')">First name ' + arrow('firstName') + '</th>' +
@@ -6758,6 +7251,7 @@ function pgResources() {
       '<th class="sortable-th" onclick="setResourceSort(\'teamName\')">Team ' + arrow('teamName') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'projects\')">Projects ' + arrow('projects') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'tasks\')">Open tasks ' + arrow('tasks') + '</th>' +
+      '<th>Work requests</th>' +
       '<th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   } else {
     var trows = list.map(function(r) {
@@ -6876,12 +7370,17 @@ function capacityResourceRowHtml(r, months, windowStart, indent) {
       (unplacedCount > 0 ? '<div class="text-muted" style="font-size:11px;margin-top:6px">+' + unplacedCount + ' more assigned but not shown (on hold, completed, or missing a schedule/estimate)</div>' : '') +
       '</div>';
   }
+  // Work requests are only ever assigned to individuals, kept as a plain
+  // number/hours summary rather than folded into the month heat-track --
+  // there's no date range to place a bar with, just an hours estimate.
+  var wrCell = '<div style="width:140px;min-width:140px;font-size:12px;color:#666;text-align:right;padding-right:4px">' +
+    (r.type === 'individual' ? resourceWorkRequestSummary(r) : '') + '</div>';
   // Indent lives inside the fixed-width label (padding, not margin) so the
   // heat-track columns stay aligned with the month header regardless of
   // nesting depth - shifting the whole row would offset it from the header.
   return '<div class="tl-row" style="cursor:pointer" onclick="toggleCapacityExpand(\'' + r.id + '\')">' +
     '<div class="tl-label" style="padding-left:' + (indent||0) + 'px" title="' + r.name + '"><i class="ti ' + (expanded ? 'ti-chevron-down' : 'ti-chevron-right') + '"></i> ' + r.name + '</div>' +
-    '<div class="cap-heat-track">' + cells + '</div>' +
+    '<div class="cap-heat-track">' + cells + '</div>' + wrCell +
   '</div>' + detail;
 }
 
@@ -6914,7 +7413,7 @@ function pgCapacity() {
 
   var monthHeaderHtml = '<div style="display:flex;gap:12px;margin-bottom:10px"><div style="width:190px;min-width:190px"></div><div class="cap-heat-track">' +
     months.map(function(m){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + m.label + '</div>'; }).join('') +
-    '</div></div>';
+    '</div><div style="width:140px;min-width:140px;font-size:11px;color:#999;text-align:right;padding-right:4px">Work requests</div></div>';
 
   var legendHtml = '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:#666">' +
     '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#f0ede8;display:inline-block"></span>Free</div>' +
