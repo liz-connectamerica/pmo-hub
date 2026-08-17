@@ -879,10 +879,12 @@ function openTaskTagPicker(pid2, taskId) {
 function taskAssigneeLabel(tk) { return tk.assignee || 'Unassigned'; }
 
 function taskDatesLabel(tk) {
-  if (tk.start && tk.end) return tk.start + ' – ' + tk.end;
-  if (tk.end) return 'End ' + tk.end;
-  if (tk.start) return 'Start ' + tk.start;
-  return '—';
+  var label;
+  if (tk.start && tk.end) label = tk.start + ' – ' + tk.end;
+  else if (tk.end) label = 'End ' + tk.end;
+  else if (tk.start) label = 'Start ' + tk.start;
+  else return '—';
+  return label + ' ' + lateBadgeHtml(isTaskLate(tk));
 }
 
 var taskTimelineRange = {};
@@ -982,7 +984,8 @@ function taskTimelineBlock(pid2, outlineRows) {
         var widthPct = Math.max(1, endOffset - startOffset) / totalDays * 100;
         var leftPct = startOffset / totalDays * 100;
         var barColor = TASK_STATUS_COLORS[t.status] || '#534AB7';
-        barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + '">' + t.status + '</div></div>';
+        var lateNow = isTaskLate(t);
+        barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + (lateNow ? ';box-shadow:inset 0 0 0 2px #B23A3A' : '') + '" title="' + (lateNow ? 'Late — ' : '') + t.status + '">' + (lateNow ? '<i class="ti ti-alert-triangle"></i> ' : '') + t.status + '</div></div>';
       } else {
         barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">Outside this range</span></div>';
       }
@@ -1336,6 +1339,26 @@ function fmtCost(n) {
 function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+}
+
+// ── Late ─────────────────────────────────────────────────────────────────
+// One shared "late" concept, reused everywhere a date is checked against
+// today for a project, task, milestone, or work request that hasn't been
+// closed out. A plain ISO-date string compare is enough since every date
+// field involved is a bare YYYY-MM-DD, not a timestamp.
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+function isProjectLate(p) { return !!(p.end && p.stage !== 'complete' && p.end < todayStr()); }
+function isTaskLate(t) { return !!(t.end && t.status !== 'Done' && t.end < todayStr()); }
+function isMilestoneLate(m) { return !!(m.date && !m.done && m.date < todayStr()); }
+function isWorkRequestLate(w) {
+  if (w.status === 'Accepted') return !!(w.estimatedCompletionDate && w.estimatedCompletionDate < todayStr());
+  if (w.status === 'New' || w.status === 'Needs Info') return !!(w.requestedCompletionDate && w.requestedCompletionDate < todayStr());
+  return false;
+}
+
+function lateBadgeHtml(isLate, title) {
+  return isLate ? '<span class="badge badge-red badge-late" title="' + (title || 'Past its date and not yet closed out') + '"><i class="ti ti-alert-triangle"></i> Late</span>' : '';
 }
 
 function fmtDateTime(iso) {
@@ -1773,7 +1796,7 @@ function pgDashboard() {
       ? '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;font-weight:400">' + p.tags.map(function(tg){ return tagBadge(tg); }).join('') + '</div>'
       : '';
     return '<tr>' +
-      '<td class="bold"><div>' + hdot(p.health) + p.name + '</div>' + tagsLine + '</td><td>' + bdg(p.status) + '</td><td>' + bdg(p.priority) + '</td>' +
+      '<td class="bold"><div>' + hdot(p.health) + p.name + '</div>' + tagsLine + '</td><td>' + bdg(p.status) + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td><td>' + bdg(p.priority) + '</td>' +
       '<td>' + badgeIf('badge-gray', p.phase) + '</td>' +
       '<td><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></td>' +
       '<td class="text-muted">' + (p.owner || '—') + '</td>' +
@@ -1927,7 +1950,7 @@ function pgPortfolio() {
         '<div class="text-muted mb-12" style="line-height:1.5">' + (p.description||'') + '</div>' +
         (req && req.cost != null ? '<div class="text-muted mb-12" style="font-size:12px"><i class="ti ti-currency-dollar"></i> Estimated cost: ' + fmtCost(req.cost) + '</div>' : '') +
         '<div class="progress-bar mb-12"><div class="progress-fill" style="width:' + p.progress + '%"></div></div>' +
-        '<div style="display:flex;justify-content:space-between"><span class="text-muted">' + (p.owner || 'No Owner') + '</span><span class="text-muted">' + (p.end || 'TBD') + '</span></div></div>';
+        '<div style="display:flex;justify-content:space-between;align-items:center"><span class="text-muted">' + (p.owner || 'No Owner') + '</span><span class="text-muted">' + (p.end || 'TBD') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</span></div></div>';
     }).join('');
     h += '<div class="card mb-16"><div class="mb-12"><span class="badge ' + cl + '" style="font-size:13px;padding:5px 14px">' + v + '</span></div><div class="grid-2">' + cards + '</div></div>';
   });
@@ -3172,7 +3195,7 @@ function pgPlanned() {
       '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + (soonNoOwner ? ' <i class="ti ti-alert-triangle" style="color:#BA7517" title="Starts within 30 days, no Owner assigned yet"></i>' : '') + '</td>' +
       '<td>' + (p.plannedStart || '<span class="text-muted">TBD</span>') + '</td>' +
-      '<td>' + (p.end || '<span class="text-muted">TBD</span>') + '</td>' +
+      '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td style="white-space:nowrap">' + actionBtns + '</td>' +
       '</tr>';
   }).join('');
@@ -3296,7 +3319,7 @@ function pgProjects() {
       '<td>' + (p.phase || '<span class="text-muted">—</span>') + '</td>' +
       '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:#f0ede8;border-radius:3px;overflow:hidden"><div style="height:100%;width:' + p.progress + '%;background:#534AB7"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (p.end || '<span class="text-muted">TBD</span>') + '</td>' +
+      '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td>' +
       '</tr>';
   }).join('');
@@ -3553,7 +3576,7 @@ function pgProjectDetail(pid, tab) {
     return '<div class="mini-timeline">' + sorted.map(function(m) {
       return '<div class="mt-item"><div class="mt-dot' + (m.done ? ' mt-done' : '') + '"></div>' +
         '<div class="mt-body"><div class="mt-name">' + m.name + '</div>' +
-        '<div class="mt-date">' + (m.done ? 'Completed ' + (m.completedDate || m.date) : 'Planned ' + m.date) + '</div></div></div>';
+        '<div class="mt-date">' + (m.done ? 'Completed ' + (m.completedDate || m.date) : 'Planned ' + m.date) + ' ' + lateBadgeHtml(isMilestoneLate(m)) + '</div></div></div>';
     }).join('') + '</div>';
   }
 
@@ -3660,7 +3683,7 @@ function pgProjectDetail(pid, tab) {
         var idx = p.milestones.indexOf(m);
         var logKey = p.id + '|' + m.id;
         var logOpenNow = !!milestoneLogOpen[logKey];
-        var dateLine = m.done ? ('Completed ' + (m.completedDate || m.date) + (m.completedDate && m.completedDate !== m.date ? ' (target ' + m.date + ')' : '')) : ('Target ' + m.date);
+        var dateLine = (m.done ? ('Completed ' + (m.completedDate || m.date) + (m.completedDate && m.completedDate !== m.date ? ' (target ' + m.date + ')' : '')) : ('Target ' + m.date)) + ' ' + lateBadgeHtml(isMilestoneLate(m));
         var logBlock = '';
         if (logOpenNow) {
           var entries = (m.log && m.log.length) ? m.log.slice().reverse().map(function(e){
@@ -3933,7 +3956,7 @@ function pgProjectDetail(pid, tab) {
 
   document.getElementById('content').innerHTML =
     '<div class="card">' +
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + '</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + lateBadgeHtml(isProjectLate(p)) + '</div>' +
     '<div class="tab-bar">' + tabsHtml + '</div>' +
     '<div id="ptab-content">' + tabC(tab) + '</div>' +
     '</div>';
@@ -4998,7 +5021,7 @@ function pgHold() {
     if (p.preHoldStage === 'backlog') return '<span class="text-muted">Was in Backlog — no schedule set yet</span>';
     var start = p.plannedStart || p.start;
     if (!start && !p.end) return '<span class="text-muted">No schedule was set</span>';
-    return '<span class="text-muted">Start: </span>' + (start||'TBD') + ' &nbsp; <span class="text-muted">End: </span>' + (p.end||'TBD');
+    return '<span class="text-muted">Start: </span>' + (start||'TBD') + ' &nbsp; <span class="text-muted">End: </span>' + (p.end||'TBD') + ' ' + lateBadgeHtml(isProjectLate(p), 'Its target end date has passed while still on hold');
   }
 
   var cards = hp.map(function(p) {
@@ -5159,7 +5182,10 @@ function pgFuturePlanning() {
         var hasRange = p.targetEndQuarter && p.targetEndYear && (p.targetEndQuarter !== p.targetQuarter || p.targetEndYear !== p.targetYear);
         estimateLabel = hasRange ? 'Q' + p.targetQuarter + ' \'' + String(p.targetYear).slice(2) + '–Q' + p.targetEndQuarter + ' \'' + String(p.targetEndYear).slice(2) : 'Estimate';
       }
-      barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '">' + (entry.confirmed ? (p.phase||'') : estimateLabel) + '</div></div>';
+      var lateNow = isProjectLate(p);
+      if (lateNow) barStyle += ';box-shadow:inset 0 0 0 2px #B23A3A';
+      var barLabel = entry.confirmed ? (p.phase||'') : estimateLabel;
+      barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '" title="' + (lateNow ? 'Late — ' : '') + barLabel + '">' + (lateNow ? '<i class="ti ti-alert-triangle"></i> ' : '') + barLabel + '</div></div>';
     } else {
       barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">Outside this window</span></div>';
     }
@@ -5372,7 +5398,7 @@ function pgRoadmap() {
   var msItems = [];
   D.projects.filter(function(p){ return p.stage==='active'; }).forEach(function(p) {
     p.milestones.filter(function(m){ return !m.done; }).forEach(function(m) {
-      msItems.push({ project:p.name, milestone:m.name, due:m.date, status:'Upcoming', categories: p.categories || [], tags: p.tags || [] });
+      msItems.push({ project:p.name, milestone:m.name, due:m.date, status:'Upcoming', late: isMilestoneLate(m), categories: p.categories || [], tags: p.tags || [] });
     });
   });
   if (roadmapCategoryFilter !== 'All') {
@@ -5413,7 +5439,7 @@ function pgRoadmap() {
   }
 
   var msRows = msList.map(function(it) {
-    return '<tr><td class="bold">' + it.project + '</td><td>' + it.milestone + '</td><td class="text-muted">' + it.due + '</td><td><span class="badge badge-amber">' + it.status + '</span></td></tr>';
+    return '<tr><td class="bold">' + it.project + '</td><td>' + it.milestone + '</td><td class="text-muted">' + it.due + ' ' + lateBadgeHtml(it.late) + '</td><td><span class="badge badge-amber">' + it.status + '</span></td></tr>';
   }).join('');
 
   var msHeader = '<tr>' +
@@ -5770,7 +5796,7 @@ function pgAllProjects() {
       '<td>' + ((p.categories && p.categories.length) ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.businessUnit || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + stagePill(p.stage) + '</td>' +
-      '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td>' + (p.phase || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.value || '<span class="text-muted">—</span>') + '</td>' +
@@ -6639,7 +6665,7 @@ function workRequestRowHtml(w, flavor, opts) {
 
   return '<tr><td class="bold">' + w.title + (w.description ? '<div style="font-size:12px;color:#777;margin-top:4px;font-weight:400">' + w.description + '</div>' : '') + detailLine + '</td>' +
     '<td>' + (flavor==='assigned' ? w.requesterName : w.resourceName) + '</td>' +
-    '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span></td>' +
+    '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span> ' + lateBadgeHtml(isWorkRequestLate(w)) + '</td>' +
     (opts.showCompletionColumn ? '<td class="text-muted">' + workRequestCompletionCellHtml(w) + '</td>' : '') +
     '<td class="text-muted">' + fmtDate(w.createdAt) + '</td>' +
     '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + actions +
@@ -6801,7 +6827,7 @@ function pgAdminWorkRequests() {
   var list = (D.workRequests || []).slice().sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); });
   var rows = list.map(function(w) {
     return '<tr><td class="bold">' + w.title + '</td><td>' + w.requesterName + '</td><td>' + w.resourceName + '</td>' +
-      '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span></td>' +
+      '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span> ' + lateBadgeHtml(isWorkRequestLate(w)) + '</td>' +
       '<td class="text-muted">' + (w.estimatedHours!=null ? w.estimatedHours : '—') + '</td>' +
       '<td class="text-muted">' + (w.estimatedCompletionDate || '—') + '</td>' +
       '<td><div style="display:flex;gap:4px">' +
@@ -7188,6 +7214,12 @@ function resourceOpenTaskCount(r) {
   return count;
 }
 
+function resourceLateTaskCount(r) {
+  var count = 0;
+  D.projects.forEach(function(p){ p.tasks.forEach(function(t){ if (t.assigneeId === r.id && isTaskLate(t)) count++; }); });
+  return count;
+}
+
 // "Open" here means still active in some form -- New/Needs Info/Accepted --
 // as opposed to Complete/Declined/Withdrawn.
 function resourceOpenWorkRequests(r) {
@@ -7200,7 +7232,9 @@ function resourceWorkRequestSummary(r) {
   var open = resourceOpenWorkRequests(r);
   if (!open.length) return '<span class="text-muted">—</span>';
   var hrs = open.reduce(function(sum, w){ return sum + (w.estimatedHours || 0); }, 0);
-  return open.length + ' open' + (hrs > 0 ? ' · ' + hrs + ' hrs' : '');
+  var lateCount = open.filter(isWorkRequestLate).length;
+  return open.length + ' open' + (hrs > 0 ? ' · ' + hrs + ' hrs' : '') +
+    (lateCount > 0 ? ' ' + lateBadgeHtml(true, lateCount + ' of these ' + (lateCount===1?'is':'are') + ' past its committed date') : '');
 }
 
 function resourceCombinedProjectIds(r) {
@@ -7282,7 +7316,7 @@ function pgResources() {
         '<td style="text-align:center">' + linkIcon + '</td>' +
         '<td class="text-muted">' + (r.teamName||'—') + '</td>' +
         '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + combinedCount + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
-        '<td class="text-muted">' + (taskCount === null ? '—' : taskCount) + '</td>' +
+        '<td class="text-muted">' + (taskCount === null ? '—' : taskCount) + ' ' + lateBadgeHtml(resourceLateTaskCount(r) > 0, resourceLateTaskCount(r) + ' past due') + '</td>' +
         '<td class="text-muted">' + resourceWorkRequestSummary(r) + '</td>' +
         '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button></td>' +
         '</tr>' + projectExpandRow(r, 9);
@@ -7393,8 +7427,10 @@ function capacityDetailBarHtml(entry, windowStart, totalMonths) {
   var barStyle = isEstimate
     ? 'background:repeating-linear-gradient(45deg,#EFCB8E,#EFCB8E 6px,#FBF0DA 6px,#FBF0DA 12px);border:1px dashed #BA7517;color:#63410A'
     : 'background:' + (PHASE_COLORS[p.phase] || '#534AB7');
+  var lateNow = isProjectLate(p);
+  if (lateNow) barStyle += ';box-shadow:inset 0 0 0 2px #B23A3A';
   return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + viewBtn + p.name + '</div>' +
-    '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '">' + (isEstimate ? 'Estimate' : (p.phase||'')) + '</div></div></div>';
+    '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '" title="' + (lateNow ? 'Late — ' : '') + (isEstimate ? 'Estimate' : (p.phase||'')) + '">' + (lateNow ? '<i class="ti ti-alert-triangle"></i> ' : '') + (isEstimate ? 'Estimate' : (p.phase||'')) + '</div></div></div>';
 }
 
 // Work requests have no date range to place on the Gantt-style bars above,
@@ -7407,6 +7443,7 @@ function capacityWorkRequestDetailRowHtml(w) {
     '<span class="text-muted" style="font-size:11px">from ' + w.requesterName + '</span>' +
     (w.estimatedHours != null ? '<span class="text-muted" style="font-size:11px">' + w.estimatedHours + ' hrs</span>' : '') +
     (w.estimatedCompletionDate ? '<span class="text-muted" style="font-size:11px">due ' + w.estimatedCompletionDate + '</span>' : '') +
+    lateBadgeHtml(isWorkRequestLate(w)) +
     '</div></div>';
 }
 
@@ -8225,6 +8262,7 @@ function pgProgramDetail(id) {
         '<span style="font-size:13px;cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' + hdot(p.health) + p.name + '</span>' +
         '<span style="display:flex;align-items:center;gap:12px">' +
           '<span class="text-muted" style="font-size:12px">' + (p.owner || '—') + '</span>' +
+          lateBadgeHtml(isProjectLate(p)) +
           (canEditProgram ? '<button class="btn btn-sm btn-danger" onclick="removeProjectFromProgram(\'' + prog.id + '\',\'' + p.id + '\')"><i class="ti ti-x"></i></button>' : '') +
         '</span>' +
       '</div>';
@@ -8388,7 +8426,7 @@ function myProjectCard(p) {
       '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
     '</div>' +
     '<div class="grid-2 mt-12" style="font-size:12px;color:#777">' +
-      '<div>Owner: ' + (p.owner||'—') + '</div><div>Due: ' + (p.end||'TBD') + '</div>' +
+      '<div>Owner: ' + (p.owner||'—') + '</div><div>Due: ' + (p.end||'TBD') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</div>' +
       '<div>My tasks: ' + doneTasks + '/' + myTasks.length + ' done</div>' +
     '</div>' +
     (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
@@ -8566,7 +8604,7 @@ function pgMyTasks() {
       '<td>' + p.name + ' ' +
         '<button class="btn btn-sm" title="View project overview" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-info-circle"></i></button> ' +
         '<button class="btn btn-sm" title="View this project\'s task list" onclick="goToProject(\'' + p.id + '\',\'tasks\')"><i class="ti ti-list"></i></button></td>' +
-      '<td>' + bdg(task.status) + '</td><td class="text-muted">' + (task.end || '—') + '</td>' +
+      '<td>' + bdg(task.status) + '</td><td class="text-muted">' + (task.end || '—') + ' ' + lateBadgeHtml(isTaskLate(task)) + '</td>' +
       '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
         '<button class="btn btn-sm" title="Description" onclick="toggleTaskDescription(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
         '<button class="btn btn-sm" title="Checklist" onclick="toggleTaskChecklist(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (clOpenNow?'ti-chevron-up':'ti-list-check') + '"></i>' + (checklist.length ? ' ' + doneCount + '/' + checklist.length : '') + '</button>' +

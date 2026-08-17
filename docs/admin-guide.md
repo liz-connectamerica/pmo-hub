@@ -61,7 +61,7 @@ Manage the roster of **individuals** and **teams** (tabs at the top). For an ind
 
 A team can be assigned to a project directly (separately from its individual members each being assigned) — this matters for how the Capacity page reads team workload, below.
 
-An individual's row also shows a **Work requests** column — a plain-text count of their open (New, Needs Info, or Accepted) work requests, with total estimated hours for any that have been given one. Teams don't get this column, since work requests are always assigned to an individual, never a team.
+An individual's row also shows a **Work requests** column — a plain-text count of their open (New, Needs Info, or Accepted) work requests, with total estimated hours for any that have been given one. Teams don't get this column, since work requests are always assigned to an individual, never a team. The **Open tasks** and **Work requests** columns each flag how many are Late in a small red badge, same concept covered in the [User Guide](../user-guide/#late-items).
 
 ## Capacity
 
