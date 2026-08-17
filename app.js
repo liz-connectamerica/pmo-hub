@@ -7099,13 +7099,37 @@ function userActivityPanelHtml() {
       '</div>';
     }).join('');
   }
-  return '<tr><td colspan="6" style="padding:16px;background:#fafaf8">' +
+  return '<tr><td colspan="5" style="padding:16px;background:#fafaf8">' +
     '<div class="tab-bar" style="margin-bottom:12px">' + rangeTabs + '</div>' + body +
     '</td></tr>';
 }
 
+var manageUsersState = { search: '', sort: 'display_name', dir: 'asc', tab: 'active' };
+
 function renderUsersTable() {
-  var rows = D.allUsers.map(function(u) {
+  var st = manageUsersState;
+  var activeUsers = D.allUsers.filter(function(u){ return u.is_active !== false; });
+  var deactivatedUsers = D.allUsers.filter(function(u){ return u.is_active === false; });
+  var list = (st.tab === 'active' ? activeUsers : deactivatedUsers).slice();
+
+  if (st.search) {
+    var q = st.search.toLowerCase();
+    list = list.filter(function(u){ return (u.display_name||'').toLowerCase().indexOf(q) >= 0 || (u.email||'').toLowerCase().indexOf(q) >= 0; });
+  }
+
+  list.sort(function(a, b) {
+    var av, bv;
+    if (st.sort === 'role') { av = roleLabel(a.role); bv = roleLabel(b.role); }
+    else { av = a[st.sort]; bv = b[st.sort]; }
+    av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+
+  var rows = list.map(function(u) {
     var isMe = D.currentProfile.id === u.id;
     var active = u.is_active !== false;
     var expanded = userActivityState.expandedId === u.id;
@@ -7113,7 +7137,6 @@ function renderUsersTable() {
       '<td>' + (u.display_name||u.email) + (isMe ? ' <span class="text-muted">(you)</span>' : '') + '</td>' +
       '<td class="text-muted">' + u.email + '</td>' +
       '<td>' + bdg(roleLabel(u.role)) + '</td>' +
-      '<td>' + (active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Deactivated</span>') + '</td>' +
       '<td class="text-muted">' + (u.last_active_at ? fmtDateTime(u.last_active_at) : 'Never') + '</td>' +
       '<td><div style="display:flex;gap:4px">' +
         '<button class="btn btn-sm" title="Activity history" onclick="toggleUserActivityExpand(\'' + u.id + '\')"><i class="ti ' + (expanded?'ti-chevron-up':'ti-history') + '"></i></button>' +
@@ -7127,9 +7150,40 @@ function renderUsersTable() {
     '</tr>';
     return mainRow + (expanded ? userActivityPanelHtml() : '');
   }).join('');
+
+  var searchBar = searchBoxHtml(st.search, 'Search users by name or email…', 'manage-users-search', 'onManageUsersSearch');
+
+  var header = '<tr>' +
+    '<th class="sortable-th" onclick="setManageUsersSort(\'display_name\')">Name ' + arrow('display_name') + '</th>' +
+    '<th class="sortable-th" onclick="setManageUsersSort(\'email\')">Email ' + arrow('email') + '</th>' +
+    '<th class="sortable-th" onclick="setManageUsersSort(\'role\')">Role ' + arrow('role') + '</th>' +
+    '<th class="sortable-th" onclick="setManageUsersSort(\'last_active_at\')">Last active ' + arrow('last_active_at') + '</th>' +
+    '<th></th></tr>';
+
   document.getElementById('content').innerHTML =
-    '<div class="card"><div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last active</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    '<div class="tab-bar" style="margin-bottom:16px">' +
+      '<div class="tab' + (st.tab==='active'?' active':'') + '" onclick="setManageUsersTab(\'active\')">Active <span class="badge badge-gray">' + activeUsers.length + '</span></div>' +
+      '<div class="tab' + (st.tab==='deactivated'?' active':'') + '" onclick="setManageUsersTab(\'deactivated\')">Deactivated <span class="badge badge-gray">' + deactivatedUsers.length + '</span></div>' +
+    '</div>' +
+    '<div class="card">' + searchBar +
+    (list.length
+      ? '<div class="table-wrap"><table><thead>' + header + '</thead><tbody>' + rows + '</tbody></table></div>'
+      : '<div class="empty-state" style="padding:30px"><i class="ti ti-users"></i><p>' + (st.search ? 'No users match your search' : (st.tab==='active' ? 'No active users' : 'No deactivated users')) + '</p></div>') +
+    '</div>';
+
+  window.onManageUsersSearch = function(v) {
+    st.search = v; renderUsersTable();
+    var el = document.getElementById('manage-users-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
 }
+
+window.setManageUsersSort = function(col) {
+  if (manageUsersState.sort === col) manageUsersState.dir = manageUsersState.dir === 'asc' ? 'desc' : 'asc';
+  else { manageUsersState.sort = col; manageUsersState.dir = 'asc'; }
+  renderUsersTable();
+};
+window.setManageUsersTab = function(t) { manageUsersState.tab = t; renderUsersTable(); };
 
 function openEditUserModal(userId) {
   var u = D.allUsers.find(function(x){ return x.id === userId; });
