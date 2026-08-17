@@ -104,7 +104,7 @@ One click downloads every project's scalar fields (not tasks, milestones, RAID, 
 
 ## Work Requests
 
-An admin-only oversight page listing every work request across the org, regardless of who submitted or was assigned it — searchable and filterable by status. Two things are only available here:
+An admin-only oversight page listing every work request across the org, regardless of who submitted or was assigned it — searchable by title, sortable on every column, and filterable by Requester, Assigned to, and Status. Two things are only available here:
 
 - **Reassign** — move a work request to a different individual resource. Useful if the wrong person was picked at submission, or someone's out and their open requests need to move.
 - **Delete** — same soft-delete pattern as projects and requests; it disappears from every view (including the assignee's and requester's own pages) until restored from **Deleted Items**.

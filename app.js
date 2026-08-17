@@ -6817,6 +6817,8 @@ async function withdrawWorkRequest(id) {
   refreshWorkRequestView();
 }
 
+var adminWorkRequestsState = { search: '', sort: 'title', dir: 'asc', filters: { requesterName: [], resourceName: [], status: [] } };
+
 function pgAdminWorkRequests() {
   tb('Work Requests');
   if (D.role !== 'admin') {
@@ -6824,7 +6826,32 @@ function pgAdminWorkRequests() {
       '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access this page.</p></div>';
     return;
   }
-  var list = (D.workRequests || []).slice().sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); });
+  var st = adminWorkRequestsState;
+  var all = D.workRequests || [];
+
+  var requesterChoices = []; all.forEach(function(w){ if (w.requesterName && requesterChoices.indexOf(w.requesterName) < 0) requesterChoices.push(w.requesterName); }); requesterChoices.sort();
+  var resourceChoices = []; all.forEach(function(w){ if (w.resourceName && resourceChoices.indexOf(w.resourceName) < 0) resourceChoices.push(w.resourceName); }); resourceChoices.sort();
+  var statusChoices = ['New','Needs Info','Accepted','Complete','Declined','Withdrawn'];
+
+  var list = all.slice();
+  if (st.search) { var q = st.search.toLowerCase(); list = list.filter(function(w){ return w.title.toLowerCase().indexOf(q) >= 0; }); }
+  if (st.filters.requesterName.length) list = list.filter(function(w){ return st.filters.requesterName.indexOf(w.requesterName) >= 0; });
+  if (st.filters.resourceName.length) list = list.filter(function(w){ return st.filters.resourceName.indexOf(w.resourceName) >= 0; });
+  if (st.filters.status.length) list = list.filter(function(w){ return st.filters.status.indexOf(w.status) >= 0; });
+
+  list.sort(function(a, b) {
+    var av, bv;
+    if (st.sort === 'estimatedHours') { av = a.estimatedHours != null ? a.estimatedHours : -1; bv = b.estimatedHours != null ? b.estimatedHours : -1; }
+    else { av = a[st.sort]; bv = b[st.sort]; av = (av == null ? '' : av); bv = (bv == null ? '' : bv); if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); } }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+  function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleAdminWrFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
+
+  var searchBar = searchBoxHtml(st.search, 'Search work requests by title…', 'admin-wr-search', 'onAdminWrSearch');
+
   var rows = list.map(function(w) {
     return '<tr><td class="bold">' + w.title + '</td><td>' + w.requesterName + '</td><td>' + w.resourceName + '</td>' +
       '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span> ' + lateBadgeHtml(isWorkRequestLate(w)) + '</td>' +
@@ -6835,9 +6862,39 @@ function pgAdminWorkRequests() {
       '<button class="btn btn-sm btn-danger" onclick="deleteWorkRequest(\'' + w.id + '\')"><i class="ti ti-trash"></i></button>' +
       '</div></td></tr>';
   }).join('');
-  document.getElementById('content').innerHTML = list.length
-    ? '<div class="card"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Requester</th><th>Assigned to</th><th>Status</th><th>Est. hrs</th><th>Due</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>'
-    : '<div class="empty-state" style="padding:30px"><i class="ti ti-inbox"></i><p>No work requests yet</p></div>';
+
+  var header = '<tr>' +
+    '<th class="sortable-th" onclick="setAdminWrSort(\'title\')">Request ' + arrow('title') + '</th>' +
+    '<th class="sortable-th"><span onclick="setAdminWrSort(\'requesterName\')">Requester ' + arrow('requesterName') + '</span>' + filterIcon('requesterName', st.filters.requesterName.length>0) + '</th>' +
+    '<th class="sortable-th"><span onclick="setAdminWrSort(\'resourceName\')">Assigned to ' + arrow('resourceName') + '</span>' + filterIcon('resourceName', st.filters.resourceName.length>0) + '</th>' +
+    '<th class="sortable-th"><span onclick="setAdminWrSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+    '<th class="sortable-th" onclick="setAdminWrSort(\'estimatedHours\')">Est. hrs ' + arrow('estimatedHours') + '</th>' +
+    '<th class="sortable-th" onclick="setAdminWrSort(\'estimatedCompletionDate\')">Due ' + arrow('estimatedCompletionDate') + '</th>' +
+    '<th></th></tr>';
+
+  document.getElementById('content').innerHTML = searchBar +
+    (all.length
+      ? (list.length
+          ? '<div class="card"><div class="table-wrap"><table><thead>' + header + '</thead><tbody>' + rows + '</tbody></table></div></div>'
+          : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No work requests match your search or filters</p></div>')
+      : '<div class="empty-state" style="padding:30px"><i class="ti ti-inbox"></i><p>No work requests yet</p></div>');
+
+  window.onAdminWrSearch = function(v) {
+    st.search = v; pgAdminWorkRequests();
+    var el = document.getElementById('admin-wr-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.setAdminWrSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgAdminWorkRequests(); };
+  window.toggleAdminWrFilter = function(col) {
+    var labelMap = { requesterName:'Requester', resourceName:'Assigned to', status:'Status' };
+    var choicesMap = { requesterName:requesterChoices, resourceName:resourceChoices, status:statusChoices };
+    openFilterModal(labelMap[col], choicesMap[col],
+      function() { return st.filters[col]; },
+      function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { st.filters[col] = []; },
+      pgAdminWorkRequests
+    );
+  };
 }
 
 function openReassignWorkRequestModal(id) {
