@@ -103,6 +103,12 @@ These only show up in the sidebar once you have some connection to a project —
 - **My Tasks** — every task assigned to you, split into Open and Completed tabs, searchable and filterable by project or status. Each row shows the same detail as the project's own Tasks tab — description, checklist, tags, comments, and history, not just the title and due date. You can comment on any task, check off your own checklist items, and click the circle to the left of a task's title to mark it done (or click a done task's checkmark to reopen it). There's no time-logging feature in the app — commenting and marking done are the two write actions available to you as a plain assignee.
 - **My Work Requests** — work requests sent to you, split into **Open work requests** (New, Needs Info, or Accepted) and **Completed work requests** (Complete, Declined, or Withdrawn) tabs, with its own search. If the requester gave a requested completion date, you'll see it on the row before you act. For anything **New**, you choose one of three responses: **Accept** (set an estimated completion date and estimated hours — this is what drives your load on the Capacity page; the completion date defaults to whatever the requester asked for, but you can change it), **Send back** (ask the requester for more information, with a note explaining what you need), or **Decline** (with a note explaining why). Once you've **Accepted** one, mark it **Complete** when the work is done.
 
+## Late items
+
+A red **Late** badge shows up anywhere a project, task, milestone, or work request has a date that's already passed without being closed out — its target end date, due date, target date, or committed completion date. It's computed on the fly, not a status you set yourself, and it disappears the moment the item is completed, marked done, or otherwise resolved. A project on Hold whose target end date has already passed still shows Late, since being paused doesn't make the original date any less passed.
+
+You'll see it wherever that item normally shows up — the project/task/milestone lists, the project detail page, Roadmap, Portfolio, Capacity — and specifically on **your own** work: My Projects, My Tasks, and My Work Requests all surface it too, so an owner or assignee sees at a glance which of their own items have slipped, not just admins reviewing everyone else's.
+
 ## Tags vs. Categories
 
 These look similar but work differently:
