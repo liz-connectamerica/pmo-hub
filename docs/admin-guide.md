@@ -33,6 +33,56 @@ A full project record is created immediately — not a placeholder — carrying 
 
 You also have a **Delete** button on any request — it does not touch the project itself even if one is linked; the request is just hidden (see **Deleted Items** below) until restored, at which point the link, if there was one, is exactly as it was.
 
+The full picture, request through project retirement — the dashed arrow is **Delete**, available from any state shown here, not just the two pictured:
+
+<pre class="mermaid">
+flowchart TD
+    Submit(["Member submits a request"]) --> Pending["Pending"]
+    Pending -->|"Admin reviews &amp; finalizes:<br/>priority · value area · dates"| Decision{"Approve?"}
+    Pending -->|"Submitter withdraws"| Revoked["Revoked"]
+    Decision -->|"No — with feedback"| Rejected["Rejected"]
+    Decision -->|"Yes"| Stage{"Dates entered?"}
+
+    Rejected -->|"Edit &amp; resubmit"| Pending
+    Revoked -->|"Edit &amp; resubmit"| Pending
+
+    Stage -->|"Neither date"| Backlog["Backlog"]
+    Stage -->|"Only one, or both<br/>not started yet"| Planned["Planned"]
+    Stage -->|"Both, today in range"| Active["Active"]
+
+    Backlog -->|"Owner/Admin schedules"| Planned
+    Planned -->|"Today enters range — automatic"| Active
+    Backlog -->|"Owner/Admin"| Hold["Hold"]
+    Planned -->|"Owner/Admin"| Hold
+    Active -->|"Owner/Admin"| Hold
+    Hold -->|"Resume"| Backlog
+    Hold -->|"Resume"| Planned
+    Hold -->|"Resume"| Active
+    Active -->|"Owner/Admin marks complete"| Complete["Complete"]
+
+    Rejected -.->|"Admin deletes — any state"| Deleted[("Deleted Items")]
+
+    classDef startNode fill:#FFFFFF,stroke:#8B8FA3,color:#1D1F2B,stroke-width:1.5px,stroke-dasharray:3 3;
+    classDef reqNode fill:#EDEAFB,stroke:#4A3F91,color:#2A2360,stroke-width:1.5px;
+    classDef decisionNode fill:#F3F4F7,stroke:#565A72,color:#1D1F2B,stroke-width:1.5px;
+    classDef backlogNode fill:#F0EFEA,stroke:#8B8672,color:#3F3B2E,stroke-width:1.5px;
+    classDef plannedNode fill:#E1EEFA,stroke:#1D5A96,color:#123A61,stroke-width:1.5px;
+    classDef activeNode fill:#E1F5EE,stroke:#0D6B4F,color:#0A4A37,stroke-width:1.5px;
+    classDef holdNode fill:#FCF1DD,stroke:#B9790A,color:#7A4F06,stroke-width:1.5px;
+    classDef completeNode fill:#E1F0E5,stroke:#1C8A63,color:#125B41,stroke-width:1.5px;
+    classDef deletedNode fill:#FAEAEA,stroke:#B23A3A,color:#7A2626,stroke-width:1.5px;
+
+    class Submit startNode
+    class Pending,Rejected,Revoked reqNode
+    class Decision,Stage decisionNode
+    class Backlog backlogNode
+    class Planned plannedNode
+    class Active activeNode
+    class Hold holdNode
+    class Complete completeNode
+    class Deleted deletedNode
+</pre>
+
 ## Programs
 
 A program is a named collection of projects — each project can belong to at most one program, or none. Every program has a **Program ID** (P1, P2, P3…, assigned automatically), a name, description, and business objective, plus three resource-linked roles: **Program Sponsor**, **Program Manager**, and **Business Owner**.

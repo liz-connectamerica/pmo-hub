@@ -86,6 +86,37 @@ One thing worth knowing: only an admin can reassign a project's **Owner**, and o
 
 - **Work Request** — a smaller ask for someone's time, not a full project. No PMO review needed. Fill in a title, description, an optional **requested completion date** (when you'd ideally like it done by), and who it's for (search and pick an individual resource — work requests are always assigned to a specific person, not a team). It lands directly in that person's queue as **New**, with nothing further for you to do until they respond. Whoever accepts it can keep your requested date or set a different one — see below for how that shows up on your side.
 
+A work request's full lifecycle — dashed arrows are a **Reassign**, which resets straight back to New for the new person, no matter which side (requester or assignee) triggered it:
+
+<pre class="mermaid">
+flowchart TD
+    Submit(["Requester submits, picks an assignee"]) --> New["New"]
+    New -->|"Assignee accepts"| Accepted["Accepted"]
+    New -->|"Assignee sends back"| NeedsInfo["Needs Info"]
+    New -->|"Assignee declines"| Declined["Declined"]
+    New -->|"Requester withdraws"| Withdrawn["Withdrawn"]
+    NeedsInfo -->|"Requester replies"| New
+    NeedsInfo -->|"Requester withdraws"| Withdrawn
+    NeedsInfo -.->|"Reassigned"| New
+    Accepted -->|"Assignee sends back"| NeedsInfo
+    Accepted -.->|"Reassigned"| New
+    Accepted -->|"Assignee marks complete"| Complete["Complete"]
+
+    classDef startNode fill:#FFFFFF,stroke:#8B8FA3,color:#1D1F2B,stroke-width:1.5px,stroke-dasharray:3 3;
+    classDef reqNode fill:#EDEAFB,stroke:#4A3F91,color:#2A2360,stroke-width:1.5px;
+    classDef holdNode fill:#FCF1DD,stroke:#B9790A,color:#7A4F06,stroke-width:1.5px;
+    classDef plannedNode fill:#E1EEFA,stroke:#1D5A96,color:#123A61,stroke-width:1.5px;
+    classDef completeNode fill:#E1F0E5,stroke:#1C8A63,color:#125B41,stroke-width:1.5px;
+    classDef deletedNode fill:#FAEAEA,stroke:#B23A3A,color:#7A2626,stroke-width:1.5px;
+
+    class Submit startNode
+    class New reqNode
+    class NeedsInfo holdNode
+    class Accepted plannedNode
+    class Complete completeNode
+    class Declined,Withdrawn deletedNode
+</pre>
+
 ## My Requests
 
 Also two tabs, matching the two request types:

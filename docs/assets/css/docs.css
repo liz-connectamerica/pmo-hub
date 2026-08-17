@@ -1,0 +1,189 @@
+/* Layout: sidebar TOC + search, alongside the guide content. Scoped to
+   .doc-layout so it doesn't affect the home page (index.md), which keeps
+   minima's plain default layout. */
+
+.wrapper:has(.doc-layout) {
+  max-width: 1120px;
+}
+
+.doc-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 40px;
+  align-items: start;
+}
+
+.doc-toc {
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.doc-toc-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6b6b6b;
+  margin: 18px 0 8px;
+}
+
+.doc-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 2px solid #e8e8e5;
+}
+
+.doc-toc-item a {
+  display: block;
+  padding: 5px 0 5px 14px;
+  margin-left: -2px;
+  border-left: 2px solid transparent;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: #555;
+  text-decoration: none;
+}
+
+.doc-toc-item.doc-toc-h3 a {
+  padding-left: 28px;
+  font-size: 13px;
+  color: #767676;
+}
+
+.doc-toc-item a:hover {
+  color: #2a7ae2;
+}
+
+.doc-toc-item a.active {
+  border-left-color: #2a7ae2;
+  color: #2a7ae2;
+  font-weight: 600;
+}
+
+/* Search */
+
+.doc-search {
+  position: relative;
+  margin-bottom: 4px;
+}
+
+.doc-search input[type="search"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  font-size: 14px;
+  border: 1px solid #d6d6d6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.doc-search input[type="search"]:focus {
+  outline: 2px solid #2a7ae2;
+  outline-offset: 1px;
+}
+
+.doc-search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: #fff;
+  border: 1px solid #d6d6d6;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.doc-search-result {
+  display: block;
+  padding: 9px 12px;
+  text-decoration: none;
+  border-bottom: 1px solid #eee;
+  color: #222;
+}
+
+.doc-search-result:last-child { border-bottom: none; }
+.doc-search-result:hover { background: #f5f7fb; }
+
+.doc-search-result-title {
+  display: block;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.doc-search-result-guide {
+  display: inline-block;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #2a7ae2;
+  margin-top: 2px;
+}
+
+.doc-search-result-blurb {
+  display: block;
+  font-size: 12px;
+  color: #767676;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.doc-search-empty {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #767676;
+}
+
+/* Mobile TOC toggle */
+
+.doc-toc-toggle {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #f5f5f5;
+  border: 1px solid #d6d6d6;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .doc-layout {
+    grid-template-columns: 1fr;
+  }
+  .doc-toc-toggle {
+    display: block;
+  }
+  .doc-toc {
+    display: none;
+    position: static;
+    max-height: none;
+    background: #fafafa;
+    border: 1px solid #e8e8e5;
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 20px;
+  }
+  .doc-toc.open {
+    display: block;
+  }
+}
+
+/* Mermaid diagrams: constrain width, allow horizontal scroll instead of
+   overflowing the content column on narrow viewports. */
+pre.mermaid {
+  overflow-x: auto;
+  display: block;
+  margin: 20px 0;
+  text-align: center;
+}

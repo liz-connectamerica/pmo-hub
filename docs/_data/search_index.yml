@@ -1,0 +1,183 @@
+# Hand-curated search index -- one entry per heading in each guide. Update
+# this whenever a heading is added, renamed, or removed in user-guide.md or
+# admin-guide.md, since the anchor + blurb aren't auto-derived.
+
+- title: Getting around
+  page: /user-guide/
+  anchor: getting-around
+  guide: User Guide
+  blurb: What's in the sidebar and how it's organized.
+
+- title: Dashboard
+  page: /user-guide/
+  anchor: dashboard
+  guide: User Guide
+  blurb: Summary tiles, active projects table, rejected proposals list.
+
+- title: Roadmap
+  page: /user-guide/
+  anchor: roadmap
+  guide: User Guide
+  blurb: Month-by-month Gantt view of active and planned projects, plus upcoming milestones.
+
+- title: Portfolio
+  page: /user-guide/
+  anchor: portfolio
+  guide: User Guide
+  blurb: Card view of every non-completed project, grouped by Value Area.
+
+- title: Programs
+  page: /user-guide/
+  anchor: programs
+  guide: User Guide
+  blurb: A named collection of related projects with Sponsor, Manager, and Business Owner roles.
+
+- title: "Projects: Active, Planned, Backlog, Hold, Completed"
+  page: /user-guide/
+  anchor: projects-active-planned-backlog-hold-completed
+  guide: User Guide
+  blurb: The five project-lifecycle list pages.
+
+- title: Project detail page
+  page: /user-guide/
+  anchor: project-detail-page
+  guide: User Guide
+  blurb: Overview, Team, Milestones, Tasks, RAID log, Documentation, Metadata, Change Log tabs.
+
+- title: Submitting a request
+  page: /user-guide/
+  anchor: submitting-a-request
+  guide: User Guide
+  blurb: Project Request vs. Work Request -- two tabs, one Submit a Request page.
+
+- title: My Requests
+  page: /user-guide/
+  anchor: my-requests
+  guide: User Guide
+  blurb: Your own submitted Project Requests and Work Requests, with status and Reassign/Withdraw/Reply.
+
+- title: My Projects, My Tasks & My Work Requests
+  page: /user-guide/
+  anchor: my-projects-my-tasks-my-work-requests
+  guide: User Guide
+  blurb: Your own personalized views -- appears once you have any connection to a project or work request.
+
+- title: Late items
+  page: /user-guide/
+  anchor: late-items
+  guide: User Guide
+  blurb: The red Late badge -- what triggers it and where it shows up.
+
+- title: Tags vs. Categories
+  page: /user-guide/
+  anchor: tags-vs-categories
+  guide: User Guide
+  blurb: Flexible multi-select labels vs. tab-like project groupings.
+
+- title: Permissions at a glance
+  page: /user-guide/
+  anchor: permissions-at-a-glance
+  guide: User Guide
+  blurb: Who can edit what, financial data visibility, sidebar differences by role.
+
+- title: Requests (Intake)
+  page: /admin-guide/
+  anchor: requests-intake
+  guide: Admin Guide
+  blurb: Reviewing, finalizing, approving, or rejecting project requests.
+
+- title: Programs
+  page: /admin-guide/
+  anchor: programs
+  guide: Admin Guide
+  blurb: Creating programs, linking projects, and what a Program Manager can edit.
+
+- title: Prioritize Backlog
+  page: /admin-guide/
+  anchor: prioritize-backlog
+  guide: Admin Guide
+  blurb: Value-vs-effort matrix and the ranked drag-to-reorder list.
+
+- title: Resources
+  page: /admin-guide/
+  anchor: resources
+  guide: Admin Guide
+  blurb: The roster of individuals and teams, and the Work requests / Late columns.
+
+- title: Capacity
+  page: /admin-guide/
+  anchor: capacity
+  guide: Admin Guide
+  blurb: Month-by-month load per resource, expandable into project bars and open work requests.
+
+- title: Future Planning
+  page: /admin-guide/
+  anchor: future-planning
+  guide: Admin Guide
+  blurb: Quarter-by-quarter scheduling view for backlog estimates and real dates.
+
+- title: All Projects
+  page: /admin-guide/
+  anchor: all-projects
+  guide: Admin Guide
+  blurb: Every project regardless of stage, plus New project and Bulk edit.
+
+- title: Import Projects
+  page: /admin-guide/
+  anchor: import-projects
+  guide: Admin Guide
+  blurb: Template download, validation, and the no-duplicate-detection caveat.
+
+- title: Export Projects
+  page: /admin-guide/
+  anchor: export-projects
+  guide: Admin Guide
+  blurb: One-click Excel export of every project's scalar fields.
+
+- title: Work Requests (admin oversight)
+  page: /admin-guide/
+  anchor: work-requests
+  guide: Admin Guide
+  blurb: Org-wide work request list -- search, sort, filter, Reassign, Delete.
+
+- title: Manage Users
+  page: /admin-guide/
+  anchor: manage-users
+  guide: Admin Guide
+  blurb: Accounts, roles, passwords, deactivation, and activity history.
+
+- title: Manage Tags
+  page: /admin-guide/
+  anchor: manage-tags
+  guide: Admin Guide
+  blurb: The shared tag pool used across projects, resources, and requests.
+
+- title: Manage Values
+  page: /admin-guide/
+  anchor: manage-values
+  guide: Admin Guide
+  blurb: Value Area, Business Unit, and Category dropdown lists.
+
+- title: Deleted Items
+  page: /admin-guide/
+  anchor: deleted-items
+  guide: Admin Guide
+  blurb: Soft-deleted projects, requests, and work requests -- View and Restore.
+
+- title: Financial data & permissions
+  page: /admin-guide/
+  anchor: financial-data-permissions
+  guide: Admin Guide
+  blurb: The canViewFinancials admin-only gate and what it controls.
+
+- title: View As
+  page: /admin-guide/
+  anchor: view-as
+  guide: Admin Guide
+  blurb: Read-only simulation of what a Member or specific person would see.
+
+- title: Known quirks worth knowing about
+  page: /admin-guide/
+  anchor: known-quirks-worth-knowing-about
+  guide: Admin Guide
+  blurb: Legacy fields, dormant columns, and other known oddities.
