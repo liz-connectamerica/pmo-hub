@@ -6601,7 +6601,7 @@ function renderSubmitWorkRequestForm() {
   };
 }
 
-var myWorkRequestsState = { tab: 'open', search: '' };
+var myWorkRequestsState = { tab: 'waiting', search: '' };
 var myRequestsPageState = { tab: 'project' };
 var workRequestLogOpen = {};
 
@@ -6633,6 +6633,8 @@ function workRequestRowHtml(w, flavor, opts) {
     logRow = '<tr><td colspan="' + colCount + '" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
   }
 
+  var reassignBtn = '<button class="btn btn-sm" onclick="openReassignResetModal(\'' + w.id + '\')"><i class="ti ti-user-exchange"></i> Reassign</button>';
+
   var actions = '';
   if (flavor === 'assigned') {
     if (w.status === 'New') {
@@ -6642,19 +6644,22 @@ function workRequestRowHtml(w, flavor, opts) {
     } else if (w.status === 'Needs Info') {
       actions = '<span class="text-muted" style="font-size:12px">Waiting on ' + w.requesterName + '</span>';
     } else if (w.status === 'Accepted') {
-      actions = '<button class="btn btn-sm btn-success" onclick="completeWorkRequest(\'' + w.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>';
+      actions = '<button class="btn btn-sm btn-success" onclick="openCompleteWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>' +
+        '<button class="btn btn-sm" onclick="openSendBackModal(\'' + w.id + '\')"><i class="ti ti-corner-up-left"></i> Send back</button>' + reassignBtn;
     }
   } else {
     if (w.status === 'New') {
-      actions = '<span class="text-muted" style="font-size:12px">Waiting on ' + w.resourceName + '</span> <button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>';
+      actions = '<span class="text-muted" style="font-size:12px">Waiting on ' + w.resourceName + '</span> <button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>' + reassignBtn;
     } else if (w.status === 'Needs Info') {
       actions = '<button class="btn btn-sm btn-primary" onclick="openReplyWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-message-2"></i> Reply</button>' +
-        '<button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>';
+        '<button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>' + reassignBtn;
+    } else if (w.status === 'Accepted') {
+      actions = reassignBtn;
     }
   }
 
   var detailLine = '';
-  if (w.status === 'Needs Info' && w.infoNote) detailLine += '<div style="font-size:12px;color:#555;margin-top:4px;background:#f5f5f3;padding:6px 8px;border-radius:6px">' + w.infoNote + '</div>';
+  if ((w.status === 'Needs Info' || w.status === 'Complete' || w.status === 'Declined') && w.infoNote) detailLine += '<div style="font-size:12px;color:#555;margin-top:4px;background:#f5f5f3;padding:6px 8px;border-radius:6px">' + w.infoNote + '</div>';
   if (flavor === 'assigned' && w.status === 'New' && w.requestedCompletionDate) detailLine += '<div class="text-muted" style="font-size:12px;margin-top:4px">Requested completion: ' + w.requestedCompletionDate + '</div>';
   if (w.status === 'Accepted' || w.status === 'Complete') {
     var bits = [];
@@ -6686,10 +6691,12 @@ function pgMyWorkRequests() {
   var st = myWorkRequestsState;
   var myId = D.myResourceId;
   var assigned = (D.workRequests || []).filter(function(w){ return myId && w.resourceId === myId; });
-  var openList = assigned.filter(function(w){ return w.status === 'New' || w.status === 'Needs Info' || w.status === 'Accepted'; });
+  var waitingList = assigned.filter(function(w){ return w.status === 'New' || w.status === 'Needs Info'; });
+  var progressList = assigned.filter(function(w){ return w.status === 'Accepted'; });
   var doneList = assigned.filter(function(w){ return w.status === 'Complete' || w.status === 'Declined' || w.status === 'Withdrawn'; });
+  var listByTab = { waiting: waitingList, progress: progressList, done: doneList };
 
-  var currentList = (st.tab === 'open' ? openList : doneList).slice();
+  var currentList = (listByTab[st.tab] || waitingList).slice();
   if (st.search) {
     var q = st.search.toLowerCase();
     currentList = currentList.filter(function(w){ return w.title.toLowerCase().indexOf(q) >= 0 || (w.requesterName||'').toLowerCase().indexOf(q) >= 0; });
@@ -6702,8 +6709,9 @@ function pgMyWorkRequests() {
 
   document.getElementById('content').innerHTML =
     '<div class="tab-bar" style="margin-bottom:16px">' +
-      '<div class="tab' + (st.tab==='open'?' active':'') + '" onclick="setMyWorkRequestsTab(\'open\')">Open work requests <span class="badge badge-gray">' + openList.length + '</span></div>' +
-      '<div class="tab' + (st.tab==='done'?' active':'') + '" onclick="setMyWorkRequestsTab(\'done\')">Completed work requests <span class="badge badge-gray">' + doneList.length + '</span></div>' +
+      '<div class="tab' + (st.tab==='waiting'?' active':'') + '" onclick="setMyWorkRequestsTab(\'waiting\')">Waiting for approval <span class="badge badge-gray">' + waitingList.length + '</span></div>' +
+      '<div class="tab' + (st.tab==='progress'?' active':'') + '" onclick="setMyWorkRequestsTab(\'progress\')">In progress <span class="badge badge-gray">' + progressList.length + '</span></div>' +
+      '<div class="tab' + (st.tab==='done'?' active':'') + '" onclick="setMyWorkRequestsTab(\'done\')">Completed <span class="badge badge-gray">' + doneList.length + '</span></div>' +
     '</div>' +
     '<div class="card">' + searchBar +
     (currentList.length
@@ -6746,6 +6754,7 @@ function openNoteModal(id, title, placeholder, actionFn, btnLabel) {
 function openSendBackModal(id) { openNoteModal(id, 'Send back for more info', 'What do you need to know?', sendBackWorkRequest, 'Send back'); }
 function openDeclineWorkRequestModal(id) { openNoteModal(id, 'Decline this request', 'Optional reason (visible to the requester)', declineWorkRequest, 'Decline'); }
 function openReplyWorkRequestModal(id) { openNoteModal(id, 'Reply with the missing detail', 'Add what they asked for…', replyWorkRequest, 'Send reply'); }
+function openCompleteWorkRequestModal(id) { openNoteModal(id, 'Mark as complete', 'Anything the requester should know? (optional)', completeWorkRequest, 'Mark complete'); }
 
 async function acceptWorkRequest(id, hours, date) {
   var w = D.workRequests.find(function(x){ return x.id === id; });
@@ -6794,14 +6803,54 @@ async function replyWorkRequest(id, reply) {
   refreshWorkRequestView();
 }
 
-async function completeWorkRequest(id) {
+async function completeWorkRequest(id, note) {
   var w = D.workRequests.find(function(x){ return x.id === id; });
-  var result = await sb.from('work_requests').update({ status: 'Complete', completed_at: new Date().toISOString() }).eq('id', id);
+  var result = await sb.from('work_requests').update({ status: 'Complete', completed_at: new Date().toISOString(), info_note: note || null }).eq('id', id);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-  w.status = 'Complete'; w.completedAt = new Date().toISOString();
+  w.status = 'Complete'; w.completedAt = new Date().toISOString(); w.infoNote = note || null;
   w.log = w.log || [];
-  w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Marked complete', ''));
+  w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Marked complete', note || ''));
   showToast('Marked complete');
+  refreshWorkRequestView();
+}
+
+// Reassigning your own request or assignment resets to New rather than
+// carrying the old estimate over -- the new person hasn't agreed to
+// anything yet, so they go through their own Accept. (Admin's reassign,
+// on the admin oversight page, deliberately keeps the existing estimate --
+// that's for "this person is out, move their already-agreed work," a
+// different situation from "this isn't the right person for this.")
+function openReassignResetModal(id) {
+  var w = D.workRequests.find(function(x){ return x.id === id; });
+  var pool = individualResourceNames().filter(function(n){ return n !== w.resourceName; });
+  var opts = pool.map(function(n){ return '<option value="' + n.replace(/"/g,'&quot;') + '">' + n + '</option>'; }).join('');
+  showModal('<div class="modal-title">Reassign "' + w.title + '" <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<p class="text-muted" style="font-size:13px;margin-bottom:12px">Sends it back to New for the new person to accept on their own terms — any existing estimate is cleared.</p>' +
+    '<div class="form-group"><div class="form-label">Assign to</div><select id="swr-resource">' + opts + '</select></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="swr-save"><i class="ti ti-check"></i> Reassign</button></div>');
+  document.getElementById('swr-save').onclick = async function() {
+    var name = document.getElementById('swr-resource').value;
+    var resource = resolveResource(name);
+    if (!resource) { showToast('Choose a resource'); return; }
+    var btn = document.getElementById('swr-save'); btn.disabled = true;
+    await reassignWorkRequestReset(id, resource);
+    closeModal();
+  };
+}
+
+async function reassignWorkRequestReset(id, resource) {
+  var w = D.workRequests.find(function(x){ return x.id === id; });
+  var old = w.resourceName;
+  var result = await sb.from('work_requests').update({
+    resource_id: resource.id, status: 'New', estimated_hours: null, estimated_completion_date: null, accepted_at: null, info_note: null
+  }).eq('id', id);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  w.resourceId = resource.id; w.resourceName = resource.name; w.status = 'New';
+  w.estimatedHours = null; w.estimatedCompletionDate = null; w.acceptedAt = null; w.infoNote = null;
+  w.log = w.log || [];
+  w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Reassigned', old + ' → ' + resource.name + ' (reset to New)'));
+  showToast('Reassigned to ' + resource.name);
   refreshWorkRequestView();
 }
 
