@@ -1358,7 +1358,7 @@ function isWorkRequestLate(w) {
 }
 
 function lateBadgeHtml(isLate, title) {
-  return isLate ? '<span class="badge badge-red badge-late" title="' + (title || 'Past its date and not yet closed out') + '"><i class="ti ti-alert-triangle"></i> Late</span>' : '';
+  return isLate ? '<span class="badge badge-red badge-late" title="' + (title || 'Past its date and not yet closed out') + '"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>Late</span>' : '';
 }
 
 function fmtDateTime(iso) {
