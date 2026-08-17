@@ -12,7 +12,7 @@ The sidebar is organized into a few sections:
 
 - **Overview** — Dashboard, Roadmap, Portfolio
 - **Projects** — Active, Planned, Backlog, Hold, Completed
-- **My Requests** — Submit a Request, My Requests
+- **My Requests** — Submit a Request, My Requests, Submit a Work Request, My Work Requests
 - **My Work** — My Projects, My Tasks (this section only appears once you have any connection at all to a project — owner, sponsor, team member, or task assignee — at any stage)
 
 The bar at the top of the page shows the current page's title and any page-specific action buttons (like "New request").
@@ -92,6 +92,21 @@ Shows only your own submitted requests, with status, PMO feedback, and a quick l
 - **Pending** — you can **Revoke** it yourself (withdraw it before a PMO admin reviews it) or edit it.
 - **Rejected** or **Revoked** — you can **Edit & resubmit**, which resets it back to Pending and clears the old feedback. (Note: the button is labeled "Resubmit request" even the first time you edit a still-pending request — that's just how the label reads, not a sign anything was rejected.)
 - **Backlog / Planned / Active** — your request was approved; use the linked-project icon to jump straight to it.
+
+## Work Requests
+
+A work request is a smaller ask for someone's time — a task or piece of work, not a full project. Work requests never appear on Roadmap, Portfolio, or Future Planning, and they don't need PMO admin approval to move forward.
+
+**Submitting one** — use **Submit a Work Request**. Fill in a title, description, and who it's for (search and pick an individual resource — work requests are always assigned to a specific person, not a team). There's no review step: it lands directly in that person's queue as **New**.
+
+**My Work Requests** has two tabs:
+
+- **Assigned to me** — work requests sent to you. For anything **New**, you choose one of three responses: **Accept** (set an estimated completion date and estimated hours — this is what drives your load on the Capacity page), **Send back** (ask the requester for more information, with a note explaining what you need), or **Decline** (with a note explaining why). Once you've **Accepted** one, mark it **Complete** when the work is done.
+- **Submitted by me** — work requests you've sent to someone else, with their current status and any note they've left you. If one comes back **Needs Info**, use **Reply** to add the missing detail, which sends it back to **New** for the assignee to reconsider. You can **Withdraw** a request yourself as long as it's still **New**.
+
+Every work request keeps a full history of who did what and when, visible to anyone viewing it (like projects, work requests are open for anyone to read — they're just not everyone's to act on).
+
+An admin-only **Work Requests** oversight page (see the [Admin Guide](../admin-guide/)) lists every work request across the org and can reassign or delete one if needed.
 
 ## My Projects & My Tasks
 
