@@ -430,17 +430,17 @@ function myOpenTasksCount() {
   return count;
 }
 
-// Things needing this person's attention right now: a Work Request assigned
-// to them that hasn't been triaged yet, or one they submitted that's
-// waiting on a reply from them.
-function myActionableWorkRequestsCount() {
+// New work requests assigned to this person that haven't been triaged yet.
+function myAssignedWorkRequestsNewCount() {
   var myId = D.myResourceId;
-  var count = 0;
-  (D.workRequests || []).forEach(function(w){
-    if (myId && w.resourceId === myId && w.status === 'New') count++;
-    else if (w.requesterId === D.currentProfile.id && w.status === 'Needs Info') count++;
-  });
-  return count;
+  if (!myId) return 0;
+  return (D.workRequests || []).filter(function(w){ return w.resourceId === myId && w.status === 'New'; }).length;
+}
+
+// Work requests this person submitted that are waiting on a reply from them.
+function mySubmittedWorkRequestsNeedsInfoCount() {
+  if (!D.currentProfile) return 0;
+  return (D.workRequests || []).filter(function(w){ return w.requesterId === D.currentProfile.id && w.status === 'Needs Info'; }).length;
 }
 
 function myProjects() {
@@ -463,7 +463,8 @@ function hasAnyRoleOn(p) {
 
 function hasAssignedWork() {
   if (!D.myResourceId) return false;
-  return D.projects.some(hasAnyRoleOn);
+  if (D.projects.some(hasAnyRoleOn)) return true;
+  return (D.workRequests || []).some(function(w){ return w.resourceId === D.myResourceId; });
 }
 
 function currentUser() {
@@ -1436,9 +1437,7 @@ var NAV_DEF = {
     { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
-      {id:'my-requests',  icon:'ti-clock', label:'My Requests'},
-      {id:'submit-work-request', icon:'ti-tool', label:'Submit a Work Request'},
-      {id:'my-work-requests', icon:'ti-list-check', label:'My Work Requests', badge:'my-work-requests'}
+      {id:'my-requests',  icon:'ti-clock', label:'My Requests', badge:'my-requests'}
     ]},
     { s:'Projects', items:[
       {id:'projects', icon:'ti-briefcase',      label:'Active'},
@@ -1474,9 +1473,7 @@ var NAV_DEF = {
     ]},
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
-      {id:'my-requests',  icon:'ti-clock', label:'My Requests'},
-      {id:'submit-work-request', icon:'ti-tool', label:'Submit a Work Request'},
-      {id:'my-work-requests', icon:'ti-list-check', label:'My Work Requests', badge:'my-work-requests'}
+      {id:'my-requests',  icon:'ti-clock', label:'My Requests', badge:'my-requests'}
     ]},
     { s:'Projects', items:[
       {id:'projects',  icon:'ti-briefcase',      label:'Active'},
@@ -1511,7 +1508,8 @@ function renderNav() {
     // Right after Overview, not appended at the end.
     defs.splice(1, 0, { s:'My Work', items:[
       {id:'my-projects', icon:'ti-briefcase',   label:'My Projects'},
-      {id:'my-tasks',    icon:'ti-check',       label:'My Tasks', badge:'my-tasks'}
+      {id:'my-tasks',    icon:'ti-check',       label:'My Tasks', badge:'my-tasks'},
+      {id:'my-work-requests', icon:'ti-list-check', label:'My Work Requests', badge:'my-work-requests'}
     ]});
   }
   var anyExpanded = defs.some(function(sec){ return !isNavSectionCollapsed(sec.s); });
@@ -1522,7 +1520,7 @@ function renderNav() {
       '<span>' + sec.s + '</span><i class="ti ti-chevron-' + (collapsed ? 'right' : 'down') + '"></i></div>';
     if (!collapsed) {
       sec.items.forEach(function(item) {
-        var cnt = item.badge === 'pending' ? pendingCount() : item.badge === 'backlog' ? backlogCount() : item.badge === 'my-tasks' ? myOpenTasksCount() : item.badge === 'my-work-requests' ? myActionableWorkRequestsCount() : 0;
+        var cnt = item.badge === 'pending' ? pendingCount() : item.badge === 'backlog' ? backlogCount() : item.badge === 'my-tasks' ? myOpenTasksCount() : item.badge === 'my-work-requests' ? myAssignedWorkRequestsNewCount() : item.badge === 'my-requests' ? mySubmittedWorkRequestsNeedsInfoCount() : 0;
         var badge = cnt > 0 ? '<span class="nav-badge">' + cnt + '</span>' : '';
         h += '<div class="nav-item' + (currentPage === item.id ? ' active' : '') + '" onclick="nav(\'' + item.id + '\')">' +
              '<i class="ti ' + item.icon + '"></i>' + item.label + badge + '</div>';
@@ -1547,11 +1545,11 @@ var PAGE_RENDERERS = {
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks,
   'import-projects':pgImportProjects, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
   'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems,
-  'submit-work-request':pgSubmitWorkRequest, 'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests
+  'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests
 };
 
 function pageAllowedForRole(page, role) {
-  if (page === 'my-projects' || page === 'my-tasks') {
+  if (page === 'my-projects' || page === 'my-tasks' || page === 'my-work-requests') {
     return hasAssignedWork();
   }
   var defs = NAV_DEF[role] || [];
@@ -6489,10 +6487,10 @@ function refreshWorkRequestView() {
   renderNav();
   if (currentPage === 'my-work-requests') pgMyWorkRequests();
   else if (currentPage === 'admin-work-requests') pgAdminWorkRequests();
+  else if (currentPage === 'my-requests') pgMyRequests();
 }
 
-function pgSubmitWorkRequest() {
-  tb('Submit a Work Request');
+function renderSubmitWorkRequestForm() {
   var pool = individualResourceNames();
   var selectedResource = '';
   var pickerOpen = false;
@@ -6534,10 +6532,10 @@ function pgSubmitWorkRequest() {
     document.getElementById('wr-resource-field').innerHTML = resourceFieldInner();
   };
 
-  document.getElementById('content').innerHTML =
+  document.getElementById('submit-tab-body').innerHTML =
     '<div class="card" style="max-width:660px;margin:0 auto">' +
     '<div class="section-title mb-16">Submit a work request</div>' +
-    '<p class="text-muted" style="font-size:13px;margin-bottom:16px">A smaller ask for someone\'s time — not a full project. No approval needed; it goes straight to the person you pick.</p>' +
+    '<p class="text-muted" style="font-size:13px;margin-bottom:16px"><strong>What\'s a work request?</strong> A smaller ask for someone\'s time — a task or piece of work, not a full project with its own timeline, milestones, or team. No PMO review or approval needed; it goes straight to the person you pick, who can accept it, ask for more detail, or decline it.</p>' +
     '<div class="form-group"><div class="form-label">Title *</div><input type="text" id="wr-title" placeholder="What do you need?"></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="wr-desc" rows="4" placeholder="Any detail that will help them scope it"></textarea></div>' +
     '<div class="form-group"><div class="form-label">Who is this for? *</div><div id="wr-resource-field">' + resourceFieldInner() + '</div></div>' +
@@ -6567,11 +6565,13 @@ function pgSubmitWorkRequest() {
     D.workRequests.push(w);
     showToast('Work request submitted');
     renderNav();
-    nav('my-work-requests');
+    myRequestsPageState.tab = 'work';
+    nav('my-requests');
   };
 }
 
-var myWorkRequestsState = { tab: 'assigned' };
+var myWorkRequestsState = { tab: 'open', search: '' };
+var myRequestsPageState = { tab: 'project' };
 var workRequestLogOpen = {};
 
 function toggleWorkRequestLog(id) {
@@ -6579,70 +6579,89 @@ function toggleWorkRequestLog(id) {
   refreshWorkRequestView();
 }
 
+// Shared row renderer for a work request, used by both My Work Requests
+// (flavor 'assigned') and the Work Requests tab on My Requests (flavor
+// 'submitted') -- same shape, different actions and "other party" column.
+function workRequestRowHtml(w, flavor) {
+  var logOpenNow = !!workRequestLogOpen[w.id];
+  var logRow = '';
+  if (logOpenNow) {
+    var entries = (w.log && w.log.length) ? w.log.slice().reverse().map(function(e){
+      return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+    }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+    logRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+  }
+
+  var actions = '';
+  if (flavor === 'assigned') {
+    if (w.status === 'New') {
+      actions = '<button class="btn btn-sm btn-primary" onclick="openAcceptWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-check"></i> Accept</button>' +
+        '<button class="btn btn-sm" onclick="openSendBackModal(\'' + w.id + '\')"><i class="ti ti-corner-up-left"></i> Send back</button>' +
+        '<button class="btn btn-sm btn-danger" onclick="openDeclineWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-x"></i> Decline</button>';
+    } else if (w.status === 'Needs Info') {
+      actions = '<span class="text-muted" style="font-size:12px">Waiting on ' + w.requesterName + '</span>';
+    } else if (w.status === 'Accepted') {
+      actions = '<button class="btn btn-sm btn-success" onclick="completeWorkRequest(\'' + w.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>';
+    }
+  } else {
+    if (w.status === 'New') {
+      actions = '<span class="text-muted" style="font-size:12px">Waiting on ' + w.resourceName + '</span> <button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>';
+    } else if (w.status === 'Needs Info') {
+      actions = '<button class="btn btn-sm btn-primary" onclick="openReplyWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-message-2"></i> Reply</button>' +
+        '<button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>';
+    }
+  }
+
+  var detailLine = '';
+  if (w.status === 'Needs Info' && w.infoNote) detailLine += '<div style="font-size:12px;color:#555;margin-top:4px;background:#f5f5f3;padding:6px 8px;border-radius:6px">' + w.infoNote + '</div>';
+  if ((w.status === 'Accepted' || w.status === 'Complete') && w.estimatedCompletionDate) detailLine += '<div class="text-muted" style="font-size:12px;margin-top:4px">Est. ' + (w.estimatedHours!=null?w.estimatedHours + ' hrs, ':'') + 'due ' + w.estimatedCompletionDate + '</div>';
+
+  return '<tr><td class="bold">' + w.title + (w.description ? '<div style="font-size:12px;color:#777;margin-top:4px;font-weight:400">' + w.description + '</div>' : '') + detailLine + '</td>' +
+    '<td>' + (flavor==='assigned' ? w.requesterName : w.resourceName) + '</td>' +
+    '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span></td>' +
+    '<td class="text-muted">' + fmtDate(w.createdAt) + '</td>' +
+    '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + actions +
+      '<button class="btn btn-sm" title="History" onclick="toggleWorkRequestLog(\'' + w.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+    '</div></td></tr>' + logRow;
+}
+
 window.setMyWorkRequestsTab = function(t) { myWorkRequestsState.tab = t; pgMyWorkRequests(); };
+window.onMyWorkRequestsSearch = function(val) {
+  myWorkRequestsState.search = val;
+  pgMyWorkRequests();
+  var el = document.getElementById('my-wr-search');
+  if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+};
 
 function pgMyWorkRequests() {
   tb('My Work Requests');
   var st = myWorkRequestsState;
   var myId = D.myResourceId;
   var assigned = (D.workRequests || []).filter(function(w){ return myId && w.resourceId === myId; });
-  var submitted = (D.workRequests || []).filter(function(w){ return w.requesterId === D.currentProfile.id; });
+  var openList = assigned.filter(function(w){ return w.status === 'New' || w.status === 'Needs Info' || w.status === 'Accepted'; });
+  var doneList = assigned.filter(function(w){ return w.status === 'Complete' || w.status === 'Declined' || w.status === 'Withdrawn'; });
 
-  var tabsHtml = '<div class="tab-bar" style="margin-bottom:16px">' +
-    '<div class="tab' + (st.tab==='assigned'?' active':'') + '" onclick="setMyWorkRequestsTab(\'assigned\')">Assigned to me <span class="badge badge-gray">' + assigned.length + '</span></div>' +
-    '<div class="tab' + (st.tab==='submitted'?' active':'') + '" onclick="setMyWorkRequestsTab(\'submitted\')">Submitted by me <span class="badge badge-gray">' + submitted.length + '</span></div>' +
+  var currentList = (st.tab === 'open' ? openList : doneList).slice();
+  if (st.search) {
+    var q = st.search.toLowerCase();
+    currentList = currentList.filter(function(w){ return w.title.toLowerCase().indexOf(q) >= 0 || (w.requesterName||'').toLowerCase().indexOf(q) >= 0; });
+  }
+  currentList.sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); });
+
+  var rows = currentList.map(function(w){ return workRequestRowHtml(w, 'assigned'); }).join('');
+  var header = '<tr><th>Request</th><th>From</th><th>Status</th><th>Submitted</th><th></th></tr>';
+  var searchBar = '<div class="task-filter-bar"><input type="text" id="my-wr-search" placeholder="Search your work requests…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onMyWorkRequestsSearch(this.value)"></div>';
+
+  document.getElementById('content').innerHTML =
+    '<div class="tab-bar" style="margin-bottom:16px">' +
+      '<div class="tab' + (st.tab==='open'?' active':'') + '" onclick="setMyWorkRequestsTab(\'open\')">Open work requests <span class="badge badge-gray">' + openList.length + '</span></div>' +
+      '<div class="tab' + (st.tab==='done'?' active':'') + '" onclick="setMyWorkRequestsTab(\'done\')">Completed work requests <span class="badge badge-gray">' + doneList.length + '</span></div>' +
+    '</div>' +
+    '<div class="card">' + searchBar +
+    (currentList.length
+      ? '<div class="table-wrap"><table><thead>' + header + '</thead><tbody>' + rows + '</tbody></table></div>'
+      : '<div class="empty-state" style="padding:30px"><i class="ti ti-inbox"></i><p>' + (st.search ? 'No work requests match your search' : 'Nothing here yet') + '</p></div>') +
     '</div>';
-
-  var list = (st.tab === 'assigned' ? assigned : submitted).slice().sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); });
-
-  var rows = list.map(function(w) {
-    var logOpenNow = !!workRequestLogOpen[w.id];
-    var logRow = '';
-    if (logOpenNow) {
-      var entries = (w.log && w.log.length) ? w.log.slice().reverse().map(function(e){
-        return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
-      }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
-      logRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
-    }
-
-    var actions = '';
-    if (st.tab === 'assigned') {
-      if (w.status === 'New') {
-        actions = '<button class="btn btn-sm btn-primary" onclick="openAcceptWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-check"></i> Accept</button>' +
-          '<button class="btn btn-sm" onclick="openSendBackModal(\'' + w.id + '\')"><i class="ti ti-corner-up-left"></i> Send back</button>' +
-          '<button class="btn btn-sm btn-danger" onclick="openDeclineWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-x"></i> Decline</button>';
-      } else if (w.status === 'Needs Info') {
-        actions = '<span class="text-muted" style="font-size:12px">Waiting on ' + w.requesterName + '</span>';
-      } else if (w.status === 'Accepted') {
-        actions = '<button class="btn btn-sm btn-success" onclick="completeWorkRequest(\'' + w.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>';
-      }
-    } else {
-      if (w.status === 'New') {
-        actions = '<span class="text-muted" style="font-size:12px">Waiting on ' + w.resourceName + '</span> <button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>';
-      } else if (w.status === 'Needs Info') {
-        actions = '<button class="btn btn-sm btn-primary" onclick="openReplyWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-message-2"></i> Reply</button>';
-      }
-    }
-
-    var detailLine = '';
-    if (w.status === 'Needs Info' && w.infoNote) detailLine += '<div style="font-size:12px;color:#555;margin-top:4px;background:#f5f5f3;padding:6px 8px;border-radius:6px">' + w.infoNote + '</div>';
-    if ((w.status === 'Accepted' || w.status === 'Complete') && w.estimatedCompletionDate) detailLine += '<div class="text-muted" style="font-size:12px;margin-top:4px">Est. ' + (w.estimatedHours!=null?w.estimatedHours + ' hrs, ':'') + 'due ' + w.estimatedCompletionDate + '</div>';
-
-    return '<tr><td class="bold">' + w.title + (w.description ? '<div style="font-size:12px;color:#777;margin-top:4px;font-weight:400">' + w.description + '</div>' : '') + detailLine + '</td>' +
-      '<td>' + (st.tab==='assigned' ? w.requesterName : w.resourceName) + '</td>' +
-      '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span></td>' +
-      '<td class="text-muted">' + fmtDate(w.createdAt) + '</td>' +
-      '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + actions +
-        '<button class="btn btn-sm" title="History" onclick="toggleWorkRequestLog(\'' + w.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
-      '</div></td></tr>' + logRow;
-  }).join('');
-
-  var header = '<tr><th>Request</th><th>' + (st.tab==='assigned'?'From':'Assigned to') + '</th><th>Status</th><th>Submitted</th><th></th></tr>';
-
-  document.getElementById('content').innerHTML = tabsHtml +
-    (list.length
-      ? '<div class="card"><div class="table-wrap"><table><thead>' + header + '</thead><tbody>' + rows + '</tbody></table></div></div>'
-      : '<div class="empty-state" style="padding:30px"><i class="ti ti-inbox"></i><p>Nothing here yet</p></div>');
 }
 
 function openAcceptWorkRequestModal(id) {
@@ -7353,6 +7372,19 @@ function capacityDetailBarHtml(entry, windowStart, totalMonths) {
     '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '">' + (isEstimate ? 'Estimate' : (p.phase||'')) + '</div></div></div>';
 }
 
+// Work requests have no date range to place on the Gantt-style bars above,
+// so the expanded detail lists them as plain rows instead -- same .tl-row
+// shell as capacityDetailBarHtml, just without a positioned bar.
+function capacityWorkRequestDetailRowHtml(w) {
+  return '<div class="tl-row"><div class="tl-label" title="' + w.title + '">' + w.title + '</div>' +
+    '<div class="tl-wrap" style="display:flex;align-items:center;gap:8px;padding-left:8px">' +
+    '<span class="badge ' + workRequestStatusBadgeClass(w.status) + '" style="font-size:11px">' + w.status + '</span>' +
+    '<span class="text-muted" style="font-size:11px">from ' + w.requesterName + '</span>' +
+    (w.estimatedHours != null ? '<span class="text-muted" style="font-size:11px">' + w.estimatedHours + ' hrs</span>' : '') +
+    (w.estimatedCompletionDate ? '<span class="text-muted" style="font-size:11px">due ' + w.estimatedCompletionDate + '</span>' : '') +
+    '</div></div>';
+}
+
 function capacityResourceRowHtml(r, months, windowStart, indent) {
   var placed = resourcePlacedProjects(r);
   var combinedTotal = resourceCombinedProjectIds(r).allIds.length;
@@ -7365,9 +7397,16 @@ function capacityResourceRowHtml(r, months, windowStart, indent) {
   var detail = '';
   if (expanded) {
     var bars = placed.map(function(x){ return capacityDetailBarHtml(x, windowStart, months.length); }).join('');
+    var openWR = r.type === 'individual' ? resourceOpenWorkRequests(r) : [];
     detail = '<div style="padding:10px 0 4px 0">' +
       (bars || '<span class="text-muted" style="font-size:12px">No placed projects in this window</span>') +
       (unplacedCount > 0 ? '<div class="text-muted" style="font-size:11px;margin-top:6px">+' + unplacedCount + ' more assigned but not shown (on hold, completed, or missing a schedule/estimate)</div>' : '') +
+      (r.type === 'individual'
+        ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee">' +
+          '<div style="font-size:11px;color:#999;margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em">Work requests</div>' +
+          (openWR.length ? openWR.map(capacityWorkRequestDetailRowHtml).join('') : '<span class="text-muted" style="font-size:12px">No open work requests</span>') +
+          '</div>'
+        : '') +
       '</div>';
   }
   // Work requests are only ever assigned to individuals, kept as a plain
@@ -7680,8 +7719,21 @@ async function saveResource(rid) {
 
 // ── Stakeholder: Submit ────────────────────────────────────────────────────────
 
+var submitPageState = { tab: 'project' };
+window.setSubmitTab = function(t) { submitPageState.tab = t; pgSubmit(); };
+
 function pgSubmit() {
   tb('Submit a Request');
+  var st = submitPageState;
+  var tabsHtml = '<div class="tab-bar" style="margin-bottom:16px;max-width:660px;margin-left:auto;margin-right:auto">' +
+    '<div class="tab' + (st.tab==='project'?' active':'') + '" onclick="setSubmitTab(\'project\')">Project Request</div>' +
+    '<div class="tab' + (st.tab==='work'?' active':'') + '" onclick="setSubmitTab(\'work\')">Work Request</div>' +
+    '</div>';
+  document.getElementById('content').innerHTML = tabsHtml + '<div id="submit-tab-body"></div>';
+  if (st.tab === 'project') renderSubmitProjectRequestForm(); else renderSubmitWorkRequestForm();
+}
+
+function renderSubmitProjectRequestForm() {
   var buOpts = '<option value="">— Select —</option>' + BUSINESS_UNITS.map(function(v){ return '<option>' + v + '</option>'; }).join('');
   var selectedTags = [];
   var selectedTeam = [];
@@ -7705,9 +7757,10 @@ function pgSubmit() {
       '</div>'
     : '<div class="form-group"><div class="form-label">What\'s the expected value? *</div><div class="form-sub">Describe the benefit in your own words.</div><textarea id="f-value-desc" rows="3" placeholder="e.g. Saves the team several hours a week on manual reconciliation"></textarea></div>';
 
-  document.getElementById('content').innerHTML =
+  document.getElementById('submit-tab-body').innerHTML =
     '<div class="card" style="max-width:660px;margin:0 auto">' +
     '<div class="section-title mb-16">New project request</div>' +
+    '<p class="text-muted" style="font-size:13px;margin-bottom:16px"><strong>What\'s a project request?</strong> A full-scale project — its own timeline, milestones, team, and budget. Goes through PMO review, and once approved gets scheduled into Backlog, Planned, or Active. Use this for meaningful, multi-step initiatives, not a quick ask for someone\'s time (that\'s a Work Request, on the other tab).</p>' +
     '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="f-title" placeholder="e.g. Customer onboarding redesign"></div>' +
     '<div class="form-group"><div class="form-label">Business Unit *</div><select id="f-bu">' + buOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="f-sponsor" placeholder="Optional"></div>' +
@@ -7824,6 +7877,7 @@ function pgSubmit() {
     });
     showToast('Request submitted successfully');
     renderNav();
+    myRequestsPageState.tab = 'project';
     nav('my-requests');
   };
 }
@@ -7831,9 +7885,27 @@ function pgSubmit() {
 // ── Stakeholder: My Requests ────────────────────────────────────────────────────
 
 var myRequestsState = { search: '', sort: 'date', dir: 'desc', filters: { businessUnit:[], priority:[], status:[] }, openFilter: null };
+var myWorkRequestsSubmittedState = { search: '' };
+
+window.setMyRequestsTopTab = function(t) { myRequestsPageState.tab = t; pgMyRequests(); };
 
 function pgMyRequests() {
   tb('My Requests');
+  var top = myRequestsPageState;
+  var me = currentUser() || 'Current User';
+  var projectCount = D.requests.filter(function(r){ return r.submitter === me; }).length;
+  var workCount = (D.workRequests || []).filter(function(w){ return w.requesterId === D.currentProfile.id; }).length;
+
+  var tabsHtml = '<div class="tab-bar" style="margin-bottom:16px">' +
+    '<div class="tab' + (top.tab==='project'?' active':'') + '" onclick="setMyRequestsTopTab(\'project\')">Project Requests <span class="badge badge-gray">' + projectCount + '</span></div>' +
+    '<div class="tab' + (top.tab==='work'?' active':'') + '" onclick="setMyRequestsTopTab(\'work\')">Work Requests <span class="badge badge-gray">' + workCount + '</span></div>' +
+  '</div>';
+
+  document.getElementById('content').innerHTML = tabsHtml + '<div id="my-requests-body"></div>';
+  if (top.tab === 'project') renderMyProjectRequests(); else renderMySubmittedWorkRequests();
+}
+
+function renderMyProjectRequests() {
   var st = myRequestsState;
   var me = currentUser() || 'Current User';
   var allMine = D.requests.filter(function(r){ return r.submitter === me; });
@@ -7865,7 +7937,7 @@ function pgMyRequests() {
 
   html += searchBoxHtml(st.search, 'Search requests by title…', 'my-requests-search', 'onMyRequestsSearch');
 
-  if (!allMine.length) { html += '<div class="empty-state"><i class="ti ti-inbox"></i><p>No requests yet</p></div>'; document.getElementById('content').innerHTML = html; return; }
+  if (!allMine.length) { html += '<div class="empty-state"><i class="ti ti-inbox"></i><p>No project requests yet</p></div>'; document.getElementById('my-requests-body').innerHTML = html; return; }
 
   html += '<div class="card"><div class="table-wrap"><table><thead><tr>' +
     '<th class="sortable-th" onclick="setMyReqSort(\'title\')">Title ' + arrow('title') + '</th>' +
@@ -7886,13 +7958,13 @@ function pgMyRequests() {
         '</div></td></tr>';
     }).join('') : '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px">No requests match these filters</td></tr>') + '</tbody></table></div></div>';
 
-  document.getElementById('content').innerHTML = html;
+  document.getElementById('my-requests-body').innerHTML = html;
   window.onMyRequestsSearch = function(v) {
-    st.search = v; pgMyRequests();
+    st.search = v; renderMyProjectRequests();
     var el = document.getElementById('my-requests-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
-  window.setMyReqSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgMyRequests(); };
+  window.setMyReqSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } renderMyProjectRequests(); };
   window.toggleMyReqFilter = function(col) {
     var labelMap = { businessUnit:'Business Unit', priority:'Priority', status:'Status' };
     var choicesMap = { businessUnit:businessUnitChoices, priority:priorityChoices, status:statusChoices };
@@ -7900,7 +7972,7 @@ function pgMyRequests() {
       function() { return st.filters[col]; },
       function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
       function() { st.filters[col] = []; },
-      pgMyRequests
+      renderMyProjectRequests
     );
   };
   window.viewLinkedProject = function(pid) { goToProject(pid); };
@@ -7909,7 +7981,40 @@ function pgMyRequests() {
     var r = D.requests.find(function(x){ return x.id===rid; });
     var result = await sb.from('requests').update({ status: 'Revoked' }).eq('id', rid);
     if (result.error) { showToast('Could not revoke: ' + result.error.message); return; }
-    r.status = 'Revoked'; showToast('Request revoked'); pgMyRequests(); renderNav();
+    r.status = 'Revoked'; showToast('Request revoked'); renderMyProjectRequests(); renderNav();
+  };
+}
+
+function renderMySubmittedWorkRequests() {
+  var st = myWorkRequestsSubmittedState;
+  var mine = (D.workRequests || []).filter(function(w){ return w.requesterId === D.currentProfile.id; });
+
+  var displayed = mine.slice();
+  if (st.search) {
+    var q = st.search.toLowerCase();
+    displayed = displayed.filter(function(w){ return w.title.toLowerCase().indexOf(q) >= 0 || (w.resourceName||'').toLowerCase().indexOf(q) >= 0; });
+  }
+  displayed.sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); });
+
+  var searchBar = searchBoxHtml(st.search, 'Search work requests by title…', 'my-wr-submitted-search', 'onMyWorkRequestsSubmittedSearch');
+
+  if (!mine.length) {
+    document.getElementById('my-requests-body').innerHTML = searchBar + '<div class="empty-state"><i class="ti ti-inbox"></i><p>No work requests yet</p></div>';
+    return;
+  }
+
+  var rows = displayed.map(function(w){ return workRequestRowHtml(w, 'submitted'); }).join('');
+  var header = '<tr><th>Request</th><th>Assigned to</th><th>Status</th><th>Submitted</th><th></th></tr>';
+
+  document.getElementById('my-requests-body').innerHTML = searchBar +
+    (displayed.length
+      ? '<div class="card"><div class="table-wrap"><table><thead>' + header + '</thead><tbody>' + rows + '</tbody></table></div></div>'
+      : '<div class="empty-state" style="padding:20px"><i class="ti ti-search"></i><p>No work requests match your search</p></div>');
+
+  window.onMyWorkRequestsSubmittedSearch = function(v) {
+    st.search = v; renderMySubmittedWorkRequests();
+    var el = document.getElementById('my-wr-submitted-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
 }
 

@@ -61,16 +61,16 @@ Manage the roster of **individuals** and **teams** (tabs at the top). For an ind
 
 A team can be assigned to a project directly (separately from its individual members each being assigned) — this matters for how the Capacity page reads team workload, below.
 
-An individual's row also shows a **Work requests** column — a plain-text count of their open (Accepted, not yet Complete) work requests, with total estimated hours if any have been given. Teams don't get this column, since work requests are always assigned to an individual, never a team.
+An individual's row also shows a **Work requests** column — a plain-text count of their open (New, Needs Info, or Accepted) work requests, with total estimated hours for any that have been given one. Teams don't get this column, since work requests are always assigned to an individual, never a team.
 
 ## Capacity
 
 A month-by-month timeline showing how loaded each individual or team is, so you can see who's about to be slammed vs. who's freeing up. Switch between **Individuals** and **Teams** tabs — these are always shown separately, never blended together.
 
 - Each resource is a row, colored per month by how many projects overlap that month (free / 1 / 2 / 3+), using the same color scale throughout.
-- Click a row to expand it into the actual project bars for that resource.
+- Click a row to expand it into the actual project bars for that resource, plus — for an individual — a **Work requests** section underneath listing their open work requests (title, status, requester, estimated hours, and due date), the same expand action as projects.
 - A project counts toward the timeline if it's **Active or Planned with real dates**, or **Backlog with a target quarter estimate**. Projects on Hold, Completed, or Backlog with no estimate at all aren't placeable and don't count — if a resource has any of those, you'll see a small note when you expand their row rather than a silent gap.
-- **Teams** show their own row for projects assigned directly to the team, plus one row per member underneath for that person's own individual load — these are intentionally kept separate rather than combined into one number, since "the team has 2 direct projects" and "one member is swamped" are different facts worth seeing independently.
+- **Teams** show their own row for projects assigned directly to the team, plus one row per member underneath for that person's own individual load — these are intentionally kept separate rather than combined into one number, since "the team has 2 direct projects" and "one member is swamped" are different facts worth seeing independently. Teams don't have a work requests section of their own, since work requests are always assigned to an individual.
 - Rows are sorted by how many projects are actually shown on the timeline (most first), then alphabetically as a tiebreaker (last name for individuals, team name for teams).
 - This page is read-only — to actually change a project's schedule or target quarter, use Future Planning or the project's own Edit modal.
 - Each individual row also carries a trailing **Work requests** column, separate from the month grid — it's a plain hours/count summary of that person's open work requests, not folded into the project-count coloring, since work requests measure hours rather than project overlap. Teams don't get this column.
