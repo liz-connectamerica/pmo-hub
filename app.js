@@ -118,6 +118,7 @@ async function loadWorkRequests() {
       resourceId: r.resource_id, resourceName: resourceNameById[r.resource_id] || '(no longer a resource)',
       status: r.status, infoNote: r.info_note,
       estimatedHours: r.estimated_hours, estimatedCompletionDate: r.estimated_completion_date,
+      requestedCompletionDate: r.requested_completion_date,
       acceptedAt: r.accepted_at, completedAt: r.completed_at, createdAt: r.created_at,
       log: mapLog(logByWorkRequest[r.id])
     };
@@ -6538,6 +6539,7 @@ function renderSubmitWorkRequestForm() {
     '<p class="text-muted" style="font-size:13px;margin-bottom:16px"><strong>What\'s a work request?</strong> A smaller ask for someone\'s time — a task or piece of work, not a full project with its own timeline, milestones, or team. No PMO review or approval needed; it goes straight to the person you pick, who can accept it, ask for more detail, or decline it.</p>' +
     '<div class="form-group"><div class="form-label">Title *</div><input type="text" id="wr-title" placeholder="What do you need?"></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="wr-desc" rows="4" placeholder="Any detail that will help them scope it"></textarea></div>' +
+    '<div class="form-group"><div class="form-label">Requested completion date</div><div class="form-sub">When would you ideally like this done by? Whoever accepts it can keep this date or suggest a different one.</div><input type="date" id="wr-req-date"></div>' +
     '<div class="form-group"><div class="form-label">Who is this for? *</div><div id="wr-resource-field">' + resourceFieldInner() + '</div></div>' +
     '<div class="modal-footer" style="border-top:none;padding-top:0;justify-content:flex-start"><button class="btn btn-primary" id="wr-submit"><i class="ti ti-send"></i> Submit</button></div>' +
     '</div>';
@@ -6545,13 +6547,15 @@ function renderSubmitWorkRequestForm() {
   document.getElementById('wr-submit').onclick = async function() {
     var title = document.getElementById('wr-title').value.trim();
     var desc = document.getElementById('wr-desc').value.trim();
+    var reqDate = document.getElementById('wr-req-date').value || null;
     if (!title) { showToast('Title required'); return; }
     if (!selectedResource) { showToast('Choose who this work request is for'); return; }
     var resource = resolveResource(selectedResource);
     if (!resource) { showToast('Could not find that resource'); return; }
     var btn = document.getElementById('wr-submit'); btn.disabled = true;
     var result = await sb.from('work_requests').insert({
-      title: title, description: desc || null, requester_id: D.currentProfile.id, resource_id: resource.id, status: 'New'
+      title: title, description: desc || null, requester_id: D.currentProfile.id, resource_id: resource.id, status: 'New',
+      requested_completion_date: reqDate
     }).select().single();
     if (result.error) { showToast('Could not submit: ' + result.error.message); btn.disabled = false; return; }
     var w = {
@@ -6559,9 +6563,10 @@ function renderSubmitWorkRequestForm() {
       requesterId: D.currentProfile.id, requesterName: D.currentProfile.display_name,
       resourceId: resource.id, resourceName: resource.name,
       status: 'New', infoNote: null, estimatedHours: null, estimatedCompletionDate: null,
+      requestedCompletionDate: reqDate,
       acceptedAt: null, completedAt: null, createdAt: new Date().toISOString(), log: []
     };
-    w.log.push(await writeLog('work_request_log', 'work_request_id', w.id, 'Submitted', ''));
+    w.log.push(await writeLog('work_request_log', 'work_request_id', w.id, 'Submitted', reqDate ? 'Requested completion: ' + reqDate : ''));
     D.workRequests.push(w);
     showToast('Work request submitted');
     renderNav();
@@ -6579,17 +6584,27 @@ function toggleWorkRequestLog(id) {
   refreshWorkRequestView();
 }
 
+// A requested date the assignee changed on Accept is worth flagging back to
+// the requester -- no separate DB flag needed, just compare the two dates.
+function workRequestCompletionCellHtml(w) {
+  if (!w.estimatedCompletionDate) return '<span class="text-muted">—</span>';
+  var adjusted = w.requestedCompletionDate && w.requestedCompletionDate !== w.estimatedCompletionDate;
+  return w.estimatedCompletionDate + (adjusted ? '<div class="text-muted" style="font-size:11px;margin-top:2px">you asked for ' + w.requestedCompletionDate + '</div>' : '');
+}
+
 // Shared row renderer for a work request, used by both My Work Requests
 // (flavor 'assigned') and the Work Requests tab on My Requests (flavor
 // 'submitted') -- same shape, different actions and "other party" column.
-function workRequestRowHtml(w, flavor) {
+function workRequestRowHtml(w, flavor, opts) {
+  opts = opts || {};
+  var colCount = opts.colCount || 5;
   var logOpenNow = !!workRequestLogOpen[w.id];
   var logRow = '';
   if (logOpenNow) {
     var entries = (w.log && w.log.length) ? w.log.slice().reverse().map(function(e){
       return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
     }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
-    logRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+    logRow = '<tr><td colspan="' + colCount + '" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
   }
 
   var actions = '';
@@ -6614,11 +6629,18 @@ function workRequestRowHtml(w, flavor) {
 
   var detailLine = '';
   if (w.status === 'Needs Info' && w.infoNote) detailLine += '<div style="font-size:12px;color:#555;margin-top:4px;background:#f5f5f3;padding:6px 8px;border-radius:6px">' + w.infoNote + '</div>';
-  if ((w.status === 'Accepted' || w.status === 'Complete') && w.estimatedCompletionDate) detailLine += '<div class="text-muted" style="font-size:12px;margin-top:4px">Est. ' + (w.estimatedHours!=null?w.estimatedHours + ' hrs, ':'') + 'due ' + w.estimatedCompletionDate + '</div>';
+  if (flavor === 'assigned' && w.status === 'New' && w.requestedCompletionDate) detailLine += '<div class="text-muted" style="font-size:12px;margin-top:4px">Requested completion: ' + w.requestedCompletionDate + '</div>';
+  if (w.status === 'Accepted' || w.status === 'Complete') {
+    var bits = [];
+    if (w.estimatedHours != null) bits.push(w.estimatedHours + ' hrs');
+    if (!opts.showCompletionColumn && w.estimatedCompletionDate) bits.push('due ' + w.estimatedCompletionDate);
+    if (bits.length) detailLine += '<div class="text-muted" style="font-size:12px;margin-top:4px">Est. ' + bits.join(', ') + '</div>';
+  }
 
   return '<tr><td class="bold">' + w.title + (w.description ? '<div style="font-size:12px;color:#777;margin-top:4px;font-weight:400">' + w.description + '</div>' : '') + detailLine + '</td>' +
     '<td>' + (flavor==='assigned' ? w.requesterName : w.resourceName) + '</td>' +
     '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span></td>' +
+    (opts.showCompletionColumn ? '<td class="text-muted">' + workRequestCompletionCellHtml(w) + '</td>' : '') +
     '<td class="text-muted">' + fmtDate(w.createdAt) + '</td>' +
     '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' + actions +
       '<button class="btn btn-sm" title="History" onclick="toggleWorkRequestLog(\'' + w.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
@@ -6667,8 +6689,9 @@ function pgMyWorkRequests() {
 function openAcceptWorkRequestModal(id) {
   var w = D.workRequests.find(function(x){ return x.id === id; });
   showModal('<div class="modal-title">Accept "' + w.title + '" <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    (w.requestedCompletionDate ? '<p class="text-muted" style="font-size:13px;margin-bottom:12px">' + w.requesterName + ' asked for this by <strong>' + w.requestedCompletionDate + '</strong>. Keep that date below or pick a different one.</p>' : '') +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Estimated hours *</div><input type="number" id="awr-hours" min="0" step="0.5" placeholder="e.g. 4"></div>' +
-    '<div class="form-group"><div class="form-label">Estimated completion date *</div><input type="date" id="awr-date"></div></div>' +
+    '<div class="form-group"><div class="form-label">Estimated completion date *</div><input type="date" id="awr-date" value="' + (w.requestedCompletionDate || '') + '"></div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="awr-save"><i class="ti ti-check"></i> Accept</button></div>');
   document.getElementById('awr-save').onclick = async function() {
@@ -6704,7 +6727,9 @@ async function acceptWorkRequest(id, hours, date) {
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
   w.status = 'Accepted'; w.estimatedHours = hours; w.estimatedCompletionDate = date; w.acceptedAt = new Date().toISOString();
   w.log = w.log || [];
-  w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Accepted', 'Est. ' + hours + ' hrs, due ' + date));
+  var acceptDetail = 'Est. ' + hours + ' hrs, due ' + date;
+  if (w.requestedCompletionDate && w.requestedCompletionDate !== date) acceptDetail += ' (requested ' + w.requestedCompletionDate + ')';
+  w.log.push(await writeLog('work_request_log', 'work_request_id', id, 'Accepted', acceptDetail));
   showToast('Accepted');
   refreshWorkRequestView();
 }
@@ -7885,7 +7910,7 @@ function renderSubmitProjectRequestForm() {
 // ── Stakeholder: My Requests ────────────────────────────────────────────────────
 
 var myRequestsState = { search: '', sort: 'date', dir: 'desc', filters: { businessUnit:[], priority:[], status:[] }, openFilter: null };
-var myWorkRequestsSubmittedState = { search: '' };
+var myWorkRequestsSubmittedState = { search: '', sort: 'submitted', dir: 'desc', filterAssignee: [] };
 
 window.setMyRequestsTopTab = function(t) { myRequestsPageState.tab = t; pgMyRequests(); };
 
@@ -7989,13 +8014,6 @@ function renderMySubmittedWorkRequests() {
   var st = myWorkRequestsSubmittedState;
   var mine = (D.workRequests || []).filter(function(w){ return w.requesterId === D.currentProfile.id; });
 
-  var displayed = mine.slice();
-  if (st.search) {
-    var q = st.search.toLowerCase();
-    displayed = displayed.filter(function(w){ return w.title.toLowerCase().indexOf(q) >= 0 || (w.resourceName||'').toLowerCase().indexOf(q) >= 0; });
-  }
-  displayed.sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); });
-
   var searchBar = searchBoxHtml(st.search, 'Search work requests by title…', 'my-wr-submitted-search', 'onMyWorkRequestsSubmittedSearch');
 
   if (!mine.length) {
@@ -8003,18 +8021,55 @@ function renderMySubmittedWorkRequests() {
     return;
   }
 
-  var rows = displayed.map(function(w){ return workRequestRowHtml(w, 'submitted'); }).join('');
-  var header = '<tr><th>Request</th><th>Assigned to</th><th>Status</th><th>Submitted</th><th></th></tr>';
+  var assigneeChoices = []; mine.forEach(function(w){ if (w.resourceName && assigneeChoices.indexOf(w.resourceName) < 0) assigneeChoices.push(w.resourceName); }); assigneeChoices.sort();
+
+  var displayed = mine.slice();
+  if (st.search) {
+    var q = st.search.toLowerCase();
+    displayed = displayed.filter(function(w){ return w.title.toLowerCase().indexOf(q) >= 0 || (w.resourceName||'').toLowerCase().indexOf(q) >= 0; });
+  }
+  if (st.filterAssignee.length) displayed = displayed.filter(function(w){ return st.filterAssignee.indexOf(w.resourceName) >= 0; });
+
+  displayed.sort(function(a, b) {
+    var av, bv;
+    if (st.sort === 'title') { av = (a.title||'').toLowerCase(); bv = (b.title||'').toLowerCase(); }
+    else if (st.sort === 'resourceName') { av = (a.resourceName||'').toLowerCase(); bv = (b.resourceName||'').toLowerCase(); }
+    else if (st.sort === 'completion') { av = a.estimatedCompletionDate || ''; bv = b.estimatedCompletionDate || ''; }
+    else { av = a.createdAt || ''; bv = b.createdAt || ''; }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+
+  var rows = displayed.map(function(w){ return workRequestRowHtml(w, 'submitted', { colCount: 6, showCompletionColumn: true }); }).join('');
+  var header = '<tr>' +
+    '<th class="sortable-th" onclick="setMyWrSubmittedSort(\'title\')">Request ' + arrow('title') + '</th>' +
+    '<th class="sortable-th"><span onclick="setMyWrSubmittedSort(\'resourceName\')">Assigned to ' + arrow('resourceName') + '</span>' +
+      '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMyWrAssigneeFilter()"><i class="ti ti-filter' + (st.filterAssignee.length>0?' th-filter-active':'') + '"></i></button></th>' +
+    '<th>Status</th>' +
+    '<th class="sortable-th" onclick="setMyWrSubmittedSort(\'completion\')">Est. completion ' + arrow('completion') + '</th>' +
+    '<th class="sortable-th" onclick="setMyWrSubmittedSort(\'submitted\')">Submitted ' + arrow('submitted') + '</th>' +
+    '<th></th></tr>';
 
   document.getElementById('my-requests-body').innerHTML = searchBar +
     (displayed.length
       ? '<div class="card"><div class="table-wrap"><table><thead>' + header + '</thead><tbody>' + rows + '</tbody></table></div></div>'
-      : '<div class="empty-state" style="padding:20px"><i class="ti ti-search"></i><p>No work requests match your search</p></div>');
+      : '<div class="empty-state" style="padding:20px"><i class="ti ti-search"></i><p>No work requests match your search or filters</p></div>');
 
   window.onMyWorkRequestsSubmittedSearch = function(v) {
     st.search = v; renderMySubmittedWorkRequests();
     var el = document.getElementById('my-wr-submitted-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.setMyWrSubmittedSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } renderMySubmittedWorkRequests(); };
+  window.toggleMyWrAssigneeFilter = function() {
+    openFilterModal('Assigned to', assigneeChoices,
+      function() { return st.filterAssignee; },
+      function(val) { var i = st.filterAssignee.indexOf(val); if (i>=0) st.filterAssignee.splice(i,1); else st.filterAssignee.push(val); },
+      function() { st.filterAssignee = []; },
+      renderMySubmittedWorkRequests
+    );
   };
 }
 
