@@ -683,6 +683,32 @@ function openTagPicker(currentTagNames, onSave, allowCreate) {
   render();
 }
 
+// Applies a tag-picker's add/remove diff against a join table, returning
+// the tags actually persisted (not just newTags) plus any that failed --
+// e.g. a write silently blocked while "viewing as" someone (see the sb.from
+// wrapper up top) previously still got reported as a successful save,
+// since nothing checked these inserts/deletes for an error.
+async function applyTagDiff(table, idColumn, idValue, oldTags, newTags) {
+  var toAdd = newTags.filter(function(n){ return oldTags.indexOf(n) < 0; });
+  var toRemove = oldTags.filter(function(n){ return newTags.indexOf(n) < 0; });
+  var current = oldTags.slice();
+  var failed = [];
+  for (var i = 0; i < toAdd.length; i++) {
+    var tag = D.tags.find(function(t){ return t.name === toAdd[i]; });
+    if (!tag) continue;
+    var record = { tag_id: tag.id }; record[idColumn] = idValue;
+    var result = await sb.from(table).insert(record);
+    if (result.error) failed.push(toAdd[i]); else current.push(toAdd[i]);
+  }
+  for (var j = 0; j < toRemove.length; j++) {
+    var tagR = D.tags.find(function(t){ return t.name === toRemove[j]; });
+    if (!tagR) continue;
+    var result2 = await sb.from(table).delete().eq(idColumn, idValue).eq('tag_id', tagR.id);
+    if (result2.error) failed.push(toRemove[j]); else current = current.filter(function(n){ return n !== toRemove[j]; });
+  }
+  return { tags: current, failed: failed };
+}
+
 function openFilterModal(label, choices, getSelected, toggleValue, clearAll, rerenderPage) {
   function render() {
     var selected = getSelected();
@@ -859,19 +885,9 @@ function openTaskTagPicker(pid2, taskId) {
   var pr = D.projects.find(function(x){ return x.id === pid2; });
   var tk = pr.tasks.find(function(x){ return x.id === taskId; });
   openTagPicker(tk.tags || [], async function(newTags) {
-    var oldTags = tk.tags || [];
-    var toAdd = newTags.filter(function(n){ return oldTags.indexOf(n) < 0; });
-    var toRemove = oldTags.filter(function(n){ return newTags.indexOf(n) < 0; });
-    for (var i = 0; i < toAdd.length; i++) {
-      var tag = D.tags.find(function(t){ return t.name === toAdd[i]; });
-      if (tag) await sb.from('task_tags').insert({ task_id: taskId, tag_id: tag.id });
-    }
-    for (var j = 0; j < toRemove.length; j++) {
-      var tagR = D.tags.find(function(t){ return t.name === toRemove[j]; });
-      if (tagR) await sb.from('task_tags').delete().eq('task_id', taskId).eq('tag_id', tagR.id);
-    }
-    tk.tags = newTags;
-    showToast('Tags updated');
+    var result = await applyTagDiff('task_tags', 'task_id', taskId, tk.tags || [], newTags);
+    tk.tags = result.tags;
+    showToast(result.failed.length ? 'Could not save: ' + result.failed.join(', ') : 'Tags updated');
     refreshTaskView();
   });
 }
@@ -3965,19 +3981,9 @@ function pgProjectDetail(pid, tab) {
   window.openProjectTagPicker = function(pid2) {
     var pr = D.projects.find(function(x){ return x.id === pid2; });
     openTagPicker(pr.tags || [], async function(newTags) {
-      var oldTags = pr.tags || [];
-      var toAdd = newTags.filter(function(n){ return oldTags.indexOf(n) < 0; });
-      var toRemove = oldTags.filter(function(n){ return newTags.indexOf(n) < 0; });
-      for (var i = 0; i < toAdd.length; i++) {
-        var tag = D.tags.find(function(t){ return t.name === toAdd[i]; });
-        if (tag) await sb.from('project_tags').insert({ project_id: pid2, tag_id: tag.id });
-      }
-      for (var j = 0; j < toRemove.length; j++) {
-        var tagR = D.tags.find(function(t){ return t.name === toRemove[j]; });
-        if (tagR) await sb.from('project_tags').delete().eq('project_id', pid2).eq('tag_id', tagR.id);
-      }
-      pr.tags = newTags;
-      showToast('Tags updated');
+      var result = await applyTagDiff('project_tags', 'project_id', pid2, pr.tags || [], newTags);
+      pr.tags = result.tags;
+      showToast(result.failed.length ? 'Could not save: ' + result.failed.join(', ') : 'Tags updated');
       if (document.getElementById('ptab-content')) document.getElementById('ptab-content').innerHTML = tabC('overview');
     });
   };
@@ -7852,19 +7858,9 @@ function editResource(rid) {
   window.openResourceTagPicker = function(rid2) {
     var r = D.resources.find(function(x){ return x.id === rid2; });
     openTagPicker(r.tags || [], async function(newTags) {
-      var oldTags = r.tags || [];
-      var toAdd = newTags.filter(function(n){ return oldTags.indexOf(n) < 0; });
-      var toRemove = oldTags.filter(function(n){ return newTags.indexOf(n) < 0; });
-      for (var i = 0; i < toAdd.length; i++) {
-        var tag = D.tags.find(function(t){ return t.name === toAdd[i]; });
-        if (tag) await sb.from('resource_tags').insert({ resource_id: rid2, tag_id: tag.id });
-      }
-      for (var j = 0; j < toRemove.length; j++) {
-        var tagR = D.tags.find(function(t){ return t.name === toRemove[j]; });
-        if (tagR) await sb.from('resource_tags').delete().eq('resource_id', rid2).eq('tag_id', tagR.id);
-      }
-      r.tags = newTags;
-      showToast('Tags updated');
+      var result = await applyTagDiff('resource_tags', 'resource_id', rid2, r.tags || [], newTags);
+      r.tags = result.tags;
+      showToast(result.failed.length ? 'Could not save: ' + result.failed.join(', ') : 'Tags updated');
       editResource(rid2);
     });
   };
