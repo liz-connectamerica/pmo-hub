@@ -3884,12 +3884,16 @@ function pgProjectDetail(pid, tab) {
       }
       candidatePeople = candidatePeople.slice().sort(byRecommendedThenName);
       candidateTeams = candidateTeams.slice().sort(byRecommendedThenName);
+      function teamManagerSuffix(name) {
+        var res2 = D.resources.find(function(r){ return r.name === name; });
+        return (res2 && res2.type === 'team' && res2.managerName) ? ' <span class="text-muted" style="font-size:11px">Manager: ' + res2.managerName + '</span>' : '';
+      }
       var teamRows = p.team.length
         ? p.team.map(function(m,i){
             var isTeam = teamNames().indexOf(m) >= 0;
             var ini = m.split(' ').map(function(x){ return x[0]; }).join('');
             return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0ede8">' +
-              '<div style="display:flex;align-items:center;gap:10px">' + (isTeam ? '<i class="ti ti-users" style="color:#185FA5"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:13px">' + m + '</span></div>' +
+              '<div style="display:flex;align-items:center;gap:10px">' + (isTeam ? '<i class="ti ti-users" style="color:#185FA5"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:13px">' + m + '</span>' + (isTeam ? teamManagerSuffix(m) : '') + '</div>' +
               (editable ? '<button class="btn btn-sm btn-danger" onclick="removeTeamMemberDirect(\'' + p.id + '\',\'' + m.replace(/'/g,"\\'") + '\')"><i class="ti ti-x"></i></button>' : '') +
               '</div>';
           }).join('')
@@ -3897,7 +3901,7 @@ function pgProjectDetail(pid, tab) {
       var addCandidates = addKind === 'team' ? candidateTeams : candidatePeople;
       var addRows = addCandidates.map(function(n){
         var rec = sharesTag(n);
-        return '<div class="team-add-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + n + (rec ? ' <span class="badge badge-teal" style="font-size:10px">Recommended</span>' : '') + '</span><button class="btn btn-sm" onclick="addTeamMemberDirect(\'' + p.id + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button></div>';
+        return '<div class="team-add-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + n + (addKind==='team' ? teamManagerSuffix(n) : '') + (rec ? ' <span class="badge badge-teal" style="font-size:10px">Recommended</span>' : '') + '</span><button class="btn btn-sm" onclick="addTeamMemberDirect(\'' + p.id + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button></div>';
       }).join('');
       return '<div class="card"><div class="section-title">Team members</div>' + teamRows + '</div>' +
         (editable ? '<div class="card mt-16"><div class="section-title">Add a team member</div>' +
