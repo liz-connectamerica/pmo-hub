@@ -4056,7 +4056,7 @@ function pgProjectDetail(pid, tab) {
         '<th><span>Status</span>' + filterIcon('status', st.fStatus.length>0) + '</th>' +
         '<th>Dates</th><th></th></tr>';
 
-      return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddTask(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add task</button>' : '') +
+      return (editable ? '<button class="btn btn-primary btn-sm mb-12" style="margin-right:8px" onclick="openAddTask(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add task</button>' : '') +
         taskTimelineBlock(p.id, list) +
         searchBar +
         (p.tasks.length
