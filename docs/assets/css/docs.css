@@ -190,16 +190,6 @@ pre.mermaid {
 
 /* Changelog page */
 
-.changelog-scope-note {
-  font-size: 13px;
-  color: #6b6b6b;
-  background: #f5f5f5;
-  border: 1px solid #e8e8e5;
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin: 16px 0 24px;
-}
-
 .changelog-search {
   position: relative;
   margin-bottom: 20px;

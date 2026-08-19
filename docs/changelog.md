@@ -6,7 +6,6 @@ permalink: /changelog/
 
 A dated log of feature and fix changes to PMO Hub, newest first. Each entry is titled by the area of the app it changed. Use the search box below to filter by keyword (area name, feature, or anything in the description).
 
-<p class="changelog-scope-note">This log starts <strong>August 10, 2026</strong> — the point from which individual changes were tracked with descriptive detail. Earlier history exists only as undifferentiated bulk uploads and can't be reliably broken out by feature.</p>
 
 <div class="changelog-search">
   <input type="search" id="changelog-search-input" placeholder="Search changes… (e.g. &quot;tasks&quot;, &quot;baseline&quot;, &quot;sponsor&quot;)" autocomplete="off" aria-label="Search the changelog">
