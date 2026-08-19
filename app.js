@@ -272,7 +272,10 @@ async function loadAllProjects() {
     sb.from('project_categories').select('*'),
     sb.from('project_dependencies').select('*'),
     sb.from('task_baselines').select('*'),
-    sb.from('task_baseline_entries').select('*')
+    sb.from('task_baseline_entries').select('*'),
+    sb.from('todo_items').select('*'),
+    sb.from('todo_comments').select('*'),
+    sb.from('todo_log').select('*')
   ]);
 
   for (var i = 0; i < results.length; i++) {
@@ -304,6 +307,9 @@ async function loadAllProjects() {
   var dependencyRows    = results[15].data || [];
   var baselineRows      = results[16].data || [];
   var baselineEntryRows = results[17].data || [];
+  var todoRows           = results[18].data || [];
+  var todoCommentRows    = results[19].data || [];
+  var todoLogRows        = results[20].data || [];
   var priorityRankByProj = {};
   priorityRankRows.forEach(function(r){ priorityRankByProj[r.project_id] = { rank: r.rank, isOverride: r.is_override }; });
 
@@ -334,6 +340,9 @@ async function loadAllProjects() {
   var docsByProj         = groupBy(docRows, 'project_id');
   var baselinesByProj    = groupBy(baselineRows, 'project_id');
   var baselineEntriesById = groupBy(baselineEntryRows, 'baseline_id');
+  var todosByProj        = groupBy(todoRows, 'project_id');
+  var todoCommentsByTodo = groupBy(todoCommentRows, 'todo_id');
+  var todoLogByTodo      = groupBy(todoLogRows, 'todo_id');
   var folderNameById     = {};
   folderRows.forEach(function(f){ folderNameById[f.id] = f.name; });
 
@@ -369,6 +378,18 @@ async function loadAllProjects() {
         }),
         checklist: (checklistByTask[t.id] || []).slice().sort(function(a,b){ return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0; }).map(function(c) {
           return { id: c.id, text: c.text, done: c.done };
+        })
+      };
+    });
+
+    var todos = (todosByProj[pr.id] || []).map(function(td) {
+      return {
+        id: td.id, title: td.title, description: td.description || '',
+        assignee: td.assignee_name || (td.assignee_id ? resourceNameById[td.assignee_id] : ''),
+        assigneeId: td.assignee_id, status: td.status, due: td.due_date,
+        log: mapLog(todoLogByTodo[td.id]),
+        comments: (todoCommentsByTodo[td.id] || []).map(function(c) {
+          return { id: c.id, text: c.body, author: c.author_name, date: ymd(c.created_at) };
         })
       };
     });
@@ -428,7 +449,7 @@ async function loadAllProjects() {
       valueConfidence: pr.value_confidence, costEstimate: pr.cost_estimate, costConfidence: pr.cost_confidence,
       priorityRank: priorityInfo ? priorityInfo.rank : null,
       priorityIsOverride: priorityInfo ? !!priorityInfo.isOverride : false,
-      milestones: milestones, tasks: tasks, raid: raid, baselines: baselines,
+      milestones: milestones, tasks: tasks, todos: todos, raid: raid, baselines: baselines,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
     };
   });
@@ -442,7 +463,10 @@ function myOpenTasksCount() {
   var myId = D.myResourceId;
   if (!myId) return 0;
   var count = 0;
-  D.projects.forEach(function(p){ p.tasks.forEach(function(t){ if (t.assigneeId === myId && t.status !== 'Done') count++; }); });
+  D.projects.forEach(function(p){
+    p.tasks.forEach(function(t){ if (t.assigneeId === myId && t.status !== 'Done') count++; });
+    p.todos.forEach(function(td){ if (td.assigneeId === myId && td.status !== 'Done') count++; });
+  });
   return count;
 }
 
@@ -743,7 +767,8 @@ function openFilterModal(label, choices, getSelected, toggleValue, clearAll, rer
 function refreshTaskView() {
   var m = location.hash.match(/^#\/project\/([^\/]+)/);
   if (m && document.getElementById('ptab-content')) {
-    pgProjectDetail(m[1], 'tasks');
+    var activeTabEl = document.querySelector('[id^="ptab-"].tab.active');
+    pgProjectDetail(m[1], activeTabEl ? activeTabEl.id.slice(5) : 'tasks');
   } else if (currentPage === 'my-tasks') {
     pgMyTasks();
   }
@@ -850,6 +875,84 @@ async function deleteComment(pid2, taskId, cid) {
   tk.comments = tk.comments.filter(function(x){ return x.id !== cid; });
   refreshTaskView();
   showToast('Comment deleted');
+}
+
+// To-Do items are the lightweight counterpart to Plan tasks -- action
+// items, follow-ups, access requests, reminders -- so they only carry an
+// Open/Done status (toggled directly, no completion-note prompt) plus a
+// description/comments/change-log, not the full scheduling machinery.
+async function toggleTodoDoneIcon(pid2, idx) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var td = pr.todos[idx];
+  if (!td) return;
+  var oldStatus = td.status;
+  var newStatus = oldStatus === 'Done' ? 'Open' : 'Done';
+  var result = await sb.from('todo_items').update({ status: newStatus }).eq('id', td.id);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  td.status = newStatus;
+  td.log = td.log || [];
+  td.log.push(await writeLog('todo_log', 'todo_id', td.id, 'Updated', 'Status: "' + oldStatus + '" → "' + newStatus + '"'));
+  refreshTaskView();
+  showToast(newStatus === 'Done' ? 'To-do marked done' : 'To-do reopened');
+}
+
+function toggleTodoDescription(pid2, todoId) {
+  var key = pid2 + '|' + todoId;
+  todoDescOpen[key] = !todoDescOpen[key];
+  refreshTaskView();
+}
+
+function toggleTodoComments(pid2, todoId) {
+  var key = pid2 + '|' + todoId;
+  todoCommentsOpen[key] = !todoCommentsOpen[key];
+  refreshTaskView();
+}
+
+async function addTodoComment(pid2, todoId) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var td = pr.todos.find(function(x){ return x.id === todoId; });
+  var el = document.getElementById('todo-cmt-input-' + todoId);
+  var text = el ? el.value.trim() : '';
+  if (!text) { showToast('Comment cannot be empty'); return; }
+  var result = await sb.from('todo_comments').insert({
+    todo_id: todoId, author_id: D.currentProfile.id, author_name: D.currentProfile.display_name, body: text
+  }).select().single();
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  td.comments = td.comments || [];
+  td.comments.push({ id: result.data.id, text: text, author: D.currentProfile.display_name, date: ymd(result.data.created_at) });
+  refreshTaskView();
+  showToast('Comment added');
+}
+
+async function openEditTodoComment(pid2, todoId, cid) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var td = pr.todos.find(function(x){ return x.id === todoId; });
+  var c = td.comments.find(function(x){ return x.id === cid; });
+  var text = prompt('Edit comment:', c.text);
+  if (text == null) return;
+  text = text.trim();
+  if (!text) { showToast('Comment cannot be empty'); return; }
+  var result = await sb.from('todo_comments').update({ body: text }).eq('id', cid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  c.text = text;
+  refreshTaskView();
+  showToast('Comment updated');
+}
+
+async function deleteTodoComment(pid2, todoId, cid) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var td = pr.todos.find(function(x){ return x.id === todoId; });
+  var result = await sb.from('todo_comments').delete().eq('id', cid);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  td.comments = td.comments.filter(function(x){ return x.id !== cid; });
+  refreshTaskView();
+  showToast('Comment deleted');
+}
+
+function toggleTodoLog(pid2, todoId) {
+  var key = pid2 + '|' + todoId;
+  todoLogOpen[key] = !todoLogOpen[key];
+  refreshTaskView();
 }
 
 function toggleTaskChecklist(pid2, taskId) {
@@ -1412,6 +1515,12 @@ function getTaskState(pid) {
   return taskViewState[pid];
 }
 
+var todoViewState = {};
+function getTodoState(pid) {
+  if (!todoViewState[pid]) todoViewState[pid] = { search:'', fAssignee:[], fStatus:[], openFilter:null };
+  return todoViewState[pid];
+}
+
 var raidLogOpen = {};
 var taskLogOpen = {};
 var milestoneLogOpen = {};
@@ -1422,6 +1531,9 @@ var taskBaselineSelected = {};
 var teamAddKind = {};
 var taskDescOpen = {};
 var taskOutlineCollapsed = {};
+var todoLogOpen = {};
+var todoCommentsOpen = {};
+var todoDescOpen = {};
 var raidSearchState = {};
 var docFolderState = {};
 var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fStatus:[], openFilter:null };
@@ -1452,7 +1564,7 @@ var allProjectsState = {
   openFilter: null
 };
 var tagAdminState = { expandedId: null };
-var myTasksState = { sort:'end', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
+var myTasksState = { kind:'plan', sort:'end', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var myProjectsPageState = { tab:'sponsor' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
@@ -1574,6 +1686,7 @@ function todayStr() { return new Date().toISOString().slice(0, 10); }
 
 function isProjectLate(p) { return !!(p.end && p.stage !== 'complete' && p.end < todayStr()); }
 function isTaskLate(t) { return !!(t.end && t.status !== 'Done' && t.end < todayStr()); }
+function isTodoLate(td) { return !!(td.due && td.status !== 'Done' && td.due < todayStr()); }
 function isMilestoneLate(m) { return !!(m.date && !m.done && m.date < todayStr()); }
 function isWorkRequestLate(w) {
   if (w.status === 'Accepted') return !!(w.estimatedCompletionDate && w.estimatedCompletionDate < todayStr());
@@ -3788,7 +3901,7 @@ function pgProjectDetail(pid, tab) {
   renderNav();
   var editable = canEdit(p);
   var isComplete = p.stage === 'complete';
-  var tbs = ['overview','team','milestones','tasks','raid','documentation','metadata','changelog'];
+  var tbs = ['overview','team','milestones','tasks','todos','raid','documentation','metadata','changelog'];
 
   function sortedMilestones() {
     return p.milestones.slice().sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
@@ -4078,6 +4191,91 @@ function pgProjectDetail(pid, tab) {
           ? (list.length ? '<table class="tasks-table"><thead>' + header + '</thead><tbody>' + trows + '</tbody></table>' : '<div class="empty-state" style="padding:30px"><i class="ti ti-search"></i><p>No tasks match your filters</p></div>')
           : '<div class="empty-state" style="padding:30px"><i class="ti ti-check"></i><p>No tasks yet</p></div>');
     }
+    if (t === 'todos') {
+      var tst = getTodoState(p.id);
+
+      var todoAssigneeChoices = [];
+      p.todos.forEach(function(td){ var lbl = td.assignee || 'Unassigned'; if (todoAssigneeChoices.indexOf(lbl) < 0) todoAssigneeChoices.push(lbl); });
+      var todoStatusChoices = ['Open','Done'];
+
+      function todoFilterIcon(col, active) {
+        return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleTodoFilterPanel(\'' + p.id + '\',\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
+      }
+
+      var todoSearchBar = '<div class="task-filter-bar">' +
+        '<input type="text" id="todo-search" placeholder="Search to-dos…" value="' + tst.search.replace(/"/g,'&quot;') + '" oninput="onTodoSearch(\'' + p.id + '\',this.value)">' +
+        '</div>';
+
+      var todoList = p.todos.slice();
+      if (tst.search) { var tq = tst.search.toLowerCase(); todoList = todoList.filter(function(td){ return td.title.toLowerCase().indexOf(tq) >= 0; }); }
+      if (tst.fAssignee.length) todoList = todoList.filter(function(td){ return tst.fAssignee.indexOf(td.assignee || 'Unassigned') >= 0; });
+      if (tst.fStatus.length) todoList = todoList.filter(function(td){ return tst.fStatus.indexOf(td.status) >= 0; });
+      todoList.sort(function(a, b) {
+        if ((a.status==='Done') !== (b.status==='Done')) return a.status==='Done' ? 1 : -1;
+        return (a.due || '9999-99-99').localeCompare(b.due || '9999-99-99');
+      });
+
+      var todoRows = todoList.map(function(td) {
+        var idx = p.todos.indexOf(td);
+        var myTodo = !!(td.assigneeId && D.myResourceId && td.assigneeId === D.myResourceId);
+        var canCheck = editable || myTodo;
+        var logKey = p.id + '|' + td.id;
+        var logOpenNow = !!todoLogOpen[logKey];
+        var logRow = '';
+        if (logOpenNow) {
+          var entries = (td.log && td.log.length) ? td.log.slice().reverse().map(function(e){
+            return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+          }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+          logRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+        }
+        var descKey = p.id + '|' + td.id;
+        var descOpenNow = !!todoDescOpen[descKey];
+        var descRow = '';
+        if (descOpenNow) {
+          descRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+            (td.description ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + td.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
+            '</div></td></tr>';
+        }
+        var todoComments = td.comments || [];
+        var cKey = p.id + '|' + td.id;
+        var cOpenNow = !!todoCommentsOpen[cKey];
+        var commentsRow = '';
+        if (cOpenNow) {
+          var commentEntries = todoComments.length ? todoComments.slice().reverse().map(function(c) {
+            var mine = c.author === actorName();
+            return '<div class="comment-item">' +
+              '<div class="comment-meta"><strong>' + c.author + '</strong> <span class="text-muted">' + c.date + '</span></div>' +
+              '<div class="comment-text">' + c.text + '</div>' +
+              ((editable || mine) ? '<div class="comment-actions"><button class="btn btn-sm" onclick="openEditTodoComment(\'' + p.id + '\',\'' + td.id + '\',\'' + c.id + '\')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTodoComment(\'' + p.id + '\',\'' + td.id + '\',\'' + c.id + '\')"><i class="ti ti-trash"></i></button></div>' : '') +
+              '</div>';
+          }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No comments yet</div>';
+          commentsRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+            commentEntries +
+            '<div class="comment-add-row"><textarea id="todo-cmt-input-' + td.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addTodoComment(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
+            '</div></td></tr>';
+        }
+        var doneIconHtml = '<i class="ti ' + (td.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;color:' + (td.status==='Done' ? '#1D9E75' : '#ccc') + (canCheck ? ';cursor:pointer' : '') + '"' +
+          (canCheck ? ' title="' + (td.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTodoDoneIcon(\'' + p.id + '\',' + idx + ')"' : '') + '></i>';
+        var titleCell = '<div style="display:flex;align-items:center;gap:8px">' + doneIconHtml + '<span style="font-size:13px' + (td.status==='Done' ? ';color:#999' : '') + '">' + td.title + '</span></div>';
+        return '<tr><td>' + titleCell + '</td><td' + (td.assignee ? '' : ' class="text-muted"') + '>' + (td.assignee || 'Unassigned') + '</td><td>' + bdg(td.status) + '</td>' +
+          '<td class="text-muted">' + (td.due || '—') + ' ' + lateBadgeHtml(isTodoLate(td)) + '</td>' +
+          '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
+          '<button class="btn btn-sm" title="Description" onclick="toggleTodoDescription(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
+          '<button class="btn btn-sm" title="Comments" onclick="toggleTodoComments(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (todoComments.length ? ' ' + todoComments.length : '') + '</button>' +
+          '<button class="btn btn-sm" title="Change log" onclick="toggleTodoLog(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+          (editable ? '<button class="btn btn-sm" onclick="openEditTodo(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTodo(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
+          '</div></td></tr>' + descRow + commentsRow + logRow;
+      }).join('');
+
+      var todoHeader = '<tr><th>To-Do</th><th><span>Assignee</span>' + todoFilterIcon('assignee', tst.fAssignee.length>0) + '</th>' +
+        '<th><span>Status</span>' + todoFilterIcon('status', tst.fStatus.length>0) + '</th><th>Due</th><th></th></tr>';
+
+      return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddTodo(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add to-do</button>' : '') +
+        todoSearchBar +
+        (p.todos.length
+          ? (todoList.length ? '<table class="tasks-table"><thead>' + todoHeader + '</thead><tbody>' + todoRows + '</tbody></table>' : '<div class="empty-state" style="padding:30px"><i class="ti ti-search"></i><p>No to-dos match your filters</p></div>')
+          : '<div class="empty-state" style="padding:30px"><i class="ti ti-list-check"></i><p>No to-dos yet — action items, follow-ups, access requests, and other lightweight work go here.</p></div>');
+    }
     if (t === 'raid') {
       var raidQ = (raidSearchState[p.id] || '').toLowerCase();
       function matchesSearch(item) { return !raidQ || (item.desc||'').toLowerCase().indexOf(raidQ) >= 0; }
@@ -4187,7 +4385,7 @@ function pgProjectDetail(pid, tab) {
   }
 
   var tabsHtml = tbs.map(function(t) {
-    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t === 'changelog' ? 'Change Log' : t) + '</div>';
+    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'tasks' ? 'Plan' : t === 'todos' ? 'To-Do' : t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t === 'changelog' ? 'Change Log' : t) + '</div>';
   }).join('');
 
   tb(p.name);
@@ -4396,6 +4594,42 @@ function pgProjectDetail(pid, tab) {
       pr.tasks.forEach(function(tk){ var lbl = taskAssigneeLabel(tk); if (choices.indexOf(lbl) < 0) choices.push(lbl); });
     } else {
       choices = ['To Do','In Progress','On Hold','Done'];
+    }
+    openFilterModal(label, choices,
+      function() { return col === 'assignee' ? s.fAssignee : s.fStatus; },
+      function(val) { var arr = col === 'assignee' ? s.fAssignee : s.fStatus; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { if (col === 'assignee') s.fAssignee = []; else s.fStatus = []; },
+      refreshTaskView
+    );
+  };
+  window.openAddTodo  = function(pid2){ openTodoModal(pid2, null); };
+  window.openEditTodo = function(pid2,idx){ openTodoModal(pid2, idx); };
+  window.deleteTodo = async function(pid2,idx){
+    var pr = D.projects.find(function(x){return x.id===pid2;});
+    var td = pr.todos[idx];
+    if (!confirm('Delete "' + td.title + '"?')) return;
+    var result = await sb.from('todo_items').delete().eq('id', td.id);
+    if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+    pr.todos = pr.todos.filter(function(x){ return x.id !== td.id; });
+    document.getElementById('ptab-content').innerHTML = tabC('todos');
+    showToast('To-do deleted');
+  };
+  window.onTodoSearch = function(pid2, val) {
+    getTodoState(pid2).search = val;
+    refreshTaskView();
+    var el = document.getElementById('todo-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.toggleTodoFilterPanel = function(pid2, col) {
+    var s = getTodoState(pid2);
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var label = col === 'assignee' ? 'Assignee' : 'Status';
+    var choices;
+    if (col === 'assignee') {
+      choices = [];
+      pr.todos.forEach(function(td){ var lbl = td.assignee || 'Unassigned'; if (choices.indexOf(lbl) < 0) choices.push(lbl); });
+    } else {
+      choices = ['Open','Done'];
     }
     openFilterModal(label, choices,
       function() { return col === 'assignee' ? s.fAssignee : s.fStatus; },
@@ -4810,6 +5044,119 @@ function openTaskModal(pid, idx, opts) {
     }
     await recalcAndPersist(p);
     showToast(idx!=null?'Task updated':'Task added'); closeModal(); if (window.switchPTab) window.switchPTab('tasks');
+  };
+}
+
+// To-do assignment is individual-only -- unlike task assignees, a to-do
+// has no meaning assigned to a team, since its whole point is to show up
+// in one specific person's My Tasks.
+function openTodoModal(pid, idx) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var todo = idx != null ? p.todos[idx] : null;
+  var pool = canEdit(p) ? individualResourceNames() : p.team.filter(function(n){ return individualResourceNames().indexOf(n) >= 0; });
+  if (todo && todo.assignee && pool.indexOf(todo.assignee) < 0) pool = pool.concat([todo.assignee]);
+
+  var selectedAssignee = todo ? (todo.assignee || '') : '';
+  var assigneePickerOpen = false;
+  var assigneeQuery = '';
+
+  function assigneePanelHtml() {
+    var q = assigneeQuery.trim().toLowerCase();
+    var matches = pool.filter(function(n){ return n.toLowerCase().indexOf(q) >= 0; });
+    var rows = matches.map(function(n){
+      var isInactiveCurrent = todo && todo.assignee === n && individualResourceNames().indexOf(n) < 0;
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">' +
+        '<span style="font-size:13px"><i class="ti ti-user" style="margin-right:6px;color:#888"></i>' + n + (isInactiveCurrent ? ' <span class="text-muted">(no longer a resource)</span>' : '') + '</span>' +
+        '<button type="button" class="btn btn-sm" onclick="window.__todoAssigneePick(\'' + n.replace(/'/g,"\\'") + '\')">Select</button>' +
+        '</div>';
+    }).join('');
+    return '<div style="border:1px solid #e8e8e5;border-radius:8px;padding:10px;margin-top:8px">' +
+      '<button type="button" class="btn btn-sm" style="margin-bottom:8px" onclick="window.__todoAssigneePick(\'\')"><i class="ti ti-user-off"></i> Unassigned</button>' +
+      '<input type="text" id="tdm-assignee-search" placeholder="Search people…" value="' + assigneeQuery.replace(/"/g,'&quot;') + '" oninput="window.__todoAssigneeSearch(this.value)">' +
+      '<div style="max-height:180px;overflow-y:auto;margin-top:8px">' + (rows || '<span class="text-muted" style="font-size:13px">No matches</span>') + '</div>' +
+      '</div>';
+  }
+
+  function assigneeFieldInner() {
+    return '<div style="display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:13px' + (selectedAssignee ? '' : ';color:#999') + '">' + (selectedAssignee || 'Unassigned') + '</span>' +
+      '<button type="button" class="btn btn-sm" onclick="window.__todoAssigneeToggle()">' + (selectedAssignee ? 'Change' : 'Assign') + '</button>' +
+      '</div>' +
+      (assigneePickerOpen ? assigneePanelHtml() : '');
+  }
+
+  window.__todoAssigneeToggle = function() {
+    assigneePickerOpen = !assigneePickerOpen;
+    assigneeQuery = '';
+    document.getElementById('tdm-assignee-field').innerHTML = assigneeFieldInner();
+    var s = document.getElementById('tdm-assignee-search');
+    if (s) s.focus();
+  };
+  window.__todoAssigneeSearch = function(val) {
+    assigneeQuery = val;
+    document.getElementById('tdm-assignee-field').innerHTML = assigneeFieldInner();
+    var s = document.getElementById('tdm-assignee-search');
+    if (s) { s.focus(); s.selectionStart = s.selectionEnd = s.value.length; }
+  };
+  window.__todoAssigneePick = function(name) {
+    selectedAssignee = name;
+    assigneePickerOpen = false;
+    document.getElementById('tdm-assignee-field').innerHTML = assigneeFieldInner();
+  };
+
+  showModal('<div class="modal-title">' + (todo?'Edit to-do':'Add to-do') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Title *</div><input type="text" id="tdm-title" value="' + (todo?todo.title:'') + '" placeholder="e.g. Request VPN access for new hire"></div>' +
+    '<div class="form-group"><div class="form-label">Description</div><textarea id="tdm-desc" rows="3" placeholder="Details, context, links…">' + (todo ? (todo.description||'') : '') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Assignee</div><div id="tdm-assignee-field">' + assigneeFieldInner() + '</div></div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">Status</div><select id="tdm-status">' +
+      '<option' + (!todo||todo.status==='Open'?' selected':'') + '>Open</option>' +
+      '<option' + (todo&&todo.status==='Done'?' selected':'') + '>Done</option></select></div>' +
+    '<div class="form-group"><div class="form-label">Due date</div><input type="date" id="tdm-due" value="' + (todo?(todo.due||''):'') + '"></div></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="tdm-save"><i class="ti ti-check"></i> ' + (todo?'Save changes':'Add to-do') + '</button></div>');
+
+  document.getElementById('tdm-save').onclick = async function() {
+    var title = document.getElementById('tdm-title').value.trim();
+    if (!title) { showToast('Title required'); return; }
+    var newVals = {
+      title: title, description: document.getElementById('tdm-desc').value.trim(),
+      assignee: selectedAssignee, status: document.getElementById('tdm-status').value,
+      due: document.getElementById('tdm-due').value
+    };
+    var btn = document.getElementById('tdm-save'); btn.disabled = true;
+    var assigneeResource = resolveResource(newVals.assignee);
+
+    if (idx != null) {
+      var fieldLabels = {title:'Title',description:'Description',assignee:'Assignee',status:'Status',due:'Due date'};
+      var changes = [];
+      ['title','description','assignee','status','due'].forEach(function(f){
+        if ((todo[f]||'') !== (newVals[f]||'')) changes.push(fieldLabels[f] + ': "' + (todo[f]||'—') + '" → "' + (newVals[f]||'—') + '"');
+      });
+      var result = await sb.from('todo_items').update({
+        title: newVals.title, description: newVals.description || null, assignee_id: assigneeResource ? assigneeResource.id : null,
+        assignee_name: newVals.assignee || null, status: newVals.status, due_date: newVals.due || null
+      }).eq('id', todo.id);
+      if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+      todo.title = newVals.title; todo.description = newVals.description; todo.assignee = newVals.assignee; todo.assigneeId = assigneeResource ? assigneeResource.id : null;
+      todo.status = newVals.status; todo.due = newVals.due;
+      todo.log = todo.log || [];
+      if (changes.length) todo.log.push(await writeLog('todo_log', 'todo_id', todo.id, 'Updated', changes.join('; ')));
+      await ensureOnTeam(p, assigneeResource);
+    } else {
+      var insertResult = await sb.from('todo_items').insert({
+        project_id: pid, title: newVals.title, description: newVals.description || null, assignee_id: assigneeResource ? assigneeResource.id : null,
+        assignee_name: newVals.assignee || null, status: newVals.status, due_date: newVals.due || null
+      }).select().single();
+      if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
+      var td2 = {
+        id: insertResult.data.id, title: newVals.title, description: newVals.description, assignee: newVals.assignee,
+        assigneeId: assigneeResource ? assigneeResource.id : null, status: newVals.status, due: newVals.due, log: [], comments: []
+      };
+      td2.log.push(await writeLog('todo_log', 'todo_id', td2.id, 'Created', ''));
+      p.todos.push(td2);
+      await ensureOnTeam(p, assigneeResource);
+    }
+    showToast(idx!=null?'To-do updated':'To-do added'); closeModal(); if (window.switchPTab) window.switchPTab('todos');
   };
 }
 
@@ -8977,6 +9324,25 @@ function pgMyProjectsResource() {
 
 function pgMyTasks() {
   tb('My Tasks');
+  var st = myTasksState;
+  if (st.kind === 'todo') return renderMyTodos();
+  return renderMyPlanTasks();
+}
+
+function myTasksKindTabsHtml() {
+  var st = myTasksState;
+  return '<div class="tab-bar" style="margin-bottom:16px">' +
+    '<div class="tab' + (st.kind==='plan'?' active':'') + '" onclick="setMyTasksKind(\'plan\')">Plan</div>' +
+    '<div class="tab' + (st.kind==='todo'?' active':'') + '" onclick="setMyTasksKind(\'todo\')">To-Do</div>' +
+  '</div>';
+}
+
+window.setMyTasksKind = function(k) {
+  myTasksState.kind = k; myTasksState.tab = 'open'; myTasksState.search = ''; myTasksState.fProject = []; myTasksState.fStatus = [];
+  pgMyTasks();
+};
+
+function renderMyPlanTasks() {
   var me = D.myResourceId;
   var allTasks = [];
   D.projects.forEach(function(p) {
@@ -9109,6 +9475,7 @@ function pgMyTasks() {
   var searchBar = '<div class="task-filter-bar"><input type="text" id="my-tasks-search" placeholder="Search your tasks…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onMyTasksSearch(this.value)"></div>';
 
   document.getElementById('content').innerHTML =
+    myTasksKindTabsHtml() +
     '<div class="tab-bar" style="margin-bottom:16px">' +
       '<div class="tab' + (st.tab==='open'?' active':'') + '" onclick="setMyTasksTab(\'open\')">Open tasks <span class="badge badge-gray">' + openTasksList.length + '</span></div>' +
       '<div class="tab' + (st.tab==='done'?' active':'') + '" onclick="setMyTasksTab(\'done\')">Completed tasks <span class="badge badge-gray">' + doneTasksList.length + '</span></div>' +
@@ -9124,6 +9491,152 @@ function pgMyTasks() {
           '<tbody>' + rows + '</tbody></table></div>'
         : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No tasks match your search/filters</p></div>')
       : '<div class="empty-state" style="padding:24px"><i class="ti ti-check"></i><p>' + (st.tab==='open' ? 'No open tasks — nice work!' : 'No completed tasks yet') + '</p></div>') +
+    '</div>';
+  renderNav();
+
+  window.setMyTasksTab = function(t) { myTasksState.tab = t; pgMyTasks(); };
+  window.setMyTasksSort = function(col) {
+    if (myTasksState.sort === col) myTasksState.dir = myTasksState.dir === 'asc' ? 'desc' : 'asc'; else { myTasksState.sort = col; myTasksState.dir = 'asc'; }
+    pgMyTasks();
+  };
+  window.onMyTasksSearch = function(val) {
+    myTasksState.search = val;
+    pgMyTasks();
+    var el = document.getElementById('my-tasks-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.toggleMyTasksFilterPanel = function(col) {
+    var label = col === 'fProject' ? 'Project' : 'Status';
+    var choices = col === 'fProject' ? projectChoices : statusChoices;
+    openFilterModal(label, choices,
+      function() { return myTasksState[col] || []; },
+      function(val) { var arr = myTasksState[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { myTasksState[col] = []; },
+      pgMyTasks
+    );
+  };
+}
+
+function renderMyTodos() {
+  var me = D.myResourceId;
+  var allTodos = [];
+  D.projects.forEach(function(p) {
+    p.todos.forEach(function(td, idx) {
+      if (td.assigneeId === me) allTodos.push({ todo: td, project: p, idx: idx });
+    });
+  });
+
+  var st = myTasksState;
+  var openList = allTodos.filter(function(it){ return it.todo.status !== 'Done'; });
+  var doneList = allTodos.filter(function(it){ return it.todo.status === 'Done'; });
+  var currentList = st.tab === 'open' ? openList : doneList;
+
+  var projectChoices = []; allTodos.forEach(function(it){ if (projectChoices.indexOf(it.project.name) < 0) projectChoices.push(it.project.name); });
+  var statusChoices = ['Open','Done'];
+
+  var displayed = currentList.slice();
+  if (st.search) {
+    var q = st.search.toLowerCase();
+    displayed = displayed.filter(function(it){ return it.todo.title.toLowerCase().indexOf(q) >= 0 || it.project.name.toLowerCase().indexOf(q) >= 0; });
+  }
+  if (st.fProject.length) displayed = displayed.filter(function(it){ return st.fProject.indexOf(it.project.name) >= 0; });
+  if (st.fStatus.length) displayed = displayed.filter(function(it){ return st.fStatus.indexOf(it.todo.status) >= 0; });
+  if (st.sort) {
+    displayed.sort(function(a, b) {
+      var av, bv;
+      if (st.sort === 'task') { av = a.todo.title.toLowerCase(); bv = b.todo.title.toLowerCase(); }
+      else if (st.sort === 'project') { av = a.project.name.toLowerCase(); bv = b.project.name.toLowerCase(); }
+      else if (st.sort === 'status') { av = a.todo.status || ''; bv = b.todo.status || ''; }
+      else { av = a.todo.due || ''; bv = b.todo.due || ''; }
+      if (av < bv) return st.dir === 'asc' ? -1 : 1;
+      if (av > bv) return st.dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+  function filterIcon(col, choices) {
+    if (!choices.length) return '';
+    var isActive = (st[col]||[]).length > 0;
+    return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMyTasksFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (isActive?' th-filter-active':'') + '"></i></button>';
+  }
+
+  var rows = displayed.map(function(item) {
+    var p = item.project, td = item.todo, idx = item.idx;
+    var canEditThis = canEdit(p);
+
+    var descKey = p.id + '|' + td.id;
+    var descOpenNow = !!todoDescOpen[descKey];
+    var descRow = '';
+    if (descOpenNow) {
+      descRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+        (td.description ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + td.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
+        '</div></td></tr>';
+    }
+
+    var logKey = p.id + '|' + td.id;
+    var logOpenNow = !!todoLogOpen[logKey];
+    var logRow = '';
+    if (logOpenNow) {
+      var entries = (td.log && td.log.length) ? td.log.slice().reverse().map(function(e){
+        return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+      }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+      logRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+    }
+
+    var comments = td.comments || [];
+    var cKey = p.id + '|' + td.id;
+    var cOpenNow = !!todoCommentsOpen[cKey];
+    var commentsRow = '';
+    if (cOpenNow) {
+      var commentEntries = comments.length ? comments.slice().reverse().map(function(c) {
+        var mine = c.author === D.currentProfile.display_name;
+        return '<div class="comment-item">' +
+          '<div class="comment-meta"><strong>' + c.author + '</strong> <span class="text-muted">' + c.date + '</span></div>' +
+          '<div class="comment-text">' + c.text + '</div>' +
+          ((canEditThis || mine) ? '<div class="comment-actions"><button class="btn btn-sm" onclick="openEditTodoComment(\'' + p.id + '\',\'' + td.id + '\',\'' + c.id + '\')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTodoComment(\'' + p.id + '\',\'' + td.id + '\',\'' + c.id + '\')"><i class="ti ti-trash"></i></button></div>' : '') +
+          '</div>';
+      }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No comments yet</div>';
+      commentsRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+        commentEntries +
+        '<div class="comment-add-row"><textarea id="todo-cmt-input-' + td.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addTodoComment(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
+        '</div></td></tr>';
+    }
+
+    var doneIconHtml = '<i class="ti ' + (td.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;cursor:pointer;color:' + (td.status==='Done' ? '#1D9E75' : '#ccc') + '" title="' + (td.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTodoDoneIcon(\'' + p.id + '\',' + idx + ')"></i>';
+    var titleCell = '<div style="display:flex;align-items:center;gap:8px">' + doneIconHtml + '<span style="font-size:13px' + (td.status==='Done' ? ';color:#999' : '') + '">' + td.title + '</span></div>';
+
+    return '<tr><td>' + titleCell + '</td>' +
+      '<td>' + p.name + ' ' +
+        '<button class="btn btn-sm" title="View project overview" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-info-circle"></i></button> ' +
+        '<button class="btn btn-sm" title="View this project\'s to-do list" onclick="goToProject(\'' + p.id + '\',\'todos\')"><i class="ti ti-list"></i></button></td>' +
+      '<td>' + bdg(td.status) + '</td><td class="text-muted">' + (td.due || '—') + ' ' + lateBadgeHtml(isTodoLate(td)) + '</td>' +
+      '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
+        '<button class="btn btn-sm" title="Description" onclick="toggleTodoDescription(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
+        '<button class="btn btn-sm" title="Comments" onclick="toggleTodoComments(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (comments.length ? ' ' + comments.length : '') + '</button>' +
+        '<button class="btn btn-sm" title="Change log" onclick="toggleTodoLog(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+      '</div></td></tr>' + descRow + logRow + commentsRow;
+  }).join('');
+
+  var searchBar = '<div class="task-filter-bar"><input type="text" id="my-tasks-search" placeholder="Search your to-dos…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onMyTasksSearch(this.value)"></div>';
+
+  document.getElementById('content').innerHTML =
+    myTasksKindTabsHtml() +
+    '<div class="tab-bar" style="margin-bottom:16px">' +
+      '<div class="tab' + (st.tab==='open'?' active':'') + '" onclick="setMyTasksTab(\'open\')">Open to-dos <span class="badge badge-gray">' + openList.length + '</span></div>' +
+      '<div class="tab' + (st.tab==='done'?' active':'') + '" onclick="setMyTasksTab(\'done\')">Completed to-dos <span class="badge badge-gray">' + doneList.length + '</span></div>' +
+    '</div>' +
+    '<div class="card"><div class="section-title">' + (st.tab==='open'?'Open to-dos':'Completed to-dos') + '</div>' + searchBar +
+    (currentList.length
+      ? (displayed.length
+        ? '<div class="table-wrap"><table><thead><tr>' +
+          '<th class="sortable-th" onclick="setMyTasksSort(\'task\')">To-Do ' + arrow('task') + '</th>' +
+          '<th class="sortable-th"><span onclick="setMyTasksSort(\'project\')">Project ' + arrow('project') + '</span>' + filterIcon('fProject', projectChoices) + '</th>' +
+          '<th class="sortable-th"><span onclick="setMyTasksSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('fStatus', statusChoices) + '</th>' +
+          '<th class="sortable-th" onclick="setMyTasksSort(\'end\')">Due ' + arrow('end') + '</th><th></th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table></div>'
+        : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No to-dos match your search/filters</p></div>')
+      : '<div class="empty-state" style="padding:24px"><i class="ti ti-check"></i><p>' + (st.tab==='open' ? 'No open to-dos — nice work!' : 'No completed to-dos yet') + '</p></div>') +
     '</div>';
   renderNav();
 
