@@ -270,7 +270,9 @@ async function loadAllProjects() {
     sb.from('documents').select('*'),
     sb.from('resources').select('id, name, user_id'),
     sb.from('project_categories').select('*'),
-    sb.from('project_dependencies').select('*')
+    sb.from('project_dependencies').select('*'),
+    sb.from('task_baselines').select('*'),
+    sb.from('task_baseline_entries').select('*')
   ]);
 
   for (var i = 0; i < results.length; i++) {
@@ -300,6 +302,8 @@ async function loadAllProjects() {
   var resourceMiniRows  = results[13].data || [];
   var categoryRows      = results[14].data || [];
   var dependencyRows    = results[15].data || [];
+  var baselineRows      = results[16].data || [];
+  var baselineEntryRows = results[17].data || [];
   var priorityRankByProj = {};
   priorityRankRows.forEach(function(r){ priorityRankByProj[r.project_id] = { rank: r.rank, isOverride: r.is_override }; });
 
@@ -328,6 +332,8 @@ async function loadAllProjects() {
   var raidLogByItem      = groupBy(raidLogRows, 'raid_item_id');
   var foldersByProj      = groupBy(folderRows, 'project_id');
   var docsByProj         = groupBy(docRows, 'project_id');
+  var baselinesByProj    = groupBy(baselineRows, 'project_id');
+  var baselineEntriesById = groupBy(baselineEntryRows, 'baseline_id');
   var folderNameById     = {};
   folderRows.forEach(function(f){ folderNameById[f.id] = f.name; });
 
@@ -356,6 +362,7 @@ async function loadAllProjects() {
         assignee: t.assignee_name || (t.assignee_id ? resourceNameById[t.assignee_id] : ''),
         assigneeId: t.assignee_id, status: t.status, start: t.start_date, end: t.end_date,
         parentTaskId: t.parent_task_id, position: t.position,
+        duration: t.duration_days, dependsOnTaskId: t.depends_on_task_id,
         log: mapLog(taskLogByTask[t.id]),
         comments: (commentsByTask[t.id] || []).map(function(c) {
           return { id: c.id, text: c.body, author: c.author_name, date: ymd(c.created_at) };
@@ -394,6 +401,14 @@ async function loadAllProjects() {
 
     var priorityInfo = priorityRankByProj[pr.id] || null;
 
+    var baselines = (baselinesByProj[pr.id] || []).slice()
+      .sort(function(a,b){ return (a.created_at||'').localeCompare(b.created_at||''); })
+      .map(function(b) {
+        var entries = {};
+        (baselineEntriesById[b.id] || []).forEach(function(e){ entries[e.task_id] = { start: e.start_date, end: e.end_date }; });
+        return { id: b.id, label: b.label, createdAt: b.created_at, entries: entries };
+      });
+
     return {
       id: pr.id, name: pr.name,
       owner: pr.owner_name || (pr.owner_id ? resourceNameById[pr.owner_id] : ''), ownerId: pr.owner_id,
@@ -413,7 +428,7 @@ async function loadAllProjects() {
       valueConfidence: pr.value_confidence, costEstimate: pr.cost_estimate, costConfidence: pr.cost_confidence,
       priorityRank: priorityInfo ? priorityInfo.rank : null,
       priorityIsOverride: priorityInfo ? !!priorityInfo.isOverride : false,
-      milestones: milestones, tasks: tasks, raid: raid,
+      milestones: milestones, tasks: tasks, raid: raid, baselines: baselines,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
     };
   });
@@ -937,14 +952,70 @@ function taskTimelineWindow(pid2) {
   return { start: today, end: new Date(today.getFullYear(), today.getMonth() + months, today.getDate()) };
 }
 
+// Baselines snapshot every task's start/end at a point in time so the plan
+// can be compared against how execution actually played out. Each "Set
+// Baseline" creates a new, permanent row -- past baselines are never
+// overwritten, so a project can be compared against its kickoff plan AND
+// last quarter's replan side by side.
+async function createTaskBaseline(pid2, label) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var result = await sb.from('task_baselines').insert({ project_id: pid2, label: label || null }).select().single();
+  if (result.error) { showToast('Could not create baseline: ' + result.error.message); return; }
+  var baselineId = result.data.id;
+  var entries = pr.tasks.filter(function(t){ return t.start || t.end; }).map(function(t){
+    return { baseline_id: baselineId, task_id: t.id, start_date: t.start || null, end_date: t.end || null };
+  });
+  var entriesMap = {};
+  if (entries.length) {
+    var insertResult = await sb.from('task_baseline_entries').insert(entries).select();
+    if (insertResult.error) showToast('Baseline created, but could not save all task snapshots: ' + insertResult.error.message);
+    (insertResult.data || []).forEach(function(e){ entriesMap[e.task_id] = { start: e.start_date, end: e.end_date }; });
+  }
+  pr.baselines = pr.baselines || [];
+  pr.baselines.push({ id: baselineId, label: label || null, createdAt: result.data.created_at, entries: entriesMap });
+  taskBaselineSelected[pid2] = baselineId;
+  showToast('Baseline set');
+  refreshTaskView();
+}
+
+window.openSetBaselineModal = function(pid2) {
+  showModal('<div class="modal-title">Set baseline <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="text-muted" style="font-size:12px;margin-bottom:12px">Snapshots every task\'s current start/end date so it can be compared against execution later. Past baselines are kept, never overwritten.</div>' +
+    '<div class="form-group"><div class="form-label">Label (optional)</div><input type="text" id="bl-label" placeholder="e.g. Kickoff plan"></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="bl-save"><i class="ti ti-check"></i> Set baseline</button></div>');
+  document.getElementById('bl-save').onclick = async function() {
+    document.getElementById('bl-save').disabled = true;
+    await createTaskBaseline(pid2, document.getElementById('bl-label').value.trim());
+    closeModal();
+  };
+};
+
+window.setTaskBaselineSelection = function(pid2, bid) {
+  taskBaselineSelected[pid2] = bid || '';
+  refreshTaskView();
+};
+
 // outlineRows is the SAME array the task list renders (in the same order,
 // same depth/collapse state, same search/filter already applied) so the
 // timeline always matches the list exactly -- drags, promote/demote moves,
 // and expand/collapse all just fall out of reusing that one source of truth.
 function taskTimelineBlock(pid2, outlineRows) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
   var openNow = !!taskTimelineOpen[pid2];
-  var toggleBtn = '<button class="btn btn-sm mb-12" onclick="toggleTaskTimeline(\'' + pid2 + '\')"><i class="ti ' + (openNow ? 'ti-chevron-up' : 'ti-chevron-down') + '"></i> Timeline</button>';
+  var toggleBtn = '<button class="btn btn-sm mb-12" onclick="toggleTaskTimeline(\'' + pid2 + '\')"><i class="ti ' + (openNow ? 'ti-chevron-up' : 'ti-chevron-down') + '"></i> Timeline</button>' +
+    (openNow && canEdit(pr) ? ' <button class="btn btn-sm mb-12" onclick="openSetBaselineModal(\'' + pid2 + '\')"><i class="ti ti-flag"></i> Set baseline</button>' : '');
   if (!openNow) return toggleBtn;
+
+  var baselines = pr.baselines || [];
+  var selectedBaselineId = taskBaselineSelected[pid2] || '';
+  var selectedBaseline = baselines.find(function(b){ return b.id === selectedBaselineId; }) || null;
+  var baselinePicker = baselines.length
+    ? '<div class="form-group" style="max-width:280px"><div class="form-label">Compare to baseline</div><select onchange="setTaskBaselineSelection(\'' + pid2 + '\',this.value)">' +
+        '<option value="">— None —</option>' +
+        baselines.map(function(b){ return '<option value="' + b.id + '"' + (b.id===selectedBaselineId?' selected':'') + '>' + (b.label || (b.createdAt||'').slice(0,10) || 'Baseline') + '</option>'; }).join('') +
+      '</select></div>'
+    : '';
 
   var r = getTaskTimelineRange(pid2);
   var win = taskTimelineWindow(pid2);
@@ -967,7 +1038,7 @@ function taskTimelineBlock(pid2, outlineRows) {
   }).join('') + '</div>';
 
   if (!outlineRows.length) {
-    return toggleBtn + '<div class="card mb-16" style="background:#faf9f7">' + rangeControl + legend +
+    return toggleBtn + '<div class="card mb-16" style="background:#faf9f7">' + rangeControl + baselinePicker + legend +
       '<div class="text-muted" style="font-size:12px">No tasks to show</div></div>';
   }
 
@@ -991,6 +1062,21 @@ function taskTimelineBlock(pid2, outlineRows) {
       ? '<button class="btn btn-sm" style="padding:1px 4px;margin-right:4px" onclick="toggleTaskOutlineCollapse(\'' + pid2 + '\',\'' + t.id + '\')"><i class="ti ' + (collapsedNow?'ti-chevron-right':'ti-chevron-down') + '"></i></button>'
       : '<span style="display:inline-block;width:22px"></span>';
 
+    var ghostHtml = '';
+    if (selectedBaseline) {
+      var be = selectedBaseline.entries[t.id];
+      if (be && be.start && be.end) {
+        var bs = new Date(be.start + 'T00:00:00'), bex = new Date(be.end + 'T00:00:00');
+        if (bex >= winStart && bs <= winEnd) {
+          var bStartOffset = Math.max(0, (bs - winStart) / 86400000);
+          var bEndOffset = Math.min(totalDays, (bex - winStart) / 86400000 + 1);
+          var bWidthPct = Math.max(1, bEndOffset - bStartOffset) / totalDays * 100;
+          var bLeftPct = bStartOffset / totalDays * 100;
+          ghostHtml = '<div class="tl-bar-ghost" style="left:' + bLeftPct + '%;width:' + bWidthPct + '%" title="Baseline: ' + be.start + ' – ' + be.end + '"></div>';
+        }
+      }
+    }
+
     var barHtml;
     if (t.start && t.end) {
       var s = new Date(t.start + 'T00:00:00'), e = new Date(t.end + 'T00:00:00');
@@ -1001,18 +1087,20 @@ function taskTimelineBlock(pid2, outlineRows) {
         var leftPct = startOffset / totalDays * 100;
         var barColor = TASK_STATUS_COLORS[t.status] || '#534AB7';
         var lateNow = isTaskLate(t);
-        barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + (lateNow ? ';box-shadow:inset 0 0 0 2px #B23A3A' : '') + '" title="' + (lateNow ? 'Late — ' : '') + t.status + '">' + (lateNow ? '<i class="ti ti-alert-triangle"></i> ' : '') + t.status + '</div></div>';
+        barHtml = '<div class="tl-wrap">' + ghostHtml + '<div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + (lateNow ? ';box-shadow:inset 0 0 0 2px #B23A3A' : '') + '" title="' + (lateNow ? 'Late — ' : '') + t.status + '">' + (lateNow ? '<i class="ti ti-alert-triangle"></i> ' : '') + t.status + '</div></div>';
       } else {
-        barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">Outside this range</span></div>';
+        barHtml = '<div class="tl-wrap">' + ghostHtml + '<span class="text-muted" style="font-size:12px">Outside this range</span></div>';
       }
     } else {
-      barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">No dates set</span></div>';
+      barHtml = '<div class="tl-wrap">' + ghostHtml + '<span class="text-muted" style="font-size:12px">No dates set</span></div>';
     }
     return '<div class="tl-row"><div class="tl-label" style="padding-left:' + (row.depth * 16) + 'px" title="' + t.title + '">' + chevron + '<span class="text-muted" style="margin-right:5px">' + row.taskNumber + '</span>' + t.title + '</div>' + barHtml + '</div>';
   }).join('');
 
   return toggleBtn +
-    '<div class="card mb-16" style="background:#faf9f7">' + rangeControl + legend + headerRow + rows + '</div>';
+    '<div class="card mb-16" style="background:#faf9f7">' + rangeControl + baselinePicker + legend +
+    (selectedBaseline ? '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#666;margin:-8px 0 14px"><span style="width:14px;height:6px;border:1px dashed #8a8a82;border-radius:3px;display:inline-block"></span> Baseline (' + (selectedBaseline.label || 'plan') + ')</div>' : '') +
+    headerRow + rows + '</div>';
 }
 
 function toggleTaskDescription(pid2, taskId) {
@@ -1024,6 +1112,120 @@ function toggleTaskDescription(pid2, taskId) {
 function toggleTaskOutlineCollapse(pid2, taskId) {
   taskOutlineCollapsed[taskId] = !taskOutlineCollapsed[taskId];
   refreshTaskView();
+}
+
+// ── Task scheduling: working-day math, dependencies, rollups ───────────────
+// "Duration" is in *working* days (Mon-Fri only) -- there's no holiday
+// calendar anywhere in the app, so weekends are the only thing skipped.
+
+function isWeekendDate(d) { var day = d.getDay(); return day === 0 || day === 6; }
+
+function nextWorkingDay(dateStr) {
+  var d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  while (isWeekendDate(d)) d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// duration counts inclusively -- a 1-day task starts and ends the same day.
+function addWorkingDays(dateStr, duration) {
+  var d = new Date(dateStr + 'T00:00:00');
+  var remaining = Math.max(1, duration) - 1;
+  while (remaining > 0) {
+    d.setDate(d.getDate() + 1);
+    if (!isWeekendDate(d)) remaining--;
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+function workingDaysBetween(startStr, endStr) {
+  if (!startStr || !endStr || endStr < startStr) return null;
+  var d = new Date(startStr + 'T00:00:00'), end = new Date(endStr + 'T00:00:00');
+  var count = 0;
+  while (d <= end) { if (!isWeekendDate(d)) count++; d.setDate(d.getDate() + 1); }
+  return count;
+}
+
+// Would setting task `taskId`'s predecessor to `candidateId` create a cycle?
+// Walks candidateId's own predecessor chain looking for taskId.
+function wouldCreateDependencyCycle(tasks, taskId, candidateId) {
+  if (!candidateId) return false;
+  if (candidateId === taskId) return true;
+  var byId = {}; tasks.forEach(function(t){ byId[t.id] = t; });
+  var seen = {}; var cur = candidateId;
+  while (cur) {
+    if (cur === taskId) return true;
+    if (seen[cur]) return true; // an existing cycle elsewhere -- bail rather than loop forever
+    seen[cur] = true;
+    var t = byId[cur];
+    cur = t ? t.dependsOnTaskId : null;
+  }
+  return false;
+}
+
+// Recomputes every task's start/end that's *derived* rather than directly
+// set: a summary task (has children) always takes the earliest start /
+// latest end among its descendants; a leaf task with a predecessor starts
+// the next working day after that predecessor ends; a task with a
+// duration but no predecessor gets its end filled in from start+duration.
+// Runs as a fixed-point iteration (not a real topological sort) since it's
+// cheap at these task counts and handles dependency + hierarchy edges
+// uniformly without needing to build an explicit DAG order.
+function recalcProjectSchedule(p) {
+  var tasks = p.tasks;
+  var byId = {}; tasks.forEach(function(t){ byId[t.id] = t; });
+  var childrenOf = {};
+  tasks.forEach(function(t){ var k = t.parentTaskId || 'root'; (childrenOf[k] = childrenOf[k] || []).push(t); });
+  var changed = [];
+  function markChanged(t) { if (changed.indexOf(t) < 0) changed.push(t); }
+
+  var maxPasses = tasks.length + 2;
+  for (var pass = 0; pass < maxPasses; pass++) {
+    var anyChange = false;
+    tasks.forEach(function(t) {
+      var kids = childrenOf[t.id] || [];
+      if (kids.length) {
+        var starts = kids.map(function(k){ return k.start; }).filter(Boolean);
+        var ends = kids.map(function(k){ return k.end; }).filter(Boolean);
+        if (!starts.length || !ends.length) return;
+        var newStart = starts.reduce(function(a,b){ return a < b ? a : b; });
+        var newEnd = ends.reduce(function(a,b){ return a > b ? a : b; });
+        if (t.start !== newStart || t.end !== newEnd) {
+          t.start = newStart; t.end = newEnd;
+          anyChange = true; markChanged(t);
+        }
+      } else if (t.dependsOnTaskId) {
+        var pred = byId[t.dependsOnTaskId];
+        if (!pred || !pred.end) return;
+        var newStart2 = nextWorkingDay(pred.end);
+        var newEnd2 = t.duration ? addWorkingDays(newStart2, t.duration) : t.end;
+        if (t.start !== newStart2 || (t.duration && t.end !== newEnd2)) {
+          t.start = newStart2; if (t.duration) t.end = newEnd2;
+          anyChange = true; markChanged(t);
+        }
+      } else if (t.duration && t.start) {
+        var newEnd3 = addWorkingDays(t.start, t.duration);
+        if (t.end !== newEnd3) { t.end = newEnd3; anyChange = true; markChanged(t); }
+      }
+    });
+    if (!anyChange) break;
+  }
+  return changed;
+}
+
+async function persistScheduleChanges(changed) {
+  for (var i = 0; i < changed.length; i++) {
+    await sb.from('tasks').update({ start_date: changed[i].start || null, end_date: changed[i].end || null }).eq('id', changed[i].id);
+  }
+}
+
+// Every mutation that can affect derived dates (edit, add, delete, promote,
+// demote) funnels through here so summary rollups and dependency chains
+// never silently fall out of sync with what's actually in the outline.
+async function recalcAndPersist(p) {
+  var changed = recalcProjectSchedule(p);
+  if (changed.length) await persistScheduleChanges(changed);
+  return changed;
 }
 
 // Flattens a project's tasks into a depth-first outline (parent, then its
@@ -1092,6 +1294,7 @@ async function demoteTask(pid2, taskId) {
   var newSiblings = taskSiblings(pr.tasks, newParent.id).filter(function(t){ return t.id !== taskId; });
   newSiblings.push(task);
   await reassignTaskPositions(newSiblings);
+  await recalcAndPersist(pr);
   refreshTaskView();
 }
 
@@ -1109,6 +1312,7 @@ async function promoteTask(pid2, taskId) {
   var oldParentIdx = newSiblings.findIndex(function(t){ return t.id === oldParent.id; });
   newSiblings.splice(oldParentIdx + 1, 0, task);
   await reassignTaskPositions(newSiblings);
+  await recalcAndPersist(pr);
   refreshTaskView();
 }
 
@@ -1212,6 +1416,7 @@ var milestoneLogOpen = {};
 var taskCommentsOpen = {};
 var taskChecklistOpen = {};
 var taskTimelineOpen = {};
+var taskBaselineSelected = {};
 var taskDescOpen = {};
 var taskOutlineCollapsed = {};
 var raidSearchState = {};
@@ -1219,7 +1424,7 @@ var docFolderState = {};
 var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fStatus:[], openFilter:null };
 var roadmapCategoryFilter = 'All';
 var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#534AB7', 'Build':'#1D9E75', 'Testing':'#EF9F27', 'Deployment':'#D85A30', 'Monitor':'#993556' };
-var TASK_STATUS_COLORS = { 'To Do':'#9B9B93', 'In Progress':'#534AB7', 'Done':'#1D9E75' };
+var TASK_STATUS_COLORS = { 'To Do':'#9B9B93', 'In Progress':'#534AB7', 'On Hold':'#C98A2C', 'Done':'#1D9E75' };
 var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null, tagFilter:[] };
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
 var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null };
@@ -3725,7 +3930,7 @@ function pgProjectDetail(pid, tab) {
 
       var assigneeChoices = [];
       p.tasks.forEach(function(tk){ var lbl = taskAssigneeLabel(tk); if (assigneeChoices.indexOf(lbl) < 0) assigneeChoices.push(lbl); });
-      var statusChoices = ['To Do','In Progress','Done'];
+      var statusChoices = ['To Do','In Progress','On Hold','Done'];
 
       function filterIcon(col, active) {
         return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleTaskFilterPanel(\'' + p.id + '\',\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
@@ -4136,6 +4341,8 @@ function pgProjectDetail(pid, tab) {
     if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
     var removeIds = [tk.id].concat(descendantIds);
     pr.tasks = pr.tasks.filter(function(t){ return removeIds.indexOf(t.id) < 0; });
+    pr.tasks.forEach(function(t){ if (removeIds.indexOf(t.dependsOnTaskId) >= 0) t.dependsOnTaskId = null; });
+    await recalcAndPersist(pr);
     document.getElementById('ptab-content').innerHTML=tabC('tasks');
     attachTaskDragHandlers();
   };
@@ -4167,7 +4374,7 @@ function pgProjectDetail(pid, tab) {
       choices = [];
       pr.tasks.forEach(function(tk){ var lbl = taskAssigneeLabel(tk); if (choices.indexOf(lbl) < 0) choices.push(lbl); });
     } else {
-      choices = ['To Do','In Progress','Done'];
+      choices = ['To Do','In Progress','On Hold','Done'];
     }
     openFilterModal(label, choices,
       function() { return col === 'assignee' ? s.fAssignee : s.fStatus; },
@@ -4412,6 +4619,20 @@ function openTaskModal(pid, idx, opts) {
     document.getElementById('tm-assignee-field').innerHTML = assigneeFieldInner();
   };
 
+  var hasChildren = task ? p.tasks.some(function(x){ return x.parentTaskId === task.id; }) : false;
+  var descendantIds = task ? collectTaskDescendantIds(p.tasks, task.id) : [];
+  var predecessorPool = p.tasks.filter(function(x){ return (!task || x.id !== task.id) && descendantIds.indexOf(x.id) < 0; });
+  var predecessorLookup = {}; predecessorPool.forEach(function(x){ predecessorLookup[x.id] = x; });
+  var initialDependsOn = task ? (task.dependsOnTaskId || '') : '';
+  var datesLocked = hasChildren || !!initialDependsOn;
+
+  var schedulingHtml = hasChildren
+    ? '<div class="form-group"><div class="form-label">Duration &amp; dependency</div><div class="text-muted" style="font-size:12px">Not applicable — this task has subtasks, so its dates roll up from them.</div></div>'
+    : '<div class="grid-2"><div class="form-group"><div class="form-label">Duration (working days)</div><input type="number" id="tm-duration" min="1" value="' + (task && task.duration ? task.duration : '') + '" oninput="window.__taskDurationChange()"></div>' +
+      '<div class="form-group"><div class="form-label">Depends on</div><select id="tm-dependson" onchange="window.__taskDependsOnChange()"><option value="">— None —</option>' +
+        predecessorPool.map(function(x){ return '<option value="' + x.id + '"' + (initialDependsOn===x.id?' selected':'') + '>' + x.title + '</option>'; }).join('') +
+      '</select></div></div>';
+
   showModal('<div class="modal-title">' + (task?'Edit task':'Add task') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Task title *</div><input type="text" id="tm-title" value="' + (task?task.title:'') + '" placeholder="Task name"></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="tm-desc" rows="3" placeholder="Details, context, links…">' + (task ? (task.description||'') : '') + '</textarea></div>' +
@@ -4419,21 +4640,56 @@ function openTaskModal(pid, idx, opts) {
     '<div class="grid-2"><div class="form-group"><div class="form-label">Status</div><select id="tm-status">' +
       '<option' + (!task||task.status==='To Do'?' selected':'') + '>To Do</option>' +
       '<option' + (task&&task.status==='In Progress'?' selected':'') + '>In Progress</option>' +
+      '<option' + (task&&task.status==='On Hold'?' selected':'') + '>On Hold</option>' +
       '<option' + (task&&task.status==='Done'?' selected':'') + '>Done</option></select></div>' +
     '<div></div></div>' +
-    '<div class="grid-2"><div class="form-group"><div class="form-label">Start date</div><input type="date" id="tm-start" value="' + (task?(task.start||''):'') + '"></div>' +
-    '<div class="form-group"><div class="form-label">End date</div><input type="date" id="tm-end" value="' + (task?(task.end||''):'') + '"></div></div>' +
+    schedulingHtml +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">Start date</div><input type="date" id="tm-start" value="' + (task?(task.start||''):'') + '" oninput="window.__taskStartChange()"' + (datesLocked?' disabled':'') + '></div>' +
+    '<div class="form-group"><div class="form-label">End date</div><input type="date" id="tm-end" value="' + (task?(task.end||''):'') + '" oninput="window.__taskEndChange()"' + (datesLocked?' disabled':'') + '></div></div>' +
+    '<div class="text-muted" id="tm-dates-hint" style="font-size:12px;margin:-6px 0 12px' + (datesLocked?'':';display:none') + '">' + (hasChildren ? 'Dates are calculated from this task\'s subtasks.' : 'Dates are calculated from the selected dependency and duration.') + '</div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="tm-save"><i class="ti ti-check"></i> ' + (task?'Save changes':'Add task') + '</button></div>');
+
+  window.__taskDurationChange = function() {
+    var durEl = document.getElementById('tm-duration'), startEl = document.getElementById('tm-start'), endEl = document.getElementById('tm-end');
+    var dur = parseInt(durEl.value, 10);
+    if (dur > 0 && startEl.value) endEl.value = addWorkingDays(startEl.value, dur);
+  };
+  window.__taskStartChange = function() { window.__taskDurationChange(); };
+  window.__taskEndChange = function() {
+    var startEl = document.getElementById('tm-start'), endEl = document.getElementById('tm-end'), durEl = document.getElementById('tm-duration');
+    if (startEl.value && endEl.value && endEl.value >= startEl.value) {
+      var wd = workingDaysBetween(startEl.value, endEl.value);
+      if (wd) durEl.value = wd;
+    }
+  };
+  window.__taskDependsOnChange = function() {
+    var dependsEl = document.getElementById('tm-dependson'), startEl = document.getElementById('tm-start'), endEl = document.getElementById('tm-end'), hint = document.getElementById('tm-dates-hint');
+    var locked = !!(dependsEl && dependsEl.value);
+    startEl.disabled = locked; endEl.disabled = locked;
+    if (hint) hint.style.display = locked ? 'block' : 'none';
+    if (locked) {
+      var pred = predecessorLookup[dependsEl.value];
+      if (pred && pred.end) { startEl.value = nextWorkingDay(pred.end); window.__taskDurationChange(); }
+    }
+  };
+
   document.getElementById('tm-save').onclick = async function() {
     var title = document.getElementById('tm-title').value.trim();
     if (!title){ showToast('Task title required'); return; }
+    var durationEl = document.getElementById('tm-duration');
+    var dependsOnEl = document.getElementById('tm-dependson');
+    var duration = durationEl ? (parseInt(durationEl.value, 10) || null) : null;
+    var dependsOnTaskId = (dependsOnEl && dependsOnEl.value) ? dependsOnEl.value : null;
     var newVals = {
       title: title, description: document.getElementById('tm-desc').value.trim(),
       assignee: selectedAssignee, status: document.getElementById('tm-status').value,
-      start: document.getElementById('tm-start').value, end: document.getElementById('tm-end').value
+      start: document.getElementById('tm-start').value, end: document.getElementById('tm-end').value,
+      duration: hasChildren ? null : duration, dependsOnTaskId: hasChildren ? null : dependsOnTaskId
     };
     if (newVals.start && newVals.end && newVals.end < newVals.start) { showToast('End date cannot be before start date'); return; }
+    if (newVals.dependsOnTaskId && !newVals.duration) { showToast('Duration is required when a dependency is set'); return; }
+    if (newVals.dependsOnTaskId && wouldCreateDependencyCycle(p.tasks, task ? task.id : null, newVals.dependsOnTaskId)) { showToast('That would create a circular dependency'); return; }
     var btn = document.getElementById('tm-save'); btn.disabled = true;
     var assigneeResource = resolveResource(newVals.assignee);
 
@@ -4445,33 +4701,45 @@ function openTaskModal(pid, idx, opts) {
       });
       var result = await sb.from('tasks').update({
         title: newVals.title, description: newVals.description || null, assignee_id: assigneeResource ? assigneeResource.id : null,
-        assignee_name: newVals.assignee || null, status: newVals.status, start_date: newVals.start || null, end_date: newVals.end || null
+        assignee_name: newVals.assignee || null, status: newVals.status, start_date: newVals.start || null, end_date: newVals.end || null,
+        duration_days: newVals.duration, depends_on_task_id: newVals.dependsOnTaskId
       }).eq('id', task.id);
       if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
       task.title = newVals.title; task.description = newVals.description; task.assignee = newVals.assignee; task.assigneeId = assigneeResource ? assigneeResource.id : null;
       task.status = newVals.status; task.start = newVals.start; task.end = newVals.end;
+      task.duration = newVals.duration; task.dependsOnTaskId = newVals.dependsOnTaskId;
       task.log = task.log || [];
       if (changes.length) task.log.push(await writeLog('task_log', 'task_id', task.id, 'Updated', changes.join('; ')));
       await ensureOnTeam(p, assigneeResource);
     } else {
       var relTask = opts.relativeToTaskId ? p.tasks.find(function(x){ return x.id === opts.relativeToTaskId; }) : null;
+      var relPosition = opts.relativePosition;
+      if (!relTask) {
+        // Plain "Add task" (no explicit relative task): append after the
+        // last row in the current outline, inheriting its indentation
+        // level, instead of always dropping back to the root.
+        var fullOutline = buildTaskOutline(p.tasks);
+        if (fullOutline.length) { relTask = fullOutline[fullOutline.length - 1].task; relPosition = 'after'; }
+      }
       var parentIdForInsert = relTask ? (relTask.parentTaskId || null) : null;
       var insertResult = await sb.from('tasks').insert({
         project_id: pid, title: newVals.title, description: newVals.description || null, assignee_id: assigneeResource ? assigneeResource.id : null,
         assignee_name: newVals.assignee || null, status: newVals.status, start_date: newVals.start || null, end_date: newVals.end || null,
+        duration_days: newVals.duration, depends_on_task_id: newVals.dependsOnTaskId,
         parent_task_id: parentIdForInsert, position: 0
       }).select().single();
       if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
-      var t2 = {id:insertResult.data.id,title:newVals.title,description:newVals.description,assignee:newVals.assignee,assigneeId:assigneeResource?assigneeResource.id:null,status:newVals.status,start:newVals.start,end:newVals.end,parentTaskId:parentIdForInsert,position:0,log:[],comments:[],checklist:[],tags:[]};
+      var t2 = {id:insertResult.data.id,title:newVals.title,description:newVals.description,assignee:newVals.assignee,assigneeId:assigneeResource?assigneeResource.id:null,status:newVals.status,start:newVals.start,end:newVals.end,duration:newVals.duration,dependsOnTaskId:newVals.dependsOnTaskId,parentTaskId:parentIdForInsert,position:0,log:[],comments:[],checklist:[],tags:[]};
       t2.log.push(await writeLog('task_log', 'task_id', t2.id, 'Created', ''));
       p.tasks.push(t2);
       var newSiblings = taskSiblings(p.tasks, parentIdForInsert).filter(function(x){ return x.id !== t2.id; });
       var relIdx = relTask ? newSiblings.findIndex(function(x){ return x.id === relTask.id; }) : -1;
       if (relIdx < 0) { newSiblings.push(t2); }
-      else { newSiblings.splice(opts.relativePosition === 'before' ? relIdx : relIdx + 1, 0, t2); }
+      else { newSiblings.splice(relPosition === 'before' ? relIdx : relIdx + 1, 0, t2); }
       await reassignTaskPositions(newSiblings);
       await ensureOnTeam(p, assigneeResource);
     }
+    await recalcAndPersist(p);
     showToast(idx!=null?'Task updated':'Task added'); closeModal(); if (window.switchPTab) window.switchPTab('tasks');
   };
 }
