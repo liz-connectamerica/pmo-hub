@@ -42,7 +42,7 @@
   page: /user-guide/
   anchor: project-detail-page
   guide: User Guide
-  blurb: Overview, Team, Milestones, Tasks, RAID log, Documentation, Metadata, Change Log tabs.
+  blurb: Overview, Team, Milestones, Plan, To-Do, RAID log, Documentation, Metadata, Change Log tabs.
 
 - title: Submitting a request
   page: /user-guide/
