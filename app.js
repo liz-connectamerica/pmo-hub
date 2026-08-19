@@ -1011,7 +1011,7 @@ function taskTimelineBlock(pid2, outlineRows) {
   var selectedBaselineId = taskBaselineSelected[pid2] || '';
   var selectedBaseline = baselines.find(function(b){ return b.id === selectedBaselineId; }) || null;
   var baselinePicker = baselines.length
-    ? '<div class="form-group" style="max-width:280px"><div class="form-label">Compare to baseline</div><select onchange="setTaskBaselineSelection(\'' + pid2 + '\',this.value)">' +
+    ? '<div class="form-group" style="margin:0;min-width:220px"><div class="form-label" style="text-align:right">Compare to baseline</div><select onchange="setTaskBaselineSelection(\'' + pid2 + '\',this.value)">' +
         '<option value="">— None —</option>' +
         baselines.map(function(b){ return '<option value="' + b.id + '"' + (b.id===selectedBaselineId?' selected':'') + '>' + (b.label || (b.createdAt||'').slice(0,10) || 'Baseline') + '</option>'; }).join('') +
       '</select></div>'
@@ -1022,23 +1022,25 @@ function taskTimelineBlock(pid2, outlineRows) {
   var winStart = win.start, winEnd = win.end;
   var totalDays = Math.max(1, (winEnd - winStart) / 86400000);
 
-  var rangeControl = '<div class="tab-bar" style="margin-bottom:0;display:inline-flex">' +
+  var rangeTabs = '<div class="tab-bar" style="margin-bottom:0;display:inline-flex">' +
     [['1m','1 month'],['2m','2 months'],['3m','3 months'],['custom','Custom']].map(function(pair){
       return '<div class="tab' + (r.mode===pair[0]?' active':'') + '" onclick="setTaskTimelineRangeMode(\'' + pid2 + '\',\'' + pair[0] + '\')">' + pair[1] + '</div>';
     }).join('') +
-    '</div>' +
-    (r.mode === 'custom' ? '<div style="display:flex;gap:8px;align-items:center;margin-top:10px">' +
+    '</div>';
+  var rangeCustom = r.mode === 'custom' ? '<div style="display:flex;gap:8px;align-items:center;margin-top:10px">' +
       '<input type="date" id="tl-custom-start-' + pid2 + '" value="' + (r.customStart||'') + '" onchange="setTaskTimelineCustomDates(\'' + pid2 + '\',this.value,document.getElementById(\'tl-custom-end-' + pid2 + '\').value)">' +
       '<span class="text-muted">to</span>' +
       '<input type="date" id="tl-custom-end-' + pid2 + '" value="' + (r.customEnd||'') + '" onchange="setTaskTimelineCustomDates(\'' + pid2 + '\',document.getElementById(\'tl-custom-start-' + pid2 + '\').value,this.value)">' +
-      '</div>' : '');
+      '</div>' : '';
+  // Range tabs stay top-left; the baseline picker sits top-right of the same row.
+  var rangeControl = '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">' + rangeTabs + baselinePicker + '</div>' + rangeCustom;
 
   var legend = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin:14px 0">' + Object.keys(TASK_STATUS_COLORS).map(function(s){
     return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#666"><span style="width:10px;height:10px;border-radius:3px;background:' + TASK_STATUS_COLORS[s] + ';display:inline-block"></span>' + s + '</div>';
   }).join('') + '</div>';
 
   if (!outlineRows.length) {
-    return toggleBtn + '<div class="card mb-16" style="background:#faf9f7">' + rangeControl + baselinePicker + legend +
+    return toggleBtn + '<div class="card mb-16" style="background:#faf9f7">' + rangeControl + legend +
       '<div class="text-muted" style="font-size:12px">No tasks to show</div></div>';
   }
 
@@ -1098,7 +1100,7 @@ function taskTimelineBlock(pid2, outlineRows) {
   }).join('');
 
   return toggleBtn +
-    '<div class="card mb-16" style="background:#faf9f7">' + rangeControl + baselinePicker + legend +
+    '<div class="card mb-16" style="background:#faf9f7">' + rangeControl + legend +
     (selectedBaseline ? '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#666;margin:-8px 0 14px"><span style="width:14px;height:6px;border:1px dashed #8a8a82;border-radius:3px;display:inline-block"></span> Baseline (' + (selectedBaseline.label || 'plan') + ')</div>' : '') +
     headerRow + rows + '</div>';
 }
@@ -4626,12 +4628,60 @@ function openTaskModal(pid, idx, opts) {
   var initialDependsOn = task ? (task.dependsOnTaskId || '') : '';
   var datesLocked = hasChildren || !!initialDependsOn;
 
+  var selectedDependsOn = initialDependsOn;
+  var dependsOnPickerOpen = false;
+  var dependsOnQuery = '';
+
+  function dependsOnPanelHtml() {
+    var q = dependsOnQuery.trim().toLowerCase();
+    var matches = predecessorPool.filter(function(x){ return x.title.toLowerCase().indexOf(q) >= 0; });
+    var rows = matches.map(function(x){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">' +
+        '<span style="font-size:13px">' + x.title + '</span>' +
+        '<button type="button" class="btn btn-sm" onclick="window.__taskDependsOnPick(\'' + x.id + '\')">Select</button>' +
+        '</div>';
+    }).join('');
+    return '<div style="border:1px solid #e8e8e5;border-radius:8px;padding:10px;margin-top:8px">' +
+      '<button type="button" class="btn btn-sm" style="margin-bottom:8px" onclick="window.__taskDependsOnPick(\'\')"><i class="ti ti-circle-off"></i> None</button>' +
+      '<input type="text" id="tm-dependson-search" placeholder="Search tasks…" value="' + dependsOnQuery.replace(/"/g,'&quot;') + '" oninput="window.__taskDependsOnSearch(this.value)">' +
+      '<div style="max-height:180px;overflow-y:auto;margin-top:8px">' + (rows || '<span class="text-muted" style="font-size:13px">No matches</span>') + '</div>' +
+      '</div>';
+  }
+
+  function dependsOnFieldInner() {
+    var sel = predecessorLookup[selectedDependsOn];
+    return '<input type="hidden" id="tm-dependson" value="' + (selectedDependsOn||'') + '">' +
+      '<div style="display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:13px' + (sel ? '' : ';color:#999') + '">' + (sel ? sel.title : 'None') + '</span>' +
+      '<button type="button" class="btn btn-sm" onclick="window.__taskDependsOnToggle()">' + (sel ? 'Change' : 'Set') + '</button>' +
+      '</div>' +
+      (dependsOnPickerOpen ? dependsOnPanelHtml() : '');
+  }
+
+  window.__taskDependsOnToggle = function() {
+    dependsOnPickerOpen = !dependsOnPickerOpen;
+    dependsOnQuery = '';
+    document.getElementById('tm-dependson-field').innerHTML = dependsOnFieldInner();
+    var s = document.getElementById('tm-dependson-search');
+    if (s) s.focus();
+  };
+  window.__taskDependsOnSearch = function(val) {
+    dependsOnQuery = val;
+    document.getElementById('tm-dependson-field').innerHTML = dependsOnFieldInner();
+    var s = document.getElementById('tm-dependson-search');
+    if (s) { s.focus(); s.selectionStart = s.selectionEnd = s.value.length; }
+  };
+  window.__taskDependsOnPick = function(id) {
+    selectedDependsOn = id;
+    dependsOnPickerOpen = false;
+    document.getElementById('tm-dependson-field').innerHTML = dependsOnFieldInner();
+    window.__taskDependsOnChange();
+  };
+
   var schedulingHtml = hasChildren
     ? '<div class="form-group"><div class="form-label">Duration &amp; dependency</div><div class="text-muted" style="font-size:12px">Not applicable — this task has subtasks, so its dates roll up from them.</div></div>'
     : '<div class="grid-2"><div class="form-group"><div class="form-label">Duration (working days)</div><input type="number" id="tm-duration" min="1" value="' + (task && task.duration ? task.duration : '') + '" oninput="window.__taskDurationChange()"></div>' +
-      '<div class="form-group"><div class="form-label">Depends on</div><select id="tm-dependson" onchange="window.__taskDependsOnChange()"><option value="">— None —</option>' +
-        predecessorPool.map(function(x){ return '<option value="' + x.id + '"' + (initialDependsOn===x.id?' selected':'') + '>' + x.title + '</option>'; }).join('') +
-      '</select></div></div>';
+      '<div class="form-group"><div class="form-label">Depends on</div><div id="tm-dependson-field">' + dependsOnFieldInner() + '</div></div></div>';
 
   showModal('<div class="modal-title">' + (task?'Edit task':'Add task') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Task title *</div><input type="text" id="tm-title" value="' + (task?task.title:'') + '" placeholder="Task name"></div>' +
