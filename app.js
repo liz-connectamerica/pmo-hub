@@ -879,21 +879,64 @@ async function deleteComment(pid2, taskId, cid) {
 
 // To-Do items are the lightweight counterpart to Plan tasks -- action
 // items, follow-ups, access requests, reminders -- so they only carry an
-// Open/Done status (toggled directly, no completion-note prompt) plus a
-// description/comments/change-log, not the full scheduling machinery.
-async function toggleTodoDoneIcon(pid2, idx) {
+// Open/Done status plus a description/comments/change-log, not the full
+// scheduling machinery. Marking one done offers an optional closing
+// comment (mirroring Plan tasks); reopening is a direct toggle.
+function toggleTodoDoneIcon(pid2, idx) {
   var pr = D.projects.find(function(x){ return x.id === pid2; });
   var td = pr.todos[idx];
   if (!td) return;
-  var oldStatus = td.status;
-  var newStatus = oldStatus === 'Done' ? 'Open' : 'Done';
-  var result = await sb.from('todo_items').update({ status: newStatus }).eq('id', td.id);
+  if (td.status === 'Done') reopenTodo(pid2, idx);
+  else openCompleteTodoPrompt(pid2, idx);
+}
+
+async function reopenTodo(pid2, idx) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var td = pr.todos[idx];
+  var result = await sb.from('todo_items').update({ status: 'Open' }).eq('id', td.id);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-  td.status = newStatus;
+  td.status = 'Open';
   td.log = td.log || [];
-  td.log.push(await writeLog('todo_log', 'todo_id', td.id, 'Updated', 'Status: "' + oldStatus + '" → "' + newStatus + '"'));
+  td.log.push(await writeLog('todo_log', 'todo_id', td.id, 'Updated', 'Status: "Done" → "Open"'));
   refreshTaskView();
-  showToast(newStatus === 'Done' ? 'To-do marked done' : 'To-do reopened');
+  showToast('To-do reopened');
+}
+
+function openCompleteTodoPrompt(pid2, idx) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var td = pr.todos[idx];
+  showModal('<div class="modal-title">Mark "' + td.title + '" as done <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Add a comment (optional)</div><textarea id="complete-todo-comment" rows="3" placeholder="Anything worth noting about this completion?"></textarea></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="complete-todo-confirm"><i class="ti ti-check"></i> Mark done</button></div>');
+  document.getElementById('complete-todo-confirm').onclick = async function() {
+    var commentText = document.getElementById('complete-todo-comment').value.trim();
+    var btn = document.getElementById('complete-todo-confirm'); btn.disabled = true;
+    await completeMyTodo(pid2, idx, commentText);
+    closeModal();
+  };
+}
+
+async function completeMyTodo(pid2, idx, commentText) {
+  var pr = D.projects.find(function(x){ return x.id === pid2; });
+  var td = pr.todos[idx];
+  var old = td.status;
+  var result = await sb.from('todo_items').update({ status: 'Done' }).eq('id', td.id);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  td.status = 'Done';
+  td.log = td.log || [];
+  td.log.push(await writeLog('todo_log', 'todo_id', td.id, 'Updated', 'Status: "' + old + '" → "Done"'));
+  if (commentText) {
+    var commentResult = await sb.from('todo_comments').insert({
+      todo_id: td.id, author_id: D.currentProfile.id, author_name: D.currentProfile.display_name, body: commentText
+    }).select().single();
+    if (!commentResult.error) {
+      td.comments = td.comments || [];
+      td.comments.push({ id: commentResult.data.id, text: commentText, author: D.currentProfile.display_name, date: ymd(commentResult.data.created_at) });
+    }
+  }
+  refreshTaskView();
+  showToast('To-do marked complete');
 }
 
 function toggleTodoDescription(pid2, todoId) {
