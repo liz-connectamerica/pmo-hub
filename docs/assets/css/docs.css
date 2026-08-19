@@ -187,3 +187,78 @@ pre.mermaid {
   margin: 20px 0;
   text-align: center;
 }
+
+/* Changelog page */
+
+.changelog-scope-note {
+  font-size: 13px;
+  color: #6b6b6b;
+  background: #f5f5f5;
+  border: 1px solid #e8e8e5;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 16px 0 24px;
+}
+
+.changelog-search {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.changelog-search input[type="search"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  font-size: 15px;
+  border: 1px solid #d6d6d6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.changelog-search input[type="search"]:focus {
+  outline: 2px solid #2a7ae2;
+  outline-offset: 1px;
+}
+
+.changelog-count {
+  font-size: 12px;
+  color: #6b6b6b;
+  margin-top: 6px;
+}
+
+.changelog-entry {
+  border-bottom: 1px solid #e8e8e5;
+  padding: 18px 0;
+}
+
+.changelog-entry:first-child {
+  padding-top: 0;
+}
+
+.changelog-entry h2 {
+  margin: 0 0 2px;
+  font-size: 19px;
+}
+
+.changelog-date {
+  font-size: 12.5px;
+  color: #6b6b6b;
+  margin: 0 0 10px;
+}
+
+.changelog-entry ul {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.changelog-entry li {
+  margin-bottom: 4px;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.changelog-note {
+  font-size: 13px;
+  color: #6b6b6b;
+  padding: 20px 0;
+}

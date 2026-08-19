@@ -181,3 +181,9 @@
   anchor: known-quirks-worth-knowing-about
   guide: Admin Guide
   blurb: Legacy fields, dormant columns, and other known oddities.
+
+- title: Changelog
+  page: /changelog/
+  anchor: ""
+  guide: Changelog
+  blurb: Dated log of feature and fix changes to PMO Hub, searchable by keyword.

@@ -5,3 +5,4 @@ show_excerpts: false
 header_pages:
   - user-guide.md
   - admin-guide.md
+  - changelog.md
