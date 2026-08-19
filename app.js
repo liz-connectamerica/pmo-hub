@@ -1419,6 +1419,7 @@ var taskCommentsOpen = {};
 var taskChecklistOpen = {};
 var taskTimelineOpen = {};
 var taskBaselineSelected = {};
+var teamAddKind = {};
 var taskDescOpen = {};
 var taskOutlineCollapsed = {};
 var raidSearchState = {};
@@ -3866,19 +3867,23 @@ function pgProjectDetail(pid, tab) {
           '</div>' : '');
     }
     if (t === 'team') {
+      var addKind = teamAddKind[p.id] || 'individual';
       var candidatePeople = individualResourceNames().filter(function(n){ return p.team.indexOf(n) < 0; });
+      var candidateTeams = teamNames().filter(function(n){ return p.team.indexOf(n) < 0; });
       var projectTags = p.tags || [];
       function sharesTag(name) {
         if (!projectTags.length) return false;
         var res2 = D.resources.find(function(r){ return r.name === name; });
         return !!(res2 && res2.tags && res2.tags.some(function(t){ return projectTags.indexOf(t) >= 0; }));
       }
-      candidatePeople = candidatePeople.slice().sort(function(a, b) {
+      function byRecommendedThenName(a, b) {
         var aRec = sharesTag(a) ? 0 : 1;
         var bRec = sharesTag(b) ? 0 : 1;
         if (aRec !== bRec) return aRec - bRec;
         return a.localeCompare(b);
-      });
+      }
+      candidatePeople = candidatePeople.slice().sort(byRecommendedThenName);
+      candidateTeams = candidateTeams.slice().sort(byRecommendedThenName);
       var teamRows = p.team.length
         ? p.team.map(function(m,i){
             var isTeam = teamNames().indexOf(m) >= 0;
@@ -3889,15 +3894,21 @@ function pgProjectDetail(pid, tab) {
               '</div>';
           }).join('')
         : '<div class="text-muted">No team members yet</div>';
+      var addCandidates = addKind === 'team' ? candidateTeams : candidatePeople;
+      var addRows = addCandidates.map(function(n){
+        var rec = sharesTag(n);
+        return '<div class="team-add-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + n + (rec ? ' <span class="badge badge-teal" style="font-size:10px">Recommended</span>' : '') + '</span><button class="btn btn-sm" onclick="addTeamMemberDirect(\'' + p.id + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button></div>';
+      }).join('');
       return '<div class="card"><div class="section-title">Team members</div>' + teamRows + '</div>' +
         (editable ? '<div class="card mt-16"><div class="section-title">Add a team member</div>' +
-          '<input type="text" id="team-add-search" placeholder="Search people…" oninput="filterTeamAddList(this.value)">' +
+          '<div class="tab-bar" style="margin-bottom:12px">' +
+            '<div class="tab' + (addKind==='individual'?' active':'') + '" onclick="setTeamAddKind(\'' + p.id + '\',\'individual\')">Individuals</div>' +
+            '<div class="tab' + (addKind==='team'?' active':'') + '" onclick="setTeamAddKind(\'' + p.id + '\',\'team\')">Teams</div>' +
+          '</div>' +
+          '<input type="text" id="team-add-search" placeholder="' + (addKind==='team' ? 'Search teams…' : 'Search people…') + '" oninput="filterTeamAddList(this.value)">' +
           '<div id="team-add-list" style="max-height:220px;overflow-y:auto;margin-top:8px">' +
-          candidatePeople.map(function(n){
-            var rec = sharesTag(n);
-            return '<div class="team-add-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + n + (rec ? ' <span class="badge badge-teal" style="font-size:10px">Recommended</span>' : '') + '</span><button class="btn btn-sm" onclick="addTeamMemberDirect(\'' + p.id + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button></div>';
-          }).join('') +
-          (candidatePeople.length ? '' : '<span class="text-muted" style="font-size:13px">Everyone is already on the team</span>') +
+          addRows +
+          (addCandidates.length ? '' : '<span class="text-muted" style="font-size:13px">' + (addKind==='team' ? 'Every team is already on the team' : 'Everyone is already on the team') + '</span>') +
           '</div></div>' : '');
     }
     if (t === 'milestones') {
@@ -4273,6 +4284,10 @@ function pgProjectDetail(pid, tab) {
     pr.programId = null;
     showToast('Removed from program');
     if (document.getElementById('ptab-content')) document.getElementById('ptab-content').innerHTML = tabC('overview');
+  };
+  window.setTeamAddKind = function(pid2, kind) {
+    teamAddKind[pid2] = kind;
+    document.getElementById('ptab-content').innerHTML = tabC('team');
   };
   window.filterTeamAddList = function(query) {
     var q = query.trim().toLowerCase();
