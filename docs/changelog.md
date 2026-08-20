@@ -14,6 +14,42 @@ A dated log of feature and fix changes to PMO Hub, newest first. Each entry is t
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-08-19-todo">
+  <h2>To-Do</h2>
+  <p class="changelog-date">August 19, 2026 · 2:00 PM – 2:10 PM</p>
+  <ul>
+    <li>Added a new To-Do tab to every project: a lightweight list for action items, follow-ups, access requests, and reminders -- title, description, an individual assignee, a due date, and a simple Open/Done status, with comments and a change log. No hierarchy, scheduling, or checklist.</li>
+    <li>My Tasks gained a top-level Plan/To-Do tab selector, each with its own Open/Completed sub-tabs, so every to-do assigned to someone shows up in their personal view the same way Plan tasks already do. The sidebar's My Tasks badge count now includes open to-dos too.</li>
+    <li>Marking a to-do done now prompts for an optional closing comment, the same as Plan tasks.</li>
+    <li>Creating, editing, and deleting a to-do is owner/admin-only; the assignee can always toggle their own to-do done/open.</li>
+  </ul>
+</div>
+
+<div class="changelog-entry" id="cl-2026-08-19-plan">
+  <h2>Plan</h2>
+  <p class="changelog-date">August 19, 2026 · 2:00 PM</p>
+  <ul>
+    <li>The project's Tasks tab is renamed to Plan -- same functionality (hierarchy, dependencies, duration, baselines), display-only rename to make room for the new To-Do tab alongside it.</li>
+  </ul>
+</div>
+
+<div class="changelog-entry" id="cl-2026-08-19-team">
+  <h2>Team</h2>
+  <p class="changelog-date">August 19, 2026 · 11:22 AM – 11:24 AM</p>
+  <ul>
+    <li>The "Add a team member" picker on a project's Team tab gained an Individuals/Teams selector (matching the Resources and Capacity pages), so a Team-type resource can be added to a project's team directly, not just individuals.</li>
+    <li>A team's manager now shows next to its name on the Team tab, both in the current team list and in the add-member picker, whenever that team has a manager set.</li>
+  </ul>
+</div>
+
+<div class="changelog-entry" id="cl-2026-08-19-help-documentation-3">
+  <h2>Help Documentation</h2>
+  <p class="changelog-date">August 19, 2026 · 10:46 AM – 10:50 AM</p>
+  <ul>
+    <li>Added this Changelog page: a dated, searchable log of feature and fix changes, titled by the app area each entry changed.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-08-19-tasks">
   <h2>Tasks</h2>
   <p class="changelog-date">August 19, 2026 · 10:05 AM – 10:29 AM</p>
