@@ -1857,6 +1857,7 @@ var NAV_DEF = {
     ]},
     { s:'Data Tools', items:[
       {id:'import-projects', icon:'ti-file-upload', label:'Import Projects'},
+      {id:'import-work-requests', icon:'ti-file-upload', label:'Import Work Requests'},
       {id:'export-projects', icon:'ti-file-export', label:'Export Projects'}
     ]},
     { s:'Administration', items:[
@@ -1947,7 +1948,7 @@ var PAGE_RENDERERS = {
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks,
-  'import-projects':pgImportProjects, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
+  'import-projects':pgImportProjects, 'import-work-requests':pgImportWorkRequests, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
   'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems,
   'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests
 };
@@ -6460,6 +6461,165 @@ async function handleImportFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
+// ── Import Work Requests (Excel) ─────────────────────────────────────────────
+// Brings in work that's already underway or finished, bypassing the New ->
+// Accept negotiation entirely -- every imported row lands directly in
+// Accepted or Complete status, the same way Import Projects bypasses the
+// request/approval workflow for in-flight projects.
+
+var wrImportState = { rows: null, requestersByEmail: null, assigneesByEmail: null };
+
+function validateWorkRequestImportRow(row, requestersByEmail, assigneesByEmail) {
+  var errors = [];
+  var title = String(row['Title'] || '').trim();
+  if (!title) errors.push('Missing Title');
+
+  var requesterEmail = String(row['Requester Email'] || '').trim().toLowerCase();
+  var requester = requesterEmail ? requestersByEmail[requesterEmail] : null;
+  if (!requesterEmail) errors.push('Missing Requester Email');
+  else if (!requester) errors.push('Requester Email "' + requesterEmail + '" does not match an existing user');
+
+  var assigneeEmail = String(row['Assignee Email'] || '').trim().toLowerCase();
+  var assignee = assigneeEmail ? assigneesByEmail[assigneeEmail] : null;
+  if (!assigneeEmail) errors.push('Missing Assignee Email');
+  else if (!assignee) errors.push('Assignee Email "' + assigneeEmail + '" does not match an existing individual resource');
+
+  var statusRaw = String(row['Status'] || '').trim();
+  var status = statusRaw ? matchOneOf(statusRaw, ['Accepted','Complete']) : 'Accepted';
+  if (status === undefined) errors.push('Status "' + statusRaw + '" must be Accepted or Complete');
+
+  var completionDate = formatDateCell(row['Requested Completion Date']);
+  if (row['Requested Completion Date'] && !completionDate) errors.push('Requested Completion Date "' + row['Requested Completion Date'] + '" could not be read');
+
+  var nowIso = new Date().toISOString();
+  return {
+    valid: errors.length === 0,
+    errors: errors,
+    requesterName: requester ? requester.display_name : (requesterEmail || '(missing)'),
+    assigneeName: assignee ? assignee.name : (assigneeEmail || '(missing)'),
+    record: {
+      title: title,
+      description: row['Description'] || null,
+      requester_id: requester ? requester.id : null,
+      resource_id: assignee ? assignee.id : null,
+      status: status || 'Accepted',
+      requested_completion_date: completionDate,
+      // The import assumes acceptance, so the requested date doubles as the
+      // committed/estimated date -- there's no separate negotiation step to
+      // produce a different one.
+      estimated_completion_date: completionDate,
+      accepted_at: nowIso,
+      completed_at: (status || 'Accepted') === 'Complete' ? nowIso : null
+    }
+  };
+}
+
+function renderWorkRequestImportPreview() {
+  var rows = wrImportState.rows;
+  var validated = rows.map(function(r){ return validateWorkRequestImportRow(r, wrImportState.requestersByEmail, wrImportState.assigneesByEmail); });
+  var validCount = validated.filter(function(v){ return v.valid; }).length;
+
+  var tableRows = validated.map(function(v) {
+    return '<tr>' +
+      '<td>' + (v.valid ? '<i class="ti ti-circle-check" style="color:#1D9E75"></i>' : '<i class="ti ti-alert-circle" style="color:#A32D2D"></i>') + '</td>' +
+      '<td>' + (v.record.title || '<span class="text-muted">(missing)</span>') + '</td>' +
+      '<td>' + v.requesterName + '</td>' +
+      '<td>' + v.assigneeName + '</td>' +
+      '<td>' + (v.record.status || '') + '</td>' +
+      '<td>' + (v.record.requested_completion_date || '<span class="text-muted">—</span>') + '</td>' +
+      '<td style="color:#A32D2D;font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
+      '</tr>';
+  }).join('');
+
+  document.getElementById('wr-import-preview').innerHTML =
+    '<div class="info-banner info-blue" style="margin-bottom:14px">' +
+      '<i class="ti ti-info-circle"></i><div>' + validCount + ' of ' + rows.length + ' rows are ready to import' +
+      (validCount < rows.length ? '. Rows with errors will be skipped — fix them in your spreadsheet and re-upload if you want them included.' : '.') +
+      '</div></div>' +
+    '<div class="table-wrap"><table><thead><tr><th></th><th>Title</th><th>From</th><th>Assigned to</th><th>Status</th><th>Requested completion</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
+    (validCount > 0 ? '<button class="btn btn-primary mt-12" id="confirm-wr-import-btn"><i class="ti ti-upload"></i> Import ' + validCount + ' work request' + (validCount===1?'':'s') + '</button>' : '');
+
+  if (validCount > 0) document.getElementById('confirm-wr-import-btn').onclick = runWorkRequestImport;
+}
+
+async function runWorkRequestImport() {
+  var btn = document.getElementById('confirm-wr-import-btn');
+  btn.disabled = true; btn.textContent = 'Importing…';
+
+  var validated = wrImportState.rows.map(function(r){ return validateWorkRequestImportRow(r, wrImportState.requestersByEmail, wrImportState.assigneesByEmail); });
+  var validEntries = validated.filter(function(v){ return v.valid; });
+  var records = validEntries.map(function(v){ return v.record; });
+
+  var result = await sb.from('work_requests').insert(records).select();
+  if (result.error) {
+    showToast('Import failed: ' + result.error.message);
+    btn.disabled = false; btn.textContent = 'Import ' + records.length + ' work request' + (records.length===1?'':'s');
+    return;
+  }
+
+  showToast(records.length + ' work request' + (records.length===1?'':'s') + ' imported');
+  wrImportState = { rows: null, requestersByEmail: null, assigneesByEmail: null };
+  D.workRequests = await loadWorkRequests();
+  renderNav();
+  nav('admin-work-requests');
+}
+
+async function handleWorkRequestImportFile(file) {
+  document.getElementById('wr-import-preview').innerHTML = '<div class="text-muted" style="padding:12px">Reading file…</div>';
+
+  var lookupResults = await Promise.all([
+    sb.from('profiles').select('id, email, display_name'),
+    sb.from('resources').select('id, email, name').eq('type', 'individual')
+  ]);
+  var requestersByEmail = {};
+  (lookupResults[0].data || []).forEach(function(p){ if (p.email) requestersByEmail[p.email.toLowerCase()] = p; });
+  var assigneesByEmail = {};
+  (lookupResults[1].data || []).forEach(function(r){ if (r.email) assigneesByEmail[r.email.toLowerCase()] = r; });
+  wrImportState.requestersByEmail = requestersByEmail;
+  wrImportState.assigneesByEmail = assigneesByEmail;
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      var sheet = wb.Sheets['Work Requests'] || wb.Sheets[wb.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      rows = rows.filter(function(r){ return String(r['Title']||'').trim() !== ''; });
+      if (!rows.length) {
+        document.getElementById('wr-import-preview').innerHTML = '<div class="empty-state" style="padding:24px"><i class="ti ti-file-off"></i><p>No work request rows found in that file</p></div>';
+        return;
+      }
+      wrImportState.rows = rows;
+      renderWorkRequestImportPreview();
+    } catch (err) {
+      document.getElementById('wr-import-preview').innerHTML = '<div class="empty-state" style="padding:24px"><i class="ti ti-alert-triangle"></i><p>Could not read that file: ' + err.message + '</p></div>';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function pgImportWorkRequests() {
+  tb('Import Work Requests');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can import work requests.</p></div>';
+    return;
+  }
+  wrImportState = { rows: null, requestersByEmail: null, assigneesByEmail: null };
+  document.getElementById('content').innerHTML =
+    '<div class="card mb-16">' +
+    '<div class="section-title">Bring in existing work requests</div>' +
+    '<p class="text-muted" style="font-size:13px;margin-bottom:16px">Use this to add work requests that are already in progress or finished, without sending them through the New/Accept negotiation — every imported row lands directly in Accepted or Complete status.</p>' +
+    '<a class="btn btn-sm mb-16" href="pmo-hub-work-request-import-template.xlsx" download><i class="ti ti-download"></i> Download the import template</a>' +
+    '<div class="form-group"><div class="form-label">Upload your filled-in template</div><input type="file" id="wr-import-file" accept=".xlsx"></div>' +
+    '</div>' +
+    '<div id="wr-import-preview"></div>';
+
+  document.getElementById('wr-import-file').addEventListener('change', function(e) {
+    if (e.target.files && e.target.files[0]) handleWorkRequestImportFile(e.target.files[0]);
+  });
+}
+
 async function callAdminUsersApi(payload) {
   var sessionResult = await sb.auth.getSession();
   var token = sessionResult.data && sessionResult.data.session ? sessionResult.data.session.access_token : null;
@@ -7389,7 +7549,7 @@ function workRequestRowHtml(w, flavor, opts) {
       actions = '<button class="btn btn-sm btn-primary" onclick="openReplyWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-message-2"></i> Reply</button>' +
         '<button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>' + reassignBtn;
     } else if (w.status === 'Accepted') {
-      actions = reassignBtn;
+      actions = '<button class="btn btn-sm btn-success" onclick="openCompleteWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>' + reassignBtn;
     }
   }
 
@@ -7489,7 +7649,7 @@ function openNoteModal(id, title, placeholder, actionFn, btnLabel) {
 function openSendBackModal(id) { openNoteModal(id, 'Send back for more info', 'What do you need to know?', sendBackWorkRequest, 'Send back'); }
 function openDeclineWorkRequestModal(id) { openNoteModal(id, 'Decline this request', 'Optional reason (visible to the requester)', declineWorkRequest, 'Decline'); }
 function openReplyWorkRequestModal(id) { openNoteModal(id, 'Reply with the missing detail', 'Add what they asked for…', replyWorkRequest, 'Send reply'); }
-function openCompleteWorkRequestModal(id) { openNoteModal(id, 'Mark as complete', 'Anything the requester should know? (optional)', completeWorkRequest, 'Mark complete'); }
+function openCompleteWorkRequestModal(id) { openNoteModal(id, 'Mark as complete', 'Anything worth noting about this completion? (optional)', completeWorkRequest, 'Mark complete'); }
 
 async function acceptWorkRequest(id, hours, date) {
   var w = D.workRequests.find(function(x){ return x.id === id; });
