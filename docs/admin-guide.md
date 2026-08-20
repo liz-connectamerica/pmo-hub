@@ -148,6 +148,12 @@ Every row is validated before you commit anything — you'll see a green check o
 
 **Important:** there's no duplicate detection. Every valid row is always inserted as a new project — re-uploading a template you've already imported will create duplicates for every row that was already brought in. Only include genuinely new rows in each upload.
 
+## Import Work Requests
+
+Same pattern as Import Projects — download the template, fill it in, upload it, review the per-row validation, then commit. Expected columns: Title (required), Description, Requester Email (required — must match an existing PMO Hub user), Assignee Email (required — must match an existing individual resource), Requested Completion Date, and Status.
+
+This tool is specifically for backfilling work that's already underway or finished, so it skips the New → Accept negotiation entirely: **Status** only accepts **Accepted** or **Complete** (defaults to Accepted if left blank) — there's no way to import one in New, Needs Info, Declined, or Withdrawn status. Since acceptance is assumed, the Requested Completion Date is also used as the committed/estimated completion date; there's no separate field for a negotiated date. A row with an email that doesn't match an existing account or resource is flagged with a specific error and skipped, same no-duplicate-detection caveat as Import Projects applies here too.
+
 ## Export Projects
 
 One click downloads every project's scalar fields (not tasks, milestones, RAID, documents, or team) as an Excel file — status, dates, financials, and a single `Priority Rank` column reflecting its position in the one overall Prioritize Backlog ranking.

@@ -128,6 +128,12 @@
   guide: Admin Guide
   blurb: Template download, validation, and the no-duplicate-detection caveat.
 
+- title: Import Work Requests
+  page: /admin-guide/
+  anchor: import-work-requests
+  guide: Admin Guide
+  blurb: Backfill already-accepted or completed work requests, skipping the New/Accept negotiation.
+
 - title: Export Projects
   page: /admin-guide/
   anchor: export-projects
