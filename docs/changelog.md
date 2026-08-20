@@ -14,6 +14,24 @@ A dated log of feature and fix changes to PMO Hub, newest first. Each entry is t
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-08-20-import-work-requests">
+  <h2>Import Work Requests</h2>
+  <p class="changelog-date">August 20, 2026 · 10:40 AM</p>
+  <ul>
+    <li>Added a new admin-only "Import Work Requests" page under Data Tools, matching the existing Import Projects pattern: download a template, fill it in, upload it, review a per-row validation preview, then commit.</li>
+    <li>This is a backfill tool for work that's already underway or finished, so it skips the New &rarr; Accept negotiation entirely -- every imported row lands directly in Accepted or Complete status. Columns: Title, Description, Requester Email, Assignee Email, Requested Completion Date, and Status (Accepted/Complete, defaults to Accepted).</li>
+    <li>Since acceptance is assumed, the requested completion date doubles as the committed/estimated completion date -- there's no separate negotiated-date field.</li>
+  </ul>
+</div>
+
+<div class="changelog-entry" id="cl-2026-08-20-work-requests">
+  <h2>Work Requests</h2>
+  <p class="changelog-date">August 20, 2026 · 10:40 AM</p>
+  <ul>
+    <li>A requester can now mark their own Accepted work request complete (with an optional closing note), not just the assignee -- useful when the person doing the work isn't in the habit of logging in to update status themselves.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-08-19-todo">
   <h2>To-Do</h2>
   <p class="changelog-date">August 19, 2026 · 2:00 PM – 2:10 PM</p>
