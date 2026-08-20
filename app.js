@@ -4227,7 +4227,8 @@ function pgProjectDetail(pid, tab) {
         '<th><span>Status</span>' + filterIcon('status', st.fStatus.length>0) + '</th>' +
         '<th>Dates</th><th></th></tr>';
 
-      return (editable ? '<button class="btn btn-primary btn-sm mb-12" style="margin-right:8px" onclick="openAddTask(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add task</button>' : '') +
+      return '<div class="info-banner info-blue" style="margin-bottom:12px"><i class="ti ti-info-circle"></i><div>The project plan: scheduled work with owners, dates, and dependencies. For quick action items, follow-ups, or requests that don\'t belong on the plan, use <strong>To-Do</strong> instead.</div></div>' +
+        (editable ? '<button class="btn btn-primary btn-sm mb-12" style="margin-right:8px" onclick="openAddTask(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add task</button>' : '') +
         taskTimelineBlock(p.id, list) +
         searchBar +
         (p.tasks.length
@@ -4313,7 +4314,8 @@ function pgProjectDetail(pid, tab) {
       var todoHeader = '<tr><th>To-Do</th><th><span>Assignee</span>' + todoFilterIcon('assignee', tst.fAssignee.length>0) + '</th>' +
         '<th><span>Status</span>' + todoFilterIcon('status', tst.fStatus.length>0) + '</th><th>Due</th><th></th></tr>';
 
-      return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddTodo(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add to-do</button>' : '') +
+      return '<div class="info-banner info-blue" style="margin-bottom:12px"><i class="ti ti-info-circle"></i><div>Quick action items, follow-ups, access requests, and reminders -- lightweight work with an owner, an optional due date, and a simple Open/Done status. For scheduled work with dates and dependencies, use <strong>Plan</strong> instead.</div></div>' +
+        (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddTodo(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add to-do</button>' : '') +
         todoSearchBar +
         (p.todos.length
           ? (todoList.length ? '<table class="tasks-table"><thead>' + todoHeader + '</thead><tbody>' + todoRows + '</tbody></table>' : '<div class="empty-state" style="padding:30px"><i class="ti ti-search"></i><p>No to-dos match your filters</p></div>')
