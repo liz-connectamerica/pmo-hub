@@ -113,17 +113,25 @@ A team can be assigned to a project directly (separately from its individual mem
 
 An individual's row also shows a **Work requests** column — a plain-text count of their open (New, Needs Info, or Accepted) work requests, with total estimated hours for any that have been given one. Teams don't get this column, since work requests are always assigned to an individual, never a team. The **Open tasks** and **Work requests** columns each flag how many are Late in a small red badge, same concept covered in the [User Guide](../user-guide/#late-items).
 
+A **Load** column shows this month's overall capacity load (see [Capacity](#capacity) below for what feeds into that number) as a colored %, and links straight into the Capacity page. For an individual who hasn't self-reported a BAU % yet, editing their resource record has a **BAU (non-project) %** field so you can set or override it on their behalf — normally this is self-reported from their own My Tasks page.
+
 ## Capacity
 
-A month-by-month timeline showing how loaded each individual or team is, so you can see who's about to be slammed vs. who's freeing up. Switch between **Individuals** and **Teams** tabs — these are always shown separately, never blended together.
+A month-by-month timeline showing how loaded each individual or team really is — not just how many projects they're touching, but roughly how much of their time each one is expected to take, plus their non-project work and open work requests. Switch between **Individuals** and **Teams** tabs — these are always shown separately, never blended together.
 
-- Each resource is a row, colored per month by how many projects overlap that month (free / 1 / 2 / 3+), using the same color scale throughout.
-- Click a row to expand it into the actual project bars for that resource, plus — for an individual — a **Work requests** section underneath listing their open work requests (title, status, requester, estimated hours, and due date), the same expand action as projects.
+Each month cell is a single combined **% load** figure, made up of:
+
+- **BAU %** — a flat baseline added to every month, self-reported by the individual from their My Tasks page (or set by an admin from Resources). Teams don't have a BAU % of their own.
+- **Project allocation tier** — for every project placed on the timeline that overlaps that month, the tier the project's owner (or an admin) set for that person on the project's **Team** tab: **Owner/Lead** (50%), **Core** (25%), or **Light touch** (10%). A team member with no tier set yet contributes 0% until someone sets one — the project still shows up when you expand the row, just flagged **Tier not set**, so it isn't silently invisible.
+- **Work requests** — each of an individual's open work requests (New, Needs Info, or Accepted) is prorated across the working days between when it was accepted (or today, if still New/Needs Info) and its estimated completion date, and converted to a % of a standard work month. A request with no estimated completion date yet can't be placed on the timeline, same limitation as an unscheduled project.
+
+Cells are colored **Light** (under 50%), **Moderate** (50–79%), **Full** (80–109%), or **Over-allocated** (110%+) — the same scale used for the Load column on Resources.
+
+- Click a row to expand it into the actual project bars for that resource (each labeled with its allocation tier), plus — for an individual — their BAU % and a **Work requests** section underneath listing their open work requests (title, status, requester, estimated hours, an approximate %, and due date).
 - A project counts toward the timeline if it's **Active or Planned with real dates**, or **Backlog with a target quarter estimate**. Projects on Hold, Completed, or Backlog with no estimate at all aren't placeable and don't count — if a resource has any of those, you'll see a small note when you expand their row rather than a silent gap.
-- **Teams** show their own row for projects assigned directly to the team, plus one row per member underneath for that person's own individual load — these are intentionally kept separate rather than combined into one number, since "the team has 2 direct projects" and "one member is swamped" are different facts worth seeing independently. Teams don't have a work requests section of their own, since work requests are always assigned to an individual.
-- Rows are sorted by how many projects are actually shown on the timeline (most first), then alphabetically as a tiebreaker (last name for individuals, team name for teams).
-- This page is read-only — to actually change a project's schedule or target quarter, use Future Planning or the project's own Edit modal.
-- Each individual row also carries a trailing **Work requests** column, separate from the month grid — it's a plain hours/count summary of that person's open work requests, not folded into the project-count coloring, since work requests measure hours rather than project overlap. Teams don't get this column.
+- **Teams** show their own row for projects assigned directly to the team, plus one row per member underneath for that person's own individual load — these are intentionally kept separate rather than combined into one number, since "the team is carrying 2 direct projects" and "one member is over-allocated" are different facts worth seeing independently. Teams don't have a BAU % or a work requests section of their own.
+- Rows are sorted by peak monthly load across the visible window (highest first), then alphabetically as a tiebreaker (last name for individuals, team name for teams).
+- This page is read-only for scheduling — to actually change a project's schedule or target quarter, use Future Planning or the project's own Edit modal. Allocation tiers are set from the project's own Team tab, and BAU % is normally self-reported from My Tasks (or overridden from Resources).
 
 ## Future Planning
 

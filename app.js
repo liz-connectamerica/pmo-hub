@@ -211,7 +211,8 @@ async function loadResources() {
     var out = {
       id: r.id, name: r.name, role: r.title, type: r.type,
       firstName: r.first_name, lastName: r.last_name,
-      projects: projectIds, email: r.email, userId: r.user_id
+      projects: projectIds, email: r.email, userId: r.user_id,
+      bauPercent: r.non_project_capacity
     };
     if (r.type === 'team') {
       out.members = (membersByTeam[r.id] || []).map(function(x){ return nameById[x.member_resource_id]; }).filter(Boolean);
@@ -372,6 +373,12 @@ async function loadAllProjects() {
     var teamRowsForProj = teamByProject[pr.id] || [];
     var teamIds = teamRowsForProj.map(function(t){ return t.resource_id; });
     var teamNames = teamIds.map(function(id){ return resourceNameById[id] || id; });
+    // Capacity-planning tier per team member -- how much of their time this
+    // project is expected to take, set by the project owner (or admin),
+    // separate from whether they're merely "on the team." Unset until
+    // someone assigns one.
+    var teamTiers = {};
+    teamRowsForProj.forEach(function(t){ teamTiers[t.resource_id] = t.allocation_tier || null; });
 
     var milestones = (milestonesByProj[pr.id] || []).map(function(m) {
       return {
@@ -452,7 +459,7 @@ async function loadAllProjects() {
       sponsor: pr.sponsor, sponsorResourceId: pr.sponsor_resource_id, programId: pr.program_id,
       categories: (categoriesByProj[pr.id]||[]).map(function(c){ return c.category; }), businessUnit: pr.business_unit,
       dependencies: (dependenciesByProject[pr.id]||[]).map(function(d){ return projectInfoById[d.depends_on_project_id]; }).filter(Boolean),
-      team: teamNames, teamIds: teamIds,
+      team: teamNames, teamIds: teamIds, teamTiers: teamTiers,
       status: pr.status, phase: pr.phase, progress: pr.progress,
       start: pr.start_date, end: pr.end_date, plannedStart: pr.planned_start,
       value: pr.value_area, priority: pr.priority, description: pr.description,
@@ -1845,6 +1852,15 @@ var myProjectsPageState = { tab:'sponsor' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
 var rejectedFilterState = { range:'30' };
+
+// Capacity planning: a team member's involvement in a given project is set
+// as one of these tiers (by the project owner or an admin) rather than a
+// raw percent, and each tier maps to an assumed %-of-time for the heat map.
+var ALLOCATION_TIERS = ['Owner/Lead', 'Core', 'Light touch'];
+var ALLOCATION_TIER_PERCENT = { 'Owner/Lead': 50, 'Core': 25, 'Light touch': 10 };
+// Used to convert an accepted work request's estimated_hours into a %-of-month
+// figure for the capacity heat map.
+var STANDARD_WORK_WEEK_HOURS = 40;
 
 function buildQuarterOptions() {
   var thisYear = new Date().getFullYear();
@@ -4292,10 +4308,17 @@ function pgProjectDetail(pid, tab) {
         ? p.team.map(function(m,i){
             var isTeam = teamNames().indexOf(m) >= 0;
             var ini = m.split(' ').map(function(x){ return x[0]; }).join('');
+            var resId = p.teamIds[i];
+            var curTier = (p.teamTiers && p.teamTiers[resId]) || '';
+            var tierSelect = '<select style="font-size:12px" ' + (editable ? '' : 'disabled ') + 'onchange="setAllocationTier(\'' + p.id + '\',\'' + resId + '\',this.value)">' +
+              '<option value=""' + (curTier === '' ? ' selected' : '') + '>Not set</option>' +
+              ALLOCATION_TIERS.map(function(tier){ return '<option value="' + tier + '"' + (curTier === tier ? ' selected' : '') + '>' + tier + '</option>'; }).join('') +
+              '</select>';
             return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0ede8">' +
               '<div style="display:flex;align-items:center;gap:10px">' + (isTeam ? '<i class="ti ti-users" style="color:#185FA5"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:13px">' + m + '</span>' + (isTeam ? teamManagerSuffix(m) : '') + '</div>' +
+              '<div style="display:flex;align-items:center;gap:10px">' + tierSelect +
               (editable ? '<button class="btn btn-sm btn-danger" onclick="removeTeamMemberDirect(\'' + p.id + '\',\'' + m.replace(/'/g,"\\'") + '\')"><i class="ti ti-x"></i></button>' : '') +
-              '</div>';
+              '</div></div>';
           }).join('')
         : '<div class="text-muted">No team members yet</div>';
       var addCandidates = addKind === 'team' ? candidateTeams : candidatePeople;
@@ -4816,8 +4839,17 @@ function pgProjectDetail(pid, tab) {
     var result = await sb.from('resource_projects').delete().eq('project_id', pid2).eq('resource_id', resourceId);
     if (result.error) { showToast('Could not remove: ' + result.error.message); return; }
     pr.team.splice(idx,1); pr.teamIds.splice(idx,1);
+    if (pr.teamTiers) delete pr.teamTiers[resourceId];
     document.getElementById('ptab-content').innerHTML = tabC('team');
     showToast(personName + ' removed from the team');
+  };
+  window.setAllocationTier = async function(pid2, resourceId, tier) {
+    var pr = D.projects.find(function(x){ return x.id === pid2; });
+    var result = await sb.from('resource_projects').update({ allocation_tier: tier || null }).eq('project_id', pid2).eq('resource_id', resourceId);
+    if (result.error) { showToast('Could not update allocation: ' + result.error.message); return; }
+    pr.teamTiers = pr.teamTiers || {};
+    pr.teamTiers[resourceId] = tier || null;
+    showToast('Allocation updated');
   };
   window.switchPTab = function(t) {
     tbs.forEach(function(x){ var e = document.getElementById('ptab-' + x); if (e) e.className = 'tab' + (x===t?' active':''); });
@@ -8715,6 +8747,19 @@ function resourceWorkRequestSummary(r) {
     (lateCount > 0 ? ' ' + lateBadgeHtml(true, lateCount + ' of these ' + (lateCount===1?'is':'are') + ' past its committed date') : '');
 }
 
+// This-month %-load badge for the Resources admin table -- same figure and
+// color thresholds as the Capacity heat map, computed just for the current
+// month bucket, with a shortcut into the full Capacity view.
+function resourceCurrentLoadBadgeHtml(r) {
+  var m = capacityMonthBuckets(new Date(), 1)[0];
+  var placed = resourcePlacedProjects(r);
+  var openWR = r.type === 'individual' ? resourceOpenWorkRequests(r) : [];
+  var pct = resourceMonthLoadPct(r, placed, openWR, m);
+  var bg = pct >= 110 ? '#F0A7A3' : pct >= 80 ? '#F5CE8B' : pct >= 50 ? '#BFE3D3' : '#f0ede8';
+  var fg = pct === 0 ? '#999' : '#3a3a3a';
+  return '<button class="btn btn-sm" style="background:' + bg + ';color:' + fg + ';border:none" title="View in Capacity" onclick="nav(\'capacity\')">' + pct + '%</button>';
+}
+
 function resourceCombinedProjectIds(r) {
   var ids = (r.projects || []).slice();
   var ownedIds = [];
@@ -8796,8 +8841,9 @@ function pgResources() {
         '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + combinedCount + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
         '<td class="text-muted">' + (taskCount === null ? '—' : taskCount) + ' ' + lateBadgeHtml(resourceLateTaskCount(r) > 0, resourceLateTaskCount(r) + ' past due') + '</td>' +
         '<td class="text-muted">' + resourceWorkRequestSummary(r) + '</td>' +
+        '<td>' + resourceCurrentLoadBadgeHtml(r) + '</td>' +
         '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button></td>' +
-        '</tr>' + projectExpandRow(r, 9);
+        '</tr>' + projectExpandRow(r, 10);
     }).join('');
     tableHtml = '<table><thead><tr>' +
       '<th class="sortable-th" onclick="setResourceSort(\'firstName\')">First name ' + arrow('firstName') + '</th>' +
@@ -8808,6 +8854,7 @@ function pgResources() {
       '<th class="sortable-th" onclick="setResourceSort(\'projects\')">Projects ' + arrow('projects') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'tasks\')">Open tasks ' + arrow('tasks') + '</th>' +
       '<th>Work requests</th>' +
+      '<th title="This month\'s capacity load — BAU % + project tiers + work requests">Load</th>' +
       '<th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   } else {
     var trows = list.map(function(r) {
@@ -8817,14 +8864,16 @@ function pgResources() {
         '<td class="text-muted">' + (r.managerName||'—') + '</td>' +
         '<td class="text-muted">' + (r.members||[]).length + '</td>' +
         '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + combinedCount + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
+        '<td>' + resourceCurrentLoadBadgeHtml(r) + '</td>' +
         '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button></td>' +
-        '</tr>' + projectExpandRow(r, 5);
+        '</tr>' + projectExpandRow(r, 6);
     }).join('');
     tableHtml = '<table><thead><tr>' +
       '<th class="sortable-th" onclick="setResourceSort(\'name\')">Team ' + arrow('name') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'managerName\')">Manager ' + arrow('managerName') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'members\')">Members ' + arrow('members') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'projects\')">Projects ' + arrow('projects') + '</th>' +
+      '<th title="This month\'s capacity load — BAU % + project tiers + work requests">Load</th>' +
       '<th></th></tr></thead><tbody>' + trows + '</tbody></table>';
   }
 
@@ -8866,6 +8915,63 @@ function resourcePlacedProjects(r) {
     .filter(function(x){ return x.range; });
 }
 
+// Assumed hours in one standard month, for converting a work request's
+// estimated_hours into a %-of-month figure.
+function monthCapacityHours() { return STANDARD_WORK_WEEK_HOURS * 52 / 12; }
+
+// Prorates an open work request's estimated hours evenly across the working
+// days between when it was accepted (or today, if not yet accepted) and its
+// estimated completion date, then returns the hours falling within one
+// month bucket [m.start, m.end). Work requests with no completion date (not
+// yet estimated) or no hours can't be placed on a timeline at all, so they
+// contribute 0 here -- same limitation as an unplaced project.
+function workRequestHoursInMonth(w, m) {
+  if (!w.estimatedCompletionDate || !w.estimatedHours) return 0;
+  var startStr = w.acceptedAt ? w.acceptedAt.slice(0, 10) : todayStr();
+  var endStr = w.estimatedCompletionDate;
+  if (endStr < startStr) startStr = endStr;
+  var totalDays = workingDaysBetween(startStr, endStr) || 1;
+  var mLastDay = new Date(m.end.getFullYear(), m.end.getMonth(), 0);
+  var mStartStr = m.start.toISOString().slice(0, 10);
+  var mEndStr = mLastDay.toISOString().slice(0, 10);
+  var overlapStart = startStr > mStartStr ? startStr : mStartStr;
+  var overlapEnd = endStr < mEndStr ? endStr : mEndStr;
+  var overlapDays = workingDaysBetween(overlapStart, overlapEnd) || 0;
+  return (w.estimatedHours / totalDays) * overlapDays;
+}
+
+// A rough, month-length-independent % figure for a single work request, used
+// in the detail view where there's no specific month bucket to place it in.
+function workRequestApproxPct(w) {
+  if (!w.estimatedCompletionDate || !w.estimatedHours) return null;
+  var startStr = w.acceptedAt ? w.acceptedAt.slice(0, 10) : todayStr();
+  var endStr = w.estimatedCompletionDate;
+  if (endStr < startStr) startStr = endStr;
+  var totalDays = workingDaysBetween(startStr, endStr) || 1;
+  var hoursPerDay = w.estimatedHours / totalDays;
+  var standardHoursPerDay = STANDARD_WORK_WEEK_HOURS / 5;
+  return Math.round((hoursPerDay / standardHoursPerDay) * 100);
+}
+
+// Total %-of-time load for one resource in one month bucket: BAU baseline
+// (constant every month) + tier% for every placed project overlapping the
+// month (only counted once its owner has actually set a tier -- see the
+// Team tab) + prorated work-request hours converted to a % of a standard
+// month. Teams have neither a BAU % nor their own work requests, so `placed`
+// (tier contributions) is the only input that applies to them.
+function resourceMonthLoadPct(r, placed, openWR, m) {
+  var bau = r.bauPercent || 0;
+  var projectPct = placed.reduce(function(sum, x) {
+    if (!(x.range.end >= m.start && x.range.start < m.end)) return sum;
+    var tier = x.project.teamTiers ? x.project.teamTiers[r.id] : null;
+    return sum + (tier ? (ALLOCATION_TIER_PERCENT[tier] || 0) : 0);
+  }, 0);
+  var wrHours = openWR.reduce(function(sum, w){ return sum + workRequestHoursInMonth(w, m); }, 0);
+  var cap = monthCapacityHours();
+  var wrPct = cap > 0 ? (wrHours / cap) * 100 : 0;
+  return Math.round(bau + projectPct + wrPct);
+}
+
 function capacityMonthBuckets(windowStart, windowMonths) {
   var months = [];
   for (var i = 0; i < windowMonths; i++) {
@@ -8876,10 +8982,10 @@ function capacityMonthBuckets(windowStart, windowMonths) {
   return months;
 }
 
-function capacityHeatCellHtml(count, monthLabel) {
-  var bg = count === 0 ? '#f0ede8' : count === 1 ? '#BFE3D3' : count === 2 ? '#F5CE8B' : '#F0A7A3';
-  var fg = count === 0 ? '#999' : '#3a3a3a';
-  return '<div class="cap-heat-cell" style="background:' + bg + ';color:' + fg + '" title="' + monthLabel + ': ' + count + ' project' + (count===1?'':'s') + '">' + (count || '') + '</div>';
+function capacityHeatCellHtml(pct, monthLabel) {
+  var bg = pct >= 110 ? '#F0A7A3' : pct >= 80 ? '#F5CE8B' : pct >= 50 ? '#BFE3D3' : '#f0ede8';
+  var fg = pct === 0 ? '#999' : '#3a3a3a';
+  return '<div class="cap-heat-cell" style="background:' + bg + ';color:' + fg + '" title="' + monthLabel + ': ' + pct + '% load">' + (pct ? pct + '%' : '') + '</div>';
 }
 
 // Fractional month-index position of a date within the window, for placing a
@@ -8890,14 +8996,16 @@ function capacityMonthPos(d, windowStart) {
   return (d.getFullYear() - windowStart.getFullYear()) * 12 + (d.getMonth() - windowStart.getMonth()) + (d.getDate() - 1) / daysInMonth;
 }
 
-function capacityDetailBarHtml(entry, windowStart, totalMonths) {
+function capacityDetailBarHtml(entry, windowStart, totalMonths, r) {
   var p = entry.project, range = entry.range;
   var startPos = capacityMonthPos(range.start, windowStart);
   var endPos = capacityMonthPos(range.end, windowStart) + 0.05;
   var clampedStart = Math.max(0, startPos), clampedEnd = Math.min(totalMonths, endPos);
+  var tier = p.teamTiers ? p.teamTiers[r.id] : null;
+  var tierBadge = ' <span class="badge ' + (tier ? 'badge-purple' : 'badge-gray') + '" style="font-size:10px">' + (tier ? tier : 'Tier not set') + '</span>';
   var viewBtn = '<button class="btn btn-sm" style="padding:1px 5px;margin-right:4px" title="View project" onclick="event.stopPropagation();goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button>';
   if (clampedEnd <= 0 || clampedStart >= totalMonths) {
-    return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + viewBtn + p.name + '</div><div class="tl-wrap"><span class="text-muted" style="font-size:11px;padding-left:8px">Outside this window</span></div></div>';
+    return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + viewBtn + p.name + tierBadge + '</div><div class="tl-wrap"><span class="text-muted" style="font-size:11px;padding-left:8px">Outside this window</span></div></div>';
   }
   var isEstimate = p.stage === 'backlog';
   var widthPct = Math.max(0.5, clampedEnd - clampedStart) / totalMonths * 100;
@@ -8907,7 +9015,7 @@ function capacityDetailBarHtml(entry, windowStart, totalMonths) {
     : 'background:' + (PHASE_COLORS[p.phase] || '#534AB7');
   var lateNow = isProjectLate(p);
   if (lateNow) barStyle += ';box-shadow:inset 0 0 0 2px #B23A3A';
-  return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + viewBtn + p.name + '</div>' +
+  return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + viewBtn + p.name + tierBadge + '</div>' +
     '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '" title="' + (lateNow ? 'Late — ' : '') + (isEstimate ? 'Estimate' : (p.phase||'')) + '">' + (lateNow ? '<i class="ti ti-alert-triangle"></i> ' : '') + (isEstimate ? 'Estimate' : (p.phase||'')) + '</div></div></div>';
 }
 
@@ -8915,11 +9023,13 @@ function capacityDetailBarHtml(entry, windowStart, totalMonths) {
 // so the expanded detail lists them as plain rows instead -- same .tl-row
 // shell as capacityDetailBarHtml, just without a positioned bar.
 function capacityWorkRequestDetailRowHtml(w) {
+  var approxPct = workRequestApproxPct(w);
   return '<div class="tl-row"><div class="tl-label" title="' + w.title + '">' + w.title + '</div>' +
     '<div class="tl-wrap" style="display:flex;align-items:center;gap:8px;padding-left:8px">' +
     '<span class="badge ' + workRequestStatusBadgeClass(w.status) + '" style="font-size:11px">' + w.status + '</span>' +
     '<span class="text-muted" style="font-size:11px">from ' + w.requesterName + '</span>' +
     (w.estimatedHours != null ? '<span class="text-muted" style="font-size:11px">' + w.estimatedHours + ' hrs</span>' : '') +
+    (approxPct != null ? '<span class="text-muted" style="font-size:11px">≈ ' + approxPct + '% of a work day, until due</span>' : '') +
     (w.estimatedCompletionDate ? '<span class="text-muted" style="font-size:11px">due ' + w.estimatedCompletionDate + '</span>' : '') +
     lateBadgeHtml(isWorkRequestLate(w)) +
     '</div></div>';
@@ -8929,16 +9039,17 @@ function capacityResourceRowHtml(r, months, windowStart, indent) {
   var placed = resourcePlacedProjects(r);
   var combinedTotal = resourceCombinedProjectIds(r).allIds.length;
   var unplacedCount = combinedTotal - placed.length;
+  var openWR = r.type === 'individual' ? resourceOpenWorkRequests(r) : [];
   var cells = months.map(function(m) {
-    var count = placed.filter(function(x){ return x.range.end >= m.start && x.range.start < m.end; }).length;
-    return capacityHeatCellHtml(count, m.label);
+    var pct = resourceMonthLoadPct(r, placed, openWR, m);
+    return capacityHeatCellHtml(pct, m.label);
   }).join('');
   var expanded = capacityPageState.expandedId === r.id;
   var detail = '';
   if (expanded) {
-    var bars = placed.map(function(x){ return capacityDetailBarHtml(x, windowStart, months.length); }).join('');
-    var openWR = r.type === 'individual' ? resourceOpenWorkRequests(r) : [];
+    var bars = placed.map(function(x){ return capacityDetailBarHtml(x, windowStart, months.length, r); }).join('');
     detail = '<div style="padding:10px 0 4px 0">' +
+      (r.type === 'individual' ? '<div class="text-muted" style="font-size:12px;margin-bottom:8px">BAU (non-project) time: ' + (r.bauPercent != null ? r.bauPercent + '%' : 'not self-reported yet') + '</div>' : '') +
       (bars || '<span class="text-muted" style="font-size:12px">No placed projects in this window</span>') +
       (unplacedCount > 0 ? '<div class="text-muted" style="font-size:11px;margin-top:6px">+' + unplacedCount + ' more assigned but not shown (on hold, completed, or missing a schedule/estimate)</div>' : '') +
       (r.type === 'individual'
@@ -8982,9 +9093,14 @@ function pgCapacity() {
   }
 
   function sortedByLoad(list, tiebreakKey) {
-    return list.map(function(r){ return { r:r, count: resourcePlacedProjects(r).length }; })
+    return list.map(function(r){
+      var placed = resourcePlacedProjects(r);
+      var openWR = r.type === 'individual' ? resourceOpenWorkRequests(r) : [];
+      var peak = months.reduce(function(max, m){ return Math.max(max, resourceMonthLoadPct(r, placed, openWR, m)); }, 0);
+      return { r:r, peak: peak };
+    })
       .sort(function(a,b){
-        if (b.count !== a.count) return b.count - a.count;
+        if (b.peak !== a.peak) return b.peak - a.peak;
         return (a.r[tiebreakKey]||'').localeCompare(b.r[tiebreakKey]||'');
       })
       .map(function(x){ return x.r; });
@@ -8995,10 +9111,11 @@ function pgCapacity() {
     '</div><div style="width:140px;min-width:140px;font-size:11px;color:#999;text-align:right;padding-right:4px">Work requests</div></div>';
 
   var legendHtml = '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:#666">' +
-    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#f0ede8;display:inline-block"></span>Free</div>' +
-    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#BFE3D3;display:inline-block"></span>1 project</div>' +
-    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#F5CE8B;display:inline-block"></span>2 projects</div>' +
-    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#F0A7A3;display:inline-block"></span>3+ projects</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#f0ede8;display:inline-block"></span>Light (&lt;50%)</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#BFE3D3;display:inline-block"></span>Moderate (50–79%)</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#F5CE8B;display:inline-block"></span>Full (80–109%)</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#F0A7A3;display:inline-block"></span>Over-allocated (110%+)</div>' +
+    '<div class="text-muted">= BAU % + project tiers + work requests</div>' +
   '</div>';
 
   var bodyHtml;
@@ -9152,7 +9269,8 @@ function editResource(rid) {
         '<div class="form-group"><div class="form-label">Last name</div><input type="text" id="er-last" value="' + (res.lastName||'') + '"></div></div>' +
         '<div class="grid-2"><div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="er-role" value="' + (res.role||'') + '"></div>' +
         '<div class="form-group"><div class="form-label">Team</div><select id="er-team">' + teamOpts + '</select></div></div>' +
-        '<div class="form-group"><div class="form-label">Email</div><input type="email" id="er-email" value="' + (res.email||'') + '">' + (res.userId ? '<p class="text-muted" style="font-size:12px;margin-top:4px"><i class="ti ti-link" style="color:#1D9E75"></i> Linked to a real account</p>' : '') + '</div>'
+        '<div class="form-group"><div class="form-label">Email</div><input type="email" id="er-email" value="' + (res.email||'') + '">' + (res.userId ? '<p class="text-muted" style="font-size:12px;margin-top:4px"><i class="ti ti-link" style="color:#1D9E75"></i> Linked to a real account</p>' : '') + '</div>' +
+        '<div class="form-group"><div class="form-label">BAU (non-project) %</div><input type="number" id="er-bau" min="0" max="100" value="' + (res.bauPercent != null ? res.bauPercent : '') + '"><p class="text-muted" style="font-size:12px;margin-top:4px">Normally self-reported from My Tasks — override here if needed.</p></div>'
       : '<div class="form-group"><div class="form-label">Team name</div><input type="text" id="er-name" value="' + res.name + '"></div>' +
         '<div class="form-group"><div class="form-label">Manager</div><select id="er-manager">' + managerOpts + '</select></div>' +
         '<div class="form-group"><div class="form-label">Team members</div>' +
@@ -9196,10 +9314,12 @@ async function saveResource(rid) {
     var email = document.getElementById('er-email').value.trim() || null;
     var newTeamId = document.getElementById('er-team').value || null;
     var name = (first + ' ' + last).trim() || res.name;
+    var bauRaw = document.getElementById('er-bau').value;
+    var bauVal = bauRaw === '' ? null : Math.max(0, Math.min(100, parseInt(bauRaw, 10)));
 
-    var result = await sb.from('resources').update({ name: name, first_name: first, last_name: last, title: role, email: email }).eq('id', rid).select().single();
+    var result = await sb.from('resources').update({ name: name, first_name: first, last_name: last, title: role, email: email, non_project_capacity: bauVal }).eq('id', rid).select().single();
     if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
-    res.name = name; res.firstName = first; res.lastName = last; res.role = role; res.email = email; res.userId = result.data.user_id;
+    res.name = name; res.firstName = first; res.lastName = last; res.role = role; res.email = email; res.userId = result.data.user_id; res.bauPercent = bauVal;
 
     var oldTeamId = res.teamId;
     if (oldTeamId !== newTeamId) {
@@ -10000,9 +10120,35 @@ function pgMyProjectsResource() {
 function pgMyTasks() {
   tb('My Tasks');
   var st = myTasksState;
-  if (st.kind === 'todo') return renderMyTodos();
-  return renderMyPlanTasks();
+  if (st.kind === 'todo') renderMyTodos(); else renderMyPlanTasks();
+  var content = document.getElementById('content');
+  if (content) content.insertAdjacentHTML('afterbegin', bauPercentCardHtml());
 }
+
+function bauPercentCardHtml() {
+  var me = D.resources.find(function(r){ return r.id === D.myResourceId; });
+  if (!me) return '';
+  var pct = (me.bauPercent === null || me.bauPercent === undefined) ? null : me.bauPercent;
+  return '<div class="card mb-16" style="display:flex;align-items:center;justify-content:space-between">' +
+    '<div><div class="section-title" style="margin-bottom:2px">Non-project (BAU) time</div>' +
+    '<div class="text-muted" style="font-size:12px">The % of your time that typically goes to non-project work. Feeds into your capacity load.</div></div>' +
+    '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:18px;font-weight:600">' + (pct === null ? 'Not set' : pct + '%') + '</span>' +
+    '<button class="btn btn-sm" onclick="editBauPercent()"><i class="ti ti-edit"></i> Edit</button></div></div>';
+}
+
+window.editBauPercent = async function() {
+  var me = D.resources.find(function(r){ return r.id === D.myResourceId; });
+  if (!me) return;
+  var raw = prompt('What % of your time typically goes to non-project (BAU) work?', me.bauPercent != null ? String(me.bauPercent) : '');
+  if (raw === null) return;
+  var val = parseInt(raw, 10);
+  if (isNaN(val) || val < 0 || val > 100) { showToast('Enter a whole number between 0 and 100'); return; }
+  var result = await sb.from('resources').update({ non_project_capacity: val }).eq('id', me.id);
+  if (result.error) { showToast('Could not update: ' + result.error.message); return; }
+  me.bauPercent = val;
+  showToast('BAU % updated');
+  pgMyTasks();
+};
 
 function myTasksKindTabsHtml() {
   var st = myTasksState;
