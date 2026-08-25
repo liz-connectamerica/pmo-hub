@@ -108,13 +108,13 @@
   page: /admin-guide/
   anchor: resources
   guide: Admin Guide
-  blurb: The roster of individuals and teams, and the Work requests / Late columns.
+  blurb: The roster of individuals and teams, the Work requests column, and each resource's current Load %.
 
 - title: Capacity
   page: /admin-guide/
   anchor: capacity
   guide: Admin Guide
-  blurb: Month-by-month load per resource, expandable into project bars and open work requests.
+  blurb: Month-by-month % load per resource -- BAU %, project allocation tiers, and prorated work requests combined.
 
 - title: Future Planning
   page: /admin-guide/
