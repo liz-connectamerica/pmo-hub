@@ -2442,6 +2442,7 @@ function captureFinalizeDraft(id) {
     priority: priorityEl.value, value: document.getElementById('rv-value').value,
     businessUnit: document.getElementById('rv-bu').value,
     tshirtSize: document.getElementById('rv-tshirt').value,
+    deliveryMethodology: document.getElementById('rv-methodology').value,
     start: document.getElementById('rv-start').value, end: document.getElementById('rv-end').value,
     quarterStart: document.getElementById('rv-q-start') ? document.getElementById('rv-q-start').value : '',
     quarterEnd: document.getElementById('rv-q-end') ? document.getElementById('rv-q-end').value : '',
@@ -2522,6 +2523,9 @@ function reviewRequest(id) {
     var curTshirtApprove = 'tshirtSize' in draft ? draft.tshirtSize : (r.tshirtSize || '');
     var tshirtOptsApprove = '<option value="">— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option' + (curTshirtApprove===s?' selected':'') + '>' + s + '</option>'; }).join('');
     var valOptsApprove = VALUE_AREAS.map(function(v){ return '<option' + ((draft.value||r.value)===v?' selected':'') + '>' + v + '</option>'; }).join('');
+    var curMethodologyApprove = 'deliveryMethodology' in draft ? draft.deliveryMethodology : '';
+    var methodologyOptsApprove = '<option value=""' + (!curMethodologyApprove?' selected':'') + '>— Select —</option>' +
+      ['Agile','Waterfall','Hybrid'].map(function(m){ return '<option' + (curMethodologyApprove===m?' selected':'') + '>' + m + '</option>'; }).join('');
     var catCheckboxes = CATEGORIES.map(function(c){
       var checked = (draft.categories || []).indexOf(c) >= 0;
       return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="rv-category-cb" value="' + c + '"' + (checked?' checked':'') + '> ' + c + '</label>';
@@ -2541,6 +2545,10 @@ function reviewRequest(id) {
       '<div class="grid-2">' +
         '<div class="form-group"><div class="form-label">Business Unit *</div><select id="rv-bu">' + buOptsApprove + '</select></div>' +
         '<div class="form-group"><div class="form-label">T-shirt size</div><select id="rv-tshirt">' + tshirtOptsApprove + '</select></div>' +
+      '</div>' +
+      '<div class="grid-2">' +
+        '<div class="form-group"><div class="form-label">Delivery methodology *</div><select id="rv-methodology">' + methodologyOptsApprove + '</select></div>' +
+        '<div></div>' +
       '</div>' +
       '<div class="form-group"><div class="form-label">Categories</div><div>' + catCheckboxes + '</div></div>' +
       '<div class="form-sub" style="margin:12px 0 4px">If real dates are known, set them below and the project will land in Backlog, Planned, or Active automatically depending on whether the range has already started. Otherwise, an optional target quarter keeps it visible on the Future Planning timeline while it sits in Backlog.</div>' +
@@ -2952,10 +2960,11 @@ async function decideReq(id, decision) {
     var valueArea = document.getElementById('rv-value').value;
     var businessUnit = document.getElementById('rv-bu').value;
     var tshirtSize = document.getElementById('rv-tshirt').value || null;
+    var deliveryMethodology = document.getElementById('rv-methodology').value;
     var startDate = document.getElementById('rv-start').value || null;
     var endDate = document.getElementById('rv-end').value || null;
-    if (!priority || !valueArea || !businessUnit) {
-      showToast('Please fill in Priority, Value Area, and Business Unit before approving');
+    if (!priority || !valueArea || !businessUnit || !deliveryMethodology) {
+      showToast('Please fill in Priority, Value Area, Business Unit, and Delivery Methodology before approving');
       return;
     }
     var selectedCategories = Array.from(document.querySelectorAll('.rv-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
@@ -2975,7 +2984,7 @@ async function decideReq(id, decision) {
     var projectRecord = {
       name: r.title, status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
       value_area: valueArea, priority: priority, description: r.description, sponsor: r.sponsor || null,
-      business_unit: businessUnit, tshirt_size: tshirtSize, blockers: '', health: null, stage: newStage,
+      business_unit: businessUnit, tshirt_size: tshirtSize, delivery_methodology: deliveryMethodology, blockers: '', health: null, stage: newStage,
       planned_start: startDate, start_date: startDate, end_date: endDate,
       target_quarter: targetQuarter, target_year: targetYear, target_end_quarter: targetEndQuarter, target_end_year: targetEndYear,
       estimated_amount: r.estimatedAmount, estimated_frequency: r.estimatedFrequency, estimated_type: r.estimatedType,
@@ -2987,7 +2996,7 @@ async function decideReq(id, decision) {
     await logProjectChanges(projResult.data.id, null, {
       name: r.title, stage: newStage, status: projectRecord.status, priority: priority, value: valueArea,
       businessUnit: businessUnit, sponsor: r.sponsor, start: startDate, end: endDate, description: r.description,
-      tshirtSize: tshirtSize
+      tshirtSize: tshirtSize, deliveryMethodology: deliveryMethodology
     }, 'request');
 
     var teamIds = [];
@@ -3025,7 +3034,7 @@ async function decideReq(id, decision) {
       valueConfidence: r.valueConfidence, costEstimate: r.costEstimate, costConfidence: r.costConfidence,
       targetQuarter: targetQuarter, targetYear: targetYear, targetEndQuarter: targetEndQuarter, targetEndYear: targetEndYear,
       holdReason:null, preHoldStage:null, heldAt:null, completedAt:null,
-      deliveryMethodology: null, projectNumber: projResult.data.project_number, createdAt: projResult.data.created_at,
+      deliveryMethodology: deliveryMethodology, projectNumber: projResult.data.project_number, createdAt: projResult.data.created_at,
       milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]}, documents:[], docFolders:['General'], docFolderIds:{}
     });
     r.status = reqStatus; r.linkedProject = projResult.data.id; r.feedback = feedbackVal;
@@ -8846,8 +8855,56 @@ function renderSubmitProjectRequestForm() {
   var selectedTeam = [];
   var hasFinancial = canViewFinancials();
 
+  var selectedSponsor = '';
+  var sponsorPickerOpen = false;
+  var sponsorQuery = '';
+  var sponsorPool = individualResourceNames();
+
+  function sponsorPanelHtml() {
+    var q = sponsorQuery.trim().toLowerCase();
+    var matches = sponsorPool.filter(function(n){ return n.toLowerCase().indexOf(q) >= 0; });
+    var rows = matches.map(function(n){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">' +
+        '<span style="font-size:13px">' + n + '</span>' +
+        '<button type="button" class="btn btn-sm" onclick="window.__reqSponsorPick(\'' + n.replace(/'/g,"\\'") + '\')">Select</button>' +
+        '</div>';
+    }).join('');
+    return '<div style="border:1px solid #e8e8e5;border-radius:8px;padding:10px;margin-top:8px">' +
+      '<button type="button" class="btn btn-sm" style="margin-bottom:8px" onclick="window.__reqSponsorPick(\'\')"><i class="ti ti-user-off"></i> No sponsor</button>' +
+      '<input type="text" id="f-sponsor-search" placeholder="Search people…" value="' + sponsorQuery.replace(/"/g,'&quot;') + '" oninput="window.__reqSponsorSearch(this.value)">' +
+      '<div style="max-height:180px;overflow-y:auto;margin-top:8px">' + (rows || '<span class="text-muted" style="font-size:13px">No matches</span>') + '</div>' +
+      '</div>';
+  }
+
+  function sponsorFieldInner() {
+    return '<div style="display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:13px' + (selectedSponsor ? '' : ';color:#999') + '">' + (selectedSponsor || 'Optional') + '</span>' +
+      '<button type="button" class="btn btn-sm" onclick="window.__reqSponsorToggle()">' + (selectedSponsor ? 'Change' : 'Select') + '</button>' +
+      '</div>' +
+      (sponsorPickerOpen ? sponsorPanelHtml() : '');
+  }
+
+  window.__reqSponsorToggle = function() {
+    sponsorPickerOpen = !sponsorPickerOpen;
+    sponsorQuery = '';
+    document.getElementById('f-sponsor-field').innerHTML = sponsorFieldInner();
+    var s = document.getElementById('f-sponsor-search');
+    if (s) s.focus();
+  };
+  window.__reqSponsorSearch = function(val) {
+    sponsorQuery = val;
+    document.getElementById('f-sponsor-field').innerHTML = sponsorFieldInner();
+    var s = document.getElementById('f-sponsor-search');
+    if (s) { s.focus(); s.selectionStart = s.selectionEnd = s.value.length; }
+  };
+  window.__reqSponsorPick = function(name) {
+    selectedSponsor = name;
+    sponsorPickerOpen = false;
+    document.getElementById('f-sponsor-field').innerHTML = sponsorFieldInner();
+  };
+
   var valueSectionHtml = hasFinancial
-    ? '<div class="form-group"><div class="form-label">Value type *</div><select id="f-opp-type" onchange="onOppTypeChange()">' +
+    ? '<div class="form-group"><div class="form-label">Value type</div><select id="f-opp-type" onchange="onOppTypeChange()">' +
         '<option value="">— Select —</option><option>Revenue opportunity</option><option>Cost savings opportunity</option>' +
       '</select></div>' +
       '<div class="form-group" id="f-estimate-row" style="display:none">' +
@@ -8870,7 +8927,7 @@ function renderSubmitProjectRequestForm() {
     '<p class="text-muted" style="font-size:13px;margin-bottom:16px"><strong>What\'s a project request?</strong> A full-scale project — its own timeline, milestones, team, and budget. Goes through PMO review, and once approved gets scheduled into Backlog, Planned, or Active. Use this for meaningful, multi-step initiatives, not a quick ask for someone\'s time (that\'s a Work Request, on the other tab).</p>' +
     '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="f-title" placeholder="e.g. Customer onboarding redesign"></div>' +
     '<div class="form-group"><div class="form-label">Business Unit *</div><select id="f-bu">' + buOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="f-sponsor" placeholder="Optional"></div>' +
+    '<div class="form-group"><div class="form-label">Sponsor</div><div id="f-sponsor-field">' + sponsorFieldInner() + '</div></div>' +
     '<div class="form-group"><div class="form-label">Description *</div><div class="form-sub">What is the problem or opportunity?</div><textarea id="f-desc" rows="4" placeholder="Describe the situation and why this project is needed…"></textarea></div>' +
     valueSectionHtml +
     '<div class="form-group"><div class="form-label">Tags</div><div id="f-tags-chips" style="margin-bottom:8px"></div><button class="btn btn-sm" onclick="openRequestTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
@@ -8917,7 +8974,7 @@ function renderSubmitProjectRequestForm() {
   document.getElementById('f-submit').onclick = async function() {
     var title = document.getElementById('f-title').value.trim();
     var bu = document.getElementById('f-bu').value;
-    var sponsor = document.getElementById('f-sponsor').value.trim();
+    var sponsor = selectedSponsor;
     var desc = document.getElementById('f-desc').value.trim();
 
     if (!title || !bu || !desc) { showToast('Please fill in all required fields', 'error'); return; }
@@ -8930,16 +8987,15 @@ function renderSubmitProjectRequestForm() {
     if (hasFinancial) {
       var oppType = document.getElementById('f-opp-type').value;
       var justification = document.getElementById('f-justification').value.trim();
-      if (!oppType) { showToast('Please select a value type', 'error'); return; }
       var estAmountRaw = document.getElementById('f-est-amount').value.trim();
       if (estAmountRaw && isNaN(Number(estAmountRaw))) { document.getElementById('f-est-err').style.display = 'block'; return; }
       var costAmountRaw = document.getElementById('f-cost-amount').value.trim();
       if (costAmountRaw && isNaN(Number(costAmountRaw))) { document.getElementById('f-cost-err').style.display = 'block'; return; }
 
-      record.opportunity_type = oppType;
+      record.opportunity_type = oppType || null;
       record.opportunity_type_other = null;
-      record.estimated_frequency = document.getElementById('f-est-freq').value;
-      record.estimated_type = oppType === 'Revenue opportunity' ? 'Revenue' : 'Savings';
+      record.estimated_frequency = oppType ? document.getElementById('f-est-freq').value : null;
+      record.estimated_type = oppType === 'Revenue opportunity' ? 'Revenue' : oppType === 'Cost savings opportunity' ? 'Savings' : null;
       record.estimated_amount = estAmountRaw ? Number(estAmountRaw) : null;
       record.value_confidence = document.getElementById('f-value-confidence').value || null;
       record.cost_estimate = costAmountRaw ? Number(costAmountRaw) : null;
