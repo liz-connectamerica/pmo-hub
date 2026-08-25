@@ -893,11 +893,11 @@ function toggleTodoDoneIcon(pid2, idx) {
 async function reopenTodo(pid2, idx) {
   var pr = D.projects.find(function(x){ return x.id === pid2; });
   var td = pr.todos[idx];
-  var result = await sb.from('todo_items').update({ status: 'Open' }).eq('id', td.id);
+  var result = await sb.from('todo_items').update({ status: 'Not Started' }).eq('id', td.id);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-  td.status = 'Open';
+  td.status = 'Not Started';
   td.log = td.log || [];
-  td.log.push(await writeLog('todo_log', 'todo_id', td.id, 'Updated', 'Status: "Done" → "Open"'));
+  td.log.push(await writeLog('todo_log', 'todo_id', td.id, 'Updated', 'Status: "Done" → "Not Started"'));
   refreshTaskView();
   showToast('To-do reopened');
 }
@@ -4250,7 +4250,7 @@ function pgProjectDetail(pid, tab) {
 
       var todoAssigneeChoices = [];
       p.todos.forEach(function(td){ var lbl = td.assignee || 'Unassigned'; if (todoAssigneeChoices.indexOf(lbl) < 0) todoAssigneeChoices.push(lbl); });
-      var todoStatusChoices = ['Open','Done'];
+      var todoStatusChoices = ['Not Started','In Progress','Done'];
 
       function todoFilterIcon(col, active) {
         return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleTodoFilterPanel(\'' + p.id + '\',\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
@@ -4684,7 +4684,7 @@ function pgProjectDetail(pid, tab) {
       choices = [];
       pr.todos.forEach(function(td){ var lbl = td.assignee || 'Unassigned'; if (choices.indexOf(lbl) < 0) choices.push(lbl); });
     } else {
-      choices = ['Open','Done'];
+      choices = ['Not Started','In Progress','Done'];
     }
     openFilterModal(label, choices,
       function() { return col === 'assignee' ? s.fAssignee : s.fStatus; },
@@ -5164,7 +5164,8 @@ function openTodoModal(pid, idx) {
     '<div class="form-group"><div class="form-label">Description</div><textarea id="tdm-desc" rows="3" placeholder="Details, context, links…">' + (todo ? (todo.description||'') : '') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">Assignee</div><div id="tdm-assignee-field">' + assigneeFieldInner() + '</div></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Status</div><select id="tdm-status">' +
-      '<option' + (!todo||todo.status==='Open'?' selected':'') + '>Open</option>' +
+      '<option' + (!todo||todo.status==='Not Started'?' selected':'') + '>Not Started</option>' +
+      '<option' + (todo&&todo.status==='In Progress'?' selected':'') + '>In Progress</option>' +
       '<option' + (todo&&todo.status==='Done'?' selected':'') + '>Done</option></select></div>' +
     '<div class="form-group"><div class="form-label">Due date</div><input type="date" id="tdm-due" value="' + (todo?(todo.due||''):'') + '"></div></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
@@ -9793,7 +9794,7 @@ function renderMyTodos() {
   var currentList = st.tab === 'open' ? openList : doneList;
 
   var projectChoices = []; allTodos.forEach(function(it){ if (projectChoices.indexOf(it.project.name) < 0) projectChoices.push(it.project.name); });
-  var statusChoices = ['Open','Done'];
+  var statusChoices = ['Not Started','In Progress','Done'];
 
   var displayed = currentList.slice();
   if (st.search) {
