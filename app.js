@@ -2547,7 +2547,7 @@ function reviewRequest(id) {
         '<div class="form-group"><div class="form-label">T-shirt size</div><select id="rv-tshirt">' + tshirtOptsApprove + '</select></div>' +
       '</div>' +
       '<div class="grid-2">' +
-        '<div class="form-group"><div class="form-label">Delivery methodology *</div><select id="rv-methodology">' + methodologyOptsApprove + '</select></div>' +
+        '<div class="form-group"><div class="form-label">Delivery methodology</div><select id="rv-methodology">' + methodologyOptsApprove + '</select></div>' +
         '<div></div>' +
       '</div>' +
       '<div class="form-group"><div class="form-label">Categories</div><div>' + catCheckboxes + '</div></div>' +
@@ -2960,11 +2960,11 @@ async function decideReq(id, decision) {
     var valueArea = document.getElementById('rv-value').value;
     var businessUnit = document.getElementById('rv-bu').value;
     var tshirtSize = document.getElementById('rv-tshirt').value || null;
-    var deliveryMethodology = document.getElementById('rv-methodology').value;
+    var deliveryMethodology = document.getElementById('rv-methodology').value || null;
     var startDate = document.getElementById('rv-start').value || null;
     var endDate = document.getElementById('rv-end').value || null;
-    if (!priority || !valueArea || !businessUnit || !deliveryMethodology) {
-      showToast('Please fill in Priority, Value Area, Business Unit, and Delivery Methodology before approving');
+    if (!priority || !valueArea || !businessUnit) {
+      showToast('Please fill in Priority, Value Area, and Business Unit before approving');
       return;
     }
     var selectedCategories = Array.from(document.querySelectorAll('.rv-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
