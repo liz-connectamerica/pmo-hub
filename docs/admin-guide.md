@@ -167,6 +167,12 @@ An admin-only oversight page listing every work request across the org, regardle
 
 Unlike project requests, work requests never pass through an approval queue — there's no admin gate here to review or approve, by design. This page exists purely for visibility and cleanup, not gatekeeping. See the [User Guide](../user-guide/) for how submission, acceptance, and the full status lifecycle (New → Needs Info / Accepted / Declined / Withdrawn → Complete) work from a regular user's side.
 
+## Personal To-Dos
+
+Personal to-dos (see the User Guide's **Personal to-dos** section) are private to whoever they're assigned to — nobody else can see them, not even an owner or team member the way project to-dos work. This page is the one exception: an admin-only, org-wide list of every personal to-do, regardless of who it belongs to, since there's otherwise no way for an admin to see or manage one that isn't their own.
+
+Searchable by title, sortable on every column, and filterable by Assignee and Status. **Edit** opens the same modal a member uses to manage their own — the title shows whose to-do it is when it isn't yours. **Delete** removes it outright (no soft-delete/restore for to-dos, project or personal).
+
 ## Manage Users
 
 Create accounts, edit name/role (Admin or Member), reset a password, or deactivate/reactivate someone (you can't deactivate yourself). Passwords are set directly and must be shared with the person yourself — **no email is ever sent** by this app for account creation or password resets.

@@ -790,6 +790,8 @@ function refreshTaskView() {
     pgProjectDetail(m[1], activeTabEl ? activeTabEl.id.slice(5) : 'tasks');
   } else if (currentPage === 'my-tasks') {
     pgMyTasks();
+  } else if (currentPage === 'admin-personal-todos') {
+    pgAdminPersonalTodos();
   }
 }
 
@@ -2097,6 +2099,7 @@ var NAV_DEF = {
       {id:'admin-values', icon:'ti-list-details', label:'Manage Values'},
       {id:'all-projects', icon:'ti-table', label:'All Projects'},
       {id:'admin-work-requests', icon:'ti-clipboard-list', label:'Work Requests'},
+      {id:'admin-personal-todos', icon:'ti-list-check', label:'Personal To-Dos'},
       {id:'deleted-items', icon:'ti-trash', label:'Deleted Items'}
     ]}
   ],
@@ -2181,7 +2184,7 @@ var PAGE_RENDERERS = {
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks,
   'import-projects':pgImportProjects, 'import-work-requests':pgImportWorkRequests, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
   'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems,
-  'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests
+  'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests, 'admin-personal-todos':pgAdminPersonalTodos
 };
 
 function pageAllowedForRole(page, role) {
@@ -5463,8 +5466,12 @@ function openTodoModal(pid, idx) {
 // openTodoModal: no assignee picker at all.
 function openPersonalTodoModal(idx) {
   var todo = idx != null ? D.personalTodos[idx] : null;
+  // Admins reach this from the Personal To-Dos oversight page too, where
+  // "Edit to-do" alone wouldn't say whose it is.
+  var isOthers = todo && todo.assigneeId !== D.myResourceId;
+  var title = todo ? ('Edit to-do' + (isOthers ? ' (' + (todo.assignee || 'unassigned') + ')' : '')) : 'Add a personal to-do';
 
-  showModal('<div class="modal-title">' + (todo?'Edit to-do':'Add a personal to-do') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+  showModal('<div class="modal-title">' + title + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Title *</div><input type="text" id="ptdm-title" value="' + (todo?todo.title:'') + '" placeholder="e.g. Renew certification"></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="ptdm-desc" rows="3" placeholder="Details, links…">' + (todo ? (todo.description||'') : '') + '</textarea></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Status</div><select id="ptdm-status">' +
@@ -5523,7 +5530,12 @@ function openPersonalTodoModal(idx) {
 async function deletePersonalTodo(idx) {
   var td = D.personalTodos[idx];
   if (!td) return;
-  if (!confirm('Delete "' + td.title + '"?')) return;
+  // Admins browsing Personal To-Dos delete other people's items too, so
+  // name whose it is -- on your own My Tasks it's always obviously yours.
+  var confirmMsg = td.assigneeId === D.myResourceId
+    ? 'Delete "' + td.title + '"?'
+    : 'Delete "' + td.title + '" (' + (td.assignee || 'unassigned') + ')?';
+  if (!confirm(confirmMsg)) return;
   var result = await sb.from('todo_items').delete().eq('id', td.id);
   if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
   D.personalTodos.splice(idx, 1);
@@ -8198,6 +8210,92 @@ async function deleteWorkRequest(id) {
   D.workRequests = D.workRequests.filter(function(x){ return x.id !== id; });
   showToast('Work request deleted');
   refreshWorkRequestView();
+}
+
+// Admin oversight of personal to-dos -- the one kind of to-do that isn't
+// visible anywhere else in the app (they're private to their assignee by
+// design). D.personalTodos already holds every personal to-do an admin's
+// RLS grants them, i.e. all of them, so there's no separate query needed
+// here -- same data My Tasks reads, just not filtered down to "mine."
+var adminPersonalTodosState = { search: '', sort: 'title', dir: 'asc', filters: { assignee: [], status: [] } };
+
+function pgAdminPersonalTodos() {
+  tb('Personal To-Dos');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access this page.</p></div>';
+    return;
+  }
+  var st = adminPersonalTodosState;
+  var all = D.personalTodos || [];
+
+  var assigneeChoices = []; all.forEach(function(td){ var n = td.assignee || 'Unassigned'; if (assigneeChoices.indexOf(n) < 0) assigneeChoices.push(n); }); assigneeChoices.sort();
+  var statusChoices = ['Not Started','In Progress','Done'];
+
+  var list = all.slice();
+  if (st.search) { var q = st.search.toLowerCase(); list = list.filter(function(td){ return td.title.toLowerCase().indexOf(q) >= 0; }); }
+  if (st.filters.assignee.length) list = list.filter(function(td){ return st.filters.assignee.indexOf(td.assignee || 'Unassigned') >= 0; });
+  if (st.filters.status.length) list = list.filter(function(td){ return st.filters.status.indexOf(td.status) >= 0; });
+
+  list.sort(function(a, b) {
+    var av, bv;
+    if (st.sort === 'assignee') { av = (a.assignee||'').toLowerCase(); bv = (b.assignee||'').toLowerCase(); }
+    else if (st.sort === 'status') { av = a.status || ''; bv = b.status || ''; }
+    else if (st.sort === 'due') { av = a.due || ''; bv = b.due || ''; }
+    else { av = a.title.toLowerCase(); bv = b.title.toLowerCase(); }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+  function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleAdminPersonalTodoFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
+
+  var searchBar = searchBoxHtml(st.search, 'Search personal to-dos by title…', 'admin-ptd-search', 'onAdminPersonalTodoSearch');
+
+  var rows = list.map(function(td) {
+    var idx = D.personalTodos.indexOf(td);
+    return '<tr><td class="bold">' + td.title + (td.description ? '<div style="font-size:12px;color:#777;margin-top:4px;font-weight:400">' + td.description + '</div>' : '') + '</td>' +
+      '<td>' + (td.assignee || '<span class="text-muted">Unassigned</span>') + '</td>' +
+      '<td>' + bdg(td.status) + '</td>' +
+      '<td class="text-muted">' + (td.due || '—') + ' ' + lateBadgeHtml(isTodoLate(td)) + '</td>' +
+      '<td><div style="display:flex;gap:4px">' +
+      '<button class="btn btn-sm" onclick="openPersonalTodoModal(' + idx + ')"><i class="ti ti-edit"></i></button>' +
+      '<button class="btn btn-sm btn-danger" onclick="deletePersonalTodo(' + idx + ')"><i class="ti ti-trash"></i></button>' +
+      '</div></td></tr>';
+  }).join('');
+
+  var header = '<tr>' +
+    '<th class="sortable-th" onclick="setAdminPersonalTodoSort(\'title\')">To-Do ' + arrow('title') + '</th>' +
+    '<th class="sortable-th"><span onclick="setAdminPersonalTodoSort(\'assignee\')">Assignee ' + arrow('assignee') + '</span>' + filterIcon('assignee', st.filters.assignee.length>0) + '</th>' +
+    '<th class="sortable-th"><span onclick="setAdminPersonalTodoSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+    '<th class="sortable-th" onclick="setAdminPersonalTodoSort(\'due\')">Due ' + arrow('due') + '</th>' +
+    '<th></th></tr>';
+
+  document.getElementById('content').innerHTML =
+    '<div class="text-muted" style="font-size:12px;margin-bottom:12px">Every member\'s personal to-dos, org-wide — these aren\'t tied to a project, so this is the only other place besides My Tasks to see and manage them.</div>' +
+    searchBar +
+    (all.length
+      ? (list.length
+          ? '<div class="card"><div class="table-wrap"><table><thead>' + header + '</thead><tbody>' + rows + '</tbody></table></div></div>'
+          : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No personal to-dos match your search or filters</p></div>')
+      : '<div class="empty-state" style="padding:30px"><i class="ti ti-checklist"></i><p>No personal to-dos yet</p></div>');
+
+  window.onAdminPersonalTodoSearch = function(v) {
+    st.search = v; pgAdminPersonalTodos();
+    var el = document.getElementById('admin-ptd-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.setAdminPersonalTodoSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgAdminPersonalTodos(); };
+  window.toggleAdminPersonalTodoFilter = function(col) {
+    var labelMap = { assignee:'Assignee', status:'Status' };
+    var choicesMap = { assignee:assigneeChoices, status:statusChoices };
+    openFilterModal(labelMap[col], choicesMap[col],
+      function() { return st.filters[col]; },
+      function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
+      function() { st.filters[col] = []; },
+      pgAdminPersonalTodos
+    );
+  };
 }
 
 async function pgAdminUsers() {

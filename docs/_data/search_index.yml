@@ -152,6 +152,12 @@
   guide: Admin Guide
   blurb: Org-wide work request list -- search, sort, filter, Reassign, Delete.
 
+- title: Personal To-Dos (admin oversight)
+  page: /admin-guide/
+  anchor: personal-to-dos
+  guide: Admin Guide
+  blurb: The one admin-only view into everyone's private personal to-dos.
+
 - title: Manage Users
   page: /admin-guide/
   anchor: manage-users
