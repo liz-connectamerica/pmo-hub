@@ -204,6 +204,16 @@ input[type=file] { width: 100%; padding: 8px 10px; border: 1px solid #ddd; borde
 .tasks-table td { vertical-align: top; }
 .th-filter-btn:hover { color: #534AB7; }
 
+/* Task Grid view: compact inline-editable cells, sized for a dense table
+   rather than a standalone form. */
+.grid-cell-input, .grid-cell-select {
+  width: 100%; padding: 4px 6px; font-size: 12.5px; border: 1px solid #e8e8e5;
+  border-radius: 5px; background: #fff; font-family: inherit;
+}
+.grid-cell-input:focus, .grid-cell-select:focus { border-color: #534AB7; outline: none; }
+.grid-cell-input:disabled, .grid-cell-select:disabled { background: #f5f5f3; color: #999; border-color: #f0ede8; }
+.grid-add-row input { border: 1px dashed #ddd; background: transparent; }
+
 .task-row-draggable { cursor: grab; }
 .task-row-draggable.task-dragging { opacity: .4; }
 

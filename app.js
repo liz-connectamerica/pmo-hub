@@ -1526,6 +1526,205 @@ function addTaskAfter(pid2, taskId) {
   openTaskModal(pid2, null, { relativeToTaskId: taskId, relativePosition: 'after' });
 }
 
+// ── Task Grid view: a dense, spreadsheet-style alternative to the List
+// view -- every schedulable field is an inline input/select that saves on
+// blur/change, plus a bottom row for adding several tasks in a row without
+// opening the Add Task modal each time. Hierarchy (promote/demote/drag) is
+// still List-only; Grid is for editing field values quickly, not
+// restructuring the outline.
+function taskGridHtml(p, list, editable) {
+  var assigneePool = individualResourceNames().concat(teamNames());
+  var rows = list.map(function(row){ return taskGridRowHtml(p, row, assigneePool, editable); }).join('');
+
+  var header = '<tr><th style="width:36px">ID</th><th style="min-width:220px">Task</th><th style="min-width:150px">Assignee</th><th style="min-width:120px">Status</th>' +
+    '<th style="min-width:130px">Start</th><th style="min-width:130px">End</th><th style="min-width:90px">Duration</th><th style="min-width:180px">Depends on</th><th></th></tr>';
+
+  var emptyNote = (p.tasks.length && !list.length)
+    ? '<div class="empty-state" style="padding:20px"><i class="ti ti-search"></i><p>No tasks match your filters</p></div>'
+    : '';
+
+  return emptyNote + '<div class="table-wrap"><table class="tasks-table"><thead>' + header + '</thead><tbody>' +
+    rows + (editable ? taskGridAddRowHtml(p) : '') +
+    '</tbody></table></div>';
+}
+
+function taskGridRowHtml(p, row, assigneePool, editable) {
+  var task = row.task;
+  var hasChildren = row.hasChildren;
+  var datesLocked = hasChildren || !!task.dependsOnTaskId;
+  var indentPx = row.depth * 18;
+
+  var assigneeOpts = '<option value=""' + (!task.assignee?' selected':'') + '>Unassigned</option>' +
+    assigneePool.map(function(n){ return '<option' + (task.assignee===n?' selected':'') + '>' + n + '</option>'; }).join('');
+  var statusOpts = ['To Do','In Progress','On Hold','Done'].map(function(s){ return '<option' + (task.status===s?' selected':'') + '>' + s + '</option>'; }).join('');
+  var descendantIds = collectTaskDescendantIds(p.tasks, task.id);
+  var dependsPool = p.tasks.filter(function(x){ return x.id !== task.id && descendantIds.indexOf(x.id) < 0; });
+  var dependsOpts = '<option value=""' + (!task.dependsOnTaskId?' selected':'') + '>— None —</option>' +
+    dependsPool.map(function(x){ return '<option value="' + x.id + '"' + (task.dependsOnTaskId===x.id?' selected':'') + '>' + x.title + '</option>'; }).join('');
+
+  var titleCell = '<div style="display:flex;align-items:center;gap:4px;padding-left:' + indentPx + 'px">' +
+    (editable
+      ? '<input type="text" class="grid-cell-input" value="' + (task.title||'').replace(/"/g,'&quot;') + '" onblur="gridSaveTitle(\'' + p.id + '\',\'' + task.id + '\',this.value)" onkeydown="if(event.key===\'Enter\')this.blur()">'
+      : '<span style="font-size:13px">' + task.title + '</span>') +
+    '</div>';
+  var assigneeCell = editable
+    ? '<select class="grid-cell-select" onchange="gridSaveAssignee(\'' + p.id + '\',\'' + task.id + '\',this.value)">' + assigneeOpts + '</select>'
+    : '<span style="font-size:13px">' + (task.assignee || '—') + '</span>';
+  var statusCell = editable
+    ? '<select class="grid-cell-select" onchange="gridSaveStatus(\'' + p.id + '\',\'' + task.id + '\',this.value)">' + statusOpts + '</select>'
+    : bdg(task.status);
+  var startCell = '<input type="date" class="grid-cell-input" value="' + (task.start||'') + '"' + (datesLocked || !editable ? ' disabled' : ' onchange="gridSaveDate(\'' + p.id + '\',\'' + task.id + '\',\'start\',this.value)"') + '>';
+  var endCell = '<input type="date" class="grid-cell-input" value="' + (task.end||'') + '"' + (datesLocked || !editable ? ' disabled' : ' onchange="gridSaveDate(\'' + p.id + '\',\'' + task.id + '\',\'end\',this.value)"') + '>';
+  var durationCell = hasChildren
+    ? '<span class="text-muted" style="font-size:12px">—</span>'
+    : (editable
+      ? '<input type="number" min="1" class="grid-cell-input" value="' + (task.duration||'') + '" onchange="gridSaveDuration(\'' + p.id + '\',\'' + task.id + '\',this.value)">'
+      : '<span style="font-size:13px">' + (task.duration||'—') + '</span>');
+  var dependsCell = hasChildren
+    ? '<span class="text-muted" style="font-size:12px">—</span>'
+    : (editable
+      ? '<select class="grid-cell-select" onchange="gridSaveDependsOn(\'' + p.id + '\',\'' + task.id + '\',this.value)">' + dependsOpts + '</select>'
+      : '<span style="font-size:13px">' + (function(){ var d = p.tasks.find(function(x){ return x.id === task.dependsOnTaskId; }); return d ? d.title : '—'; })() + '</span>');
+  var actionsCell = editable ? '<button class="btn btn-sm btn-danger" title="Delete" onclick="gridDeleteTask(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-trash"></i></button>' : '';
+
+  return '<tr><td class="text-muted">' + row.taskNumber + '</td><td>' + titleCell + '</td><td>' + assigneeCell + '</td><td>' + statusCell + '</td>' +
+    '<td>' + startCell + '</td><td>' + endCell + '</td><td>' + durationCell + '</td><td>' + dependsCell + '</td><td>' + actionsCell + '</td></tr>';
+}
+
+function taskGridAddRowHtml(p) {
+  return '<tr class="grid-add-row"><td class="text-muted"><i class="ti ti-plus"></i></td>' +
+    '<td colspan="8"><input type="text" class="grid-cell-input" id="grid-add-title-' + p.id + '" placeholder="Add a task… (press Enter)" onkeydown="if(event.key===\'Enter\'){gridAddTask(\'' + p.id + '\',this.value);this.value=\'\';}"></td></tr>';
+}
+
+async function gridSaveTitle(pid, taskId, value) {
+  var pr = D.projects.find(function(x){ return x.id === pid; });
+  var task = pr.tasks.find(function(x){ return x.id === taskId; });
+  var newTitle = value.trim();
+  if (!newTitle) { showToast('Title cannot be empty'); refreshTaskView(); return; }
+  if (newTitle === task.title) return;
+  var result = await sb.from('tasks').update({ title: newTitle }).eq('id', taskId);
+  if (result.error) { showToast('Could not save: ' + result.error.message); refreshTaskView(); return; }
+  var old = task.title;
+  task.title = newTitle;
+  task.log = task.log || [];
+  task.log.push(await writeLog('task_log', 'task_id', taskId, 'Updated', 'Title: "' + old + '" → "' + newTitle + '"'));
+  refreshTaskView();
+}
+
+async function gridSaveAssignee(pid, taskId, value) {
+  var pr = D.projects.find(function(x){ return x.id === pid; });
+  var task = pr.tasks.find(function(x){ return x.id === taskId; });
+  var name = value || '';
+  if ((task.assignee||'') === name) return;
+  var resource = name ? resolveResource(name) : null;
+  var result = await sb.from('tasks').update({ assignee_id: resource ? resource.id : null, assignee_name: name || null }).eq('id', taskId);
+  if (result.error) { showToast('Could not save: ' + result.error.message); refreshTaskView(); return; }
+  var old = task.assignee || '(unassigned)';
+  task.assignee = name; task.assigneeId = resource ? resource.id : null;
+  task.log = task.log || [];
+  task.log.push(await writeLog('task_log', 'task_id', taskId, 'Updated', 'Assignee: "' + old + '" → "' + (name||'(unassigned)') + '"'));
+  await ensureOnTeam(pr, resource);
+  refreshTaskView();
+}
+
+async function gridSaveStatus(pid, taskId, value) {
+  var pr = D.projects.find(function(x){ return x.id === pid; });
+  var task = pr.tasks.find(function(x){ return x.id === taskId; });
+  if (task.status === value) return;
+  var result = await sb.from('tasks').update({ status: value }).eq('id', taskId);
+  if (result.error) { showToast('Could not save: ' + result.error.message); refreshTaskView(); return; }
+  var old = task.status;
+  task.status = value;
+  task.log = task.log || [];
+  task.log.push(await writeLog('task_log', 'task_id', taskId, 'Updated', 'Status: "' + old + '" → "' + value + '"'));
+  refreshTaskView();
+}
+
+async function gridSaveDate(pid, taskId, field, value) {
+  var pr = D.projects.find(function(x){ return x.id === pid; });
+  var task = pr.tasks.find(function(x){ return x.id === taskId; });
+  var newStart = field === 'start' ? (value || null) : task.start;
+  var newEnd = field === 'end' ? (value || null) : task.end;
+  if (newStart && newEnd && newEnd < newStart) { showToast('End date cannot be before start date'); refreshTaskView(); return; }
+  var dbField = field === 'start' ? 'start_date' : 'end_date';
+  var payload = {}; payload[dbField] = value || null;
+  var result = await sb.from('tasks').update(payload).eq('id', taskId);
+  if (result.error) { showToast('Could not save: ' + result.error.message); refreshTaskView(); return; }
+  var old = field === 'start' ? task.start : task.end;
+  if (field === 'start') task.start = value || null; else task.end = value || null;
+  task.log = task.log || [];
+  task.log.push(await writeLog('task_log', 'task_id', taskId, 'Updated', (field==='start'?'Start date':'End date') + ': "' + (old||'—') + '" → "' + (value||'—') + '"'));
+  await recalcAndPersist(pr);
+  refreshTaskView();
+}
+
+async function gridSaveDuration(pid, taskId, value) {
+  var pr = D.projects.find(function(x){ return x.id === pid; });
+  var task = pr.tasks.find(function(x){ return x.id === taskId; });
+  var newDuration = value ? parseInt(value, 10) : null;
+  if (newDuration != null && (isNaN(newDuration) || newDuration < 1)) { showToast('Duration must be a positive number'); refreshTaskView(); return; }
+  if ((task.duration||null) === newDuration) return;
+  var result = await sb.from('tasks').update({ duration_days: newDuration }).eq('id', taskId);
+  if (result.error) { showToast('Could not save: ' + result.error.message); refreshTaskView(); return; }
+  var old = task.duration;
+  task.duration = newDuration;
+  task.log = task.log || [];
+  task.log.push(await writeLog('task_log', 'task_id', taskId, 'Updated', 'Duration: "' + (old||'—') + '" → "' + (newDuration||'—') + '"'));
+  await recalcAndPersist(pr);
+  refreshTaskView();
+}
+
+async function gridSaveDependsOn(pid, taskId, value) {
+  var pr = D.projects.find(function(x){ return x.id === pid; });
+  var task = pr.tasks.find(function(x){ return x.id === taskId; });
+  var newDependsOn = value || null;
+  if ((task.dependsOnTaskId||null) === newDependsOn) return;
+  if (newDependsOn && wouldCreateDependencyCycle(pr.tasks, taskId, newDependsOn)) { showToast('That would create a circular dependency'); refreshTaskView(); return; }
+  var result = await sb.from('tasks').update({ depends_on_task_id: newDependsOn }).eq('id', taskId);
+  if (result.error) { showToast('Could not save: ' + result.error.message); refreshTaskView(); return; }
+  var oldTask = pr.tasks.find(function(x){ return x.id === task.dependsOnTaskId; });
+  var newTask = pr.tasks.find(function(x){ return x.id === newDependsOn; });
+  task.dependsOnTaskId = newDependsOn;
+  task.log = task.log || [];
+  task.log.push(await writeLog('task_log', 'task_id', taskId, 'Updated', 'Depends on: "' + (oldTask?oldTask.title:'—') + '" → "' + (newTask?newTask.title:'—') + '"'));
+  await recalcAndPersist(pr);
+  refreshTaskView();
+}
+
+async function gridDeleteTask(pid, taskId) {
+  var pr = D.projects.find(function(x){ return x.id === pid; });
+  var idx = pr.tasks.findIndex(function(x){ return x.id === taskId; });
+  if (idx < 0) return;
+  if (!confirm('Delete "' + pr.tasks[idx].title + '"?')) return;
+  await deleteTask(pid, idx);
+}
+
+async function gridAddTask(pid, titleRaw) {
+  var title = (titleRaw || '').trim();
+  if (!title) return;
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var fullOutline = buildTaskOutline(p.tasks);
+  var relTask = fullOutline.length ? fullOutline[fullOutline.length - 1].task : null;
+  var parentIdForInsert = relTask ? (relTask.parentTaskId || null) : null;
+  var insertResult = await sb.from('tasks').insert({
+    project_id: pid, title: title, status: 'To Do', parent_task_id: parentIdForInsert, position: 0
+  }).select().single();
+  if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); return; }
+  var t2 = {
+    id: insertResult.data.id, title: title, description: '', assignee: '', assigneeId: null, status: 'To Do',
+    start: null, end: null, duration: null, dependsOnTaskId: null, parentTaskId: parentIdForInsert, position: 0,
+    log: [], comments: [], checklist: [], tags: []
+  };
+  t2.log.push(await writeLog('task_log', 'task_id', t2.id, 'Created', ''));
+  p.tasks.push(t2);
+  var newSiblings = taskSiblings(p.tasks, parentIdForInsert).filter(function(x){ return x.id !== t2.id; });
+  newSiblings.push(t2);
+  await reassignTaskPositions(newSiblings);
+  await recalcAndPersist(p);
+  refreshTaskView();
+  setTimeout(function(){ var el = document.getElementById('grid-add-title-' + pid); if (el) el.focus(); }, 0);
+}
+
 function teamNames() {
   return (D.resources || []).filter(function(r){ return r.type === 'team'; }).map(function(r){ return r.name; });
 }
@@ -1556,8 +1755,13 @@ function pushLog(item, action, detail) {
 
 var taskViewState = {};
 function getTaskState(pid) {
-  if (!taskViewState[pid]) taskViewState[pid] = { search:'', fAssignee:[], fStatus:[], openFilter:null };
+  if (!taskViewState[pid]) taskViewState[pid] = { search:'', fAssignee:[], fStatus:[], openFilter:null, viewMode:'list' };
   return taskViewState[pid];
+}
+
+function setTaskViewMode(pid, mode) {
+  getTaskState(pid).viewMode = mode;
+  refreshTaskView();
 }
 
 var todoViewState = {};
@@ -4239,7 +4443,17 @@ function pgProjectDetail(pid, tab) {
         '<th><span>Status</span>' + filterIcon('status', st.fStatus.length>0) + '</th>' +
         '<th>Dates</th><th></th></tr>';
 
-      return '<div class="text-muted" style="font-size:12px;margin-bottom:12px">The project plan: scheduled work with owners, dates, and dependencies. For quick action items, follow-ups, or requests that don\'t belong on the plan, use <strong>To-Do</strong> instead.</div>' +
+      var descLine = '<div class="text-muted" style="font-size:12px;margin-bottom:12px">The project plan: scheduled work with owners, dates, and dependencies. For quick action items, follow-ups, or requests that don\'t belong on the plan, use <strong>To-Do</strong> instead.</div>';
+      var viewSwitcher = '<div class="tab-bar" style="margin-bottom:12px;display:inline-flex">' +
+        '<div class="tab' + (st.viewMode!=='grid'?' active':'') + '" onclick="setTaskViewMode(\'' + p.id + '\',\'list\')">List</div>' +
+        '<div class="tab' + (st.viewMode==='grid'?' active':'') + '" onclick="setTaskViewMode(\'' + p.id + '\',\'grid\')">Grid</div>' +
+      '</div>';
+
+      if (st.viewMode === 'grid') {
+        return descLine + viewSwitcher + searchBar + taskGridHtml(p, list, editable);
+      }
+
+      return descLine + viewSwitcher +
         (editable ? '<button class="btn btn-primary btn-sm mb-12" style="margin-right:8px" onclick="openAddTask(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add task</button>' : '') +
         taskTimelineBlock(p.id, list) +
         searchBar +
