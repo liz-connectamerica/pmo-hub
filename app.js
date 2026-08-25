@@ -893,11 +893,13 @@ function toggleTodoDoneIcon(pid2, idx) {
 async function reopenTodo(pid2, idx) {
   var pr = D.projects.find(function(x){ return x.id === pid2; });
   var td = pr.todos[idx];
-  var result = await sb.from('todo_items').update({ status: 'Not Started' }).eq('id', td.id);
+  // Reopening from Done means the work wasn't actually finished, not that
+  // it never started -- back to In Progress, not Not Started.
+  var result = await sb.from('todo_items').update({ status: 'In Progress' }).eq('id', td.id);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-  td.status = 'Not Started';
+  td.status = 'In Progress';
   td.log = td.log || [];
-  td.log.push(await writeLog('todo_log', 'todo_id', td.id, 'Updated', 'Status: "Done" → "Not Started"'));
+  td.log.push(await writeLog('todo_log', 'todo_id', td.id, 'Updated', 'Status: "Done" → "In Progress"'));
   refreshTaskView();
   showToast('To-do reopened');
 }
