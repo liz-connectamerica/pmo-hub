@@ -352,6 +352,22 @@ async function loadAllProjects() {
     });
   }
 
+  // Personal to-dos (project_id is null) don't belong to any project, so
+  // they'd otherwise be silently dropped by the per-project map below --
+  // set them on D directly, the same side-effect pattern loadFieldOptions
+  // uses for its own globals.
+  D.personalTodos = todoRows.filter(function(td){ return !td.project_id; }).map(function(td) {
+    return {
+      id: td.id, title: td.title, description: td.description || '',
+      assignee: td.assignee_name || (td.assignee_id ? resourceNameById[td.assignee_id] : ''),
+      assigneeId: td.assignee_id, status: td.status, due: td.due_date,
+      log: mapLog(todoLogByTodo[td.id]),
+      comments: (todoCommentsByTodo[td.id] || []).map(function(c) {
+        return { id: c.id, text: c.body, author: c.author_name, date: ymd(c.created_at) };
+      })
+    };
+  });
+
   return projectsRows.map(function(pr) {
     var teamRowsForProj = teamByProject[pr.id] || [];
     var teamIds = teamRowsForProj.map(function(t){ return t.resource_id; });
@@ -467,6 +483,7 @@ function myOpenTasksCount() {
     p.tasks.forEach(function(t){ if (t.assigneeId === myId && t.status !== 'Done') count++; });
     p.todos.forEach(function(td){ if (td.assigneeId === myId && td.status !== 'Done') count++; });
   });
+  (D.personalTodos || []).forEach(function(td){ if (td.assigneeId === myId && td.status !== 'Done') count++; });
   return count;
 }
 
@@ -501,10 +518,12 @@ function hasAnyRoleOn(p) {
   return isMyOwnedProject(p) || isProjectSponsor(p) || isMyContribution(p);
 }
 
+// Being resource-linked is enough on its own now -- My Tasks always has a
+// legitimate personal use (adding a to-do for yourself) even with zero
+// project or work-request involvement, so there's no reason to hide the
+// entry point just because nothing's assigned yet.
 function hasAssignedWork() {
-  if (!D.myResourceId) return false;
-  if (D.projects.some(hasAnyRoleOn)) return true;
-  return (D.workRequests || []).some(function(w){ return w.resourceId === D.myResourceId; });
+  return !!D.myResourceId;
 }
 
 function currentUser() {
@@ -878,21 +897,32 @@ async function deleteComment(pid2, taskId, cid) {
 }
 
 // To-Do items are the lightweight counterpart to Plan tasks -- action
-// items, follow-ups, access requests, reminders -- so they only carry an
-// Open/Done status plus a description/comments/change-log, not the full
-// scheduling machinery. Marking one done offers an optional closing
-// comment (mirroring Plan tasks); reopening is a direct toggle.
-function toggleTodoDoneIcon(pid2, idx) {
+// items, follow-ups, access requests, reminders -- so they only carry a
+// status plus a description/comments/change-log, not the full scheduling
+// machinery. Marking one done offers an optional closing comment
+// (mirroring Plan tasks); reopening is a direct toggle.
+//
+// A to-do is either project-scoped (pid2 is a real project id, backed by
+// that project's p.todos) or personal -- not tied to any project, managed
+// by whoever it's assigned to (pid2 is null, backed by D.personalTodos).
+// Every handler below resolves through this one lookup so project and
+// personal to-dos share the exact same comment/log/status logic.
+function getTodoContainer(pid2) {
+  if (pid2 == null) return D.personalTodos;
   var pr = D.projects.find(function(x){ return x.id === pid2; });
-  var td = pr.todos[idx];
+  return pr ? pr.todos : null;
+}
+
+function toggleTodoDoneIcon(pid2, idx) {
+  var list = getTodoContainer(pid2);
+  var td = list && list[idx];
   if (!td) return;
   if (td.status === 'Done') reopenTodo(pid2, idx);
   else openCompleteTodoPrompt(pid2, idx);
 }
 
 async function reopenTodo(pid2, idx) {
-  var pr = D.projects.find(function(x){ return x.id === pid2; });
-  var td = pr.todos[idx];
+  var td = getTodoContainer(pid2)[idx];
   // Reopening from Done means the work wasn't actually finished, not that
   // it never started -- back to In Progress, not Not Started.
   var result = await sb.from('todo_items').update({ status: 'In Progress' }).eq('id', td.id);
@@ -905,8 +935,7 @@ async function reopenTodo(pid2, idx) {
 }
 
 function openCompleteTodoPrompt(pid2, idx) {
-  var pr = D.projects.find(function(x){ return x.id === pid2; });
-  var td = pr.todos[idx];
+  var td = getTodoContainer(pid2)[idx];
   showModal('<div class="modal-title">Mark "' + td.title + '" as done <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Add a comment (optional)</div><textarea id="complete-todo-comment" rows="3" placeholder="Anything worth noting about this completion?"></textarea></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
@@ -920,8 +949,7 @@ function openCompleteTodoPrompt(pid2, idx) {
 }
 
 async function completeMyTodo(pid2, idx, commentText) {
-  var pr = D.projects.find(function(x){ return x.id === pid2; });
-  var td = pr.todos[idx];
+  var td = getTodoContainer(pid2)[idx];
   var old = td.status;
   var result = await sb.from('todo_items').update({ status: 'Done' }).eq('id', td.id);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
@@ -954,8 +982,7 @@ function toggleTodoComments(pid2, todoId) {
 }
 
 async function addTodoComment(pid2, todoId) {
-  var pr = D.projects.find(function(x){ return x.id === pid2; });
-  var td = pr.todos.find(function(x){ return x.id === todoId; });
+  var td = getTodoContainer(pid2).find(function(x){ return x.id === todoId; });
   var el = document.getElementById('todo-cmt-input-' + todoId);
   var text = el ? el.value.trim() : '';
   if (!text) { showToast('Comment cannot be empty'); return; }
@@ -970,8 +997,7 @@ async function addTodoComment(pid2, todoId) {
 }
 
 async function openEditTodoComment(pid2, todoId, cid) {
-  var pr = D.projects.find(function(x){ return x.id === pid2; });
-  var td = pr.todos.find(function(x){ return x.id === todoId; });
+  var td = getTodoContainer(pid2).find(function(x){ return x.id === todoId; });
   var c = td.comments.find(function(x){ return x.id === cid; });
   var text = prompt('Edit comment:', c.text);
   if (text == null) return;
@@ -985,8 +1011,7 @@ async function openEditTodoComment(pid2, todoId, cid) {
 }
 
 async function deleteTodoComment(pid2, todoId, cid) {
-  var pr = D.projects.find(function(x){ return x.id === pid2; });
-  var td = pr.todos.find(function(x){ return x.id === todoId; });
+  var td = getTodoContainer(pid2).find(function(x){ return x.id === todoId; });
   var result = await sb.from('todo_comments').delete().eq('id', cid);
   if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
   td.comments = td.comments.filter(function(x){ return x.id !== cid; });
@@ -5430,6 +5455,80 @@ function openTodoModal(pid, idx) {
     }
     showToast(idx!=null?'To-do updated':'To-do added'); closeModal(); if (window.switchPTab) window.switchPTab('todos');
   };
+}
+
+// Personal to-dos have no project, no team to pick an assignee from, and
+// no owner/admin gate -- they're always self-assigned, and managing your
+// own is the whole point, so this modal is a much smaller version of
+// openTodoModal: no assignee picker at all.
+function openPersonalTodoModal(idx) {
+  var todo = idx != null ? D.personalTodos[idx] : null;
+
+  showModal('<div class="modal-title">' + (todo?'Edit to-do':'Add a personal to-do') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Title *</div><input type="text" id="ptdm-title" value="' + (todo?todo.title:'') + '" placeholder="e.g. Renew certification"></div>' +
+    '<div class="form-group"><div class="form-label">Description</div><textarea id="ptdm-desc" rows="3" placeholder="Details, links…">' + (todo ? (todo.description||'') : '') + '</textarea></div>' +
+    '<div class="grid-2"><div class="form-group"><div class="form-label">Status</div><select id="ptdm-status">' +
+      '<option' + (!todo||todo.status==='Not Started'?' selected':'') + '>Not Started</option>' +
+      '<option' + (todo&&todo.status==='In Progress'?' selected':'') + '>In Progress</option>' +
+      '<option' + (todo&&todo.status==='Done'?' selected':'') + '>Done</option></select></div>' +
+    '<div class="form-group"><div class="form-label">Due date</div><input type="date" id="ptdm-due" value="' + (todo?(todo.due||''):'') + '"></div></div>' +
+    '<div class="modal-footer">' +
+      (todo ? '<button class="btn btn-danger" style="margin-right:auto" onclick="closeModal();deletePersonalTodo(' + idx + ')"><i class="ti ti-trash"></i> Delete</button>' : '') +
+      '<button class="btn" onclick="closeModal()">Cancel</button>' +
+      '<button class="btn btn-primary" id="ptdm-save"><i class="ti ti-check"></i> ' + (todo?'Save changes':'Add to-do') + '</button></div>');
+
+  document.getElementById('ptdm-save').onclick = async function() {
+    var title = document.getElementById('ptdm-title').value.trim();
+    if (!title) { showToast('Title required'); return; }
+    if (!D.myResourceId) { showToast('Your account isn\'t linked to a resource yet -- ask your PMO Admin to link one before adding personal to-dos'); return; }
+    var newVals = {
+      title: title, description: document.getElementById('ptdm-desc').value.trim(),
+      status: document.getElementById('ptdm-status').value, due: document.getElementById('ptdm-due').value
+    };
+    var btn = document.getElementById('ptdm-save'); btn.disabled = true;
+
+    if (idx != null) {
+      var fieldLabels = {title:'Title',description:'Description',status:'Status',due:'Due date'};
+      var changes = [];
+      ['title','description','status','due'].forEach(function(f){
+        if ((todo[f]||'') !== (newVals[f]||'')) changes.push(fieldLabels[f] + ': "' + (todo[f]||'—') + '" → "' + (newVals[f]||'—') + '"');
+      });
+      var result = await sb.from('todo_items').update({
+        title: newVals.title, description: newVals.description || null, status: newVals.status, due_date: newVals.due || null
+      }).eq('id', todo.id);
+      if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+      todo.title = newVals.title; todo.description = newVals.description; todo.status = newVals.status; todo.due = newVals.due;
+      todo.log = todo.log || [];
+      if (changes.length) todo.log.push(await writeLog('todo_log', 'todo_id', todo.id, 'Updated', changes.join('; ')));
+    } else {
+      var myResource = D.resources.find(function(r){ return r.id === D.myResourceId; });
+      var insertResult = await sb.from('todo_items').insert({
+        project_id: null, title: newVals.title, description: newVals.description || null,
+        assignee_id: D.myResourceId, assignee_name: myResource ? myResource.name : null,
+        status: newVals.status, due_date: newVals.due || null
+      }).select().single();
+      if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
+      var td2 = {
+        id: insertResult.data.id, title: newVals.title, description: newVals.description,
+        assignee: myResource ? myResource.name : '', assigneeId: D.myResourceId, status: newVals.status, due: newVals.due,
+        log: [], comments: []
+      };
+      td2.log.push(await writeLog('todo_log', 'todo_id', td2.id, 'Created', ''));
+      D.personalTodos.push(td2);
+    }
+    showToast(idx!=null?'To-do updated':'To-do added'); closeModal(); refreshTaskView();
+  };
+}
+
+async function deletePersonalTodo(idx) {
+  var td = D.personalTodos[idx];
+  if (!td) return;
+  if (!confirm('Delete "' + td.title + '"?')) return;
+  var result = await sb.from('todo_items').delete().eq('id', td.id);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  D.personalTodos.splice(idx, 1);
+  refreshTaskView();
+  showToast('To-do deleted');
 }
 
 function openRaidModal(pid, type, idx) {
@@ -10000,8 +10099,11 @@ function renderMyTodos() {
   var allTodos = [];
   D.projects.forEach(function(p) {
     p.todos.forEach(function(td, idx) {
-      if (td.assigneeId === me) allTodos.push({ todo: td, project: p, idx: idx });
+      if (td.assigneeId === me) allTodos.push({ todo: td, project: p, idx: idx, isPersonal: false });
     });
+  });
+  (D.personalTodos || []).forEach(function(td, idx) {
+    if (td.assigneeId === me) allTodos.push({ todo: td, project: null, idx: idx, isPersonal: true });
   });
 
   var st = myTasksState;
@@ -10009,21 +10111,22 @@ function renderMyTodos() {
   var doneList = allTodos.filter(function(it){ return it.todo.status === 'Done'; });
   var currentList = st.tab === 'open' ? openList : doneList;
 
-  var projectChoices = []; allTodos.forEach(function(it){ if (projectChoices.indexOf(it.project.name) < 0) projectChoices.push(it.project.name); });
+  function projectLabel(it) { return it.isPersonal ? 'Personal' : it.project.name; }
+  var projectChoices = []; allTodos.forEach(function(it){ var lbl = projectLabel(it); if (projectChoices.indexOf(lbl) < 0) projectChoices.push(lbl); });
   var statusChoices = ['Not Started','In Progress','Done'];
 
   var displayed = currentList.slice();
   if (st.search) {
     var q = st.search.toLowerCase();
-    displayed = displayed.filter(function(it){ return it.todo.title.toLowerCase().indexOf(q) >= 0 || it.project.name.toLowerCase().indexOf(q) >= 0; });
+    displayed = displayed.filter(function(it){ return it.todo.title.toLowerCase().indexOf(q) >= 0 || projectLabel(it).toLowerCase().indexOf(q) >= 0; });
   }
-  if (st.fProject.length) displayed = displayed.filter(function(it){ return st.fProject.indexOf(it.project.name) >= 0; });
+  if (st.fProject.length) displayed = displayed.filter(function(it){ return st.fProject.indexOf(projectLabel(it)) >= 0; });
   if (st.fStatus.length) displayed = displayed.filter(function(it){ return st.fStatus.indexOf(it.todo.status) >= 0; });
   if (st.sort) {
     displayed.sort(function(a, b) {
       var av, bv;
       if (st.sort === 'task') { av = a.todo.title.toLowerCase(); bv = b.todo.title.toLowerCase(); }
-      else if (st.sort === 'project') { av = a.project.name.toLowerCase(); bv = b.project.name.toLowerCase(); }
+      else if (st.sort === 'project') { av = projectLabel(a).toLowerCase(); bv = projectLabel(b).toLowerCase(); }
       else if (st.sort === 'status') { av = a.todo.status || ''; bv = b.todo.status || ''; }
       else { av = a.todo.due || ''; bv = b.todo.due || ''; }
       if (av < bv) return st.dir === 'asc' ? -1 : 1;
@@ -10040,10 +10143,11 @@ function renderMyTodos() {
   }
 
   var rows = displayed.map(function(item) {
-    var p = item.project, td = item.todo, idx = item.idx;
-    var canEditThis = canEdit(p);
+    var p = item.project, td = item.todo, idx = item.idx, isPersonal = item.isPersonal;
+    var pidKey = isPersonal ? null : p.id;
+    var canEditThis = isPersonal || canEdit(p);
 
-    var descKey = p.id + '|' + td.id;
+    var descKey = pidKey + '|' + td.id;
     var descOpenNow = !!todoDescOpen[descKey];
     var descRow = '';
     if (descOpenNow) {
@@ -10052,7 +10156,7 @@ function renderMyTodos() {
         '</div></td></tr>';
     }
 
-    var logKey = p.id + '|' + td.id;
+    var logKey = pidKey + '|' + td.id;
     var logOpenNow = !!todoLogOpen[logKey];
     var logRow = '';
     if (logOpenNow) {
@@ -10063,7 +10167,7 @@ function renderMyTodos() {
     }
 
     var comments = td.comments || [];
-    var cKey = p.id + '|' + td.id;
+    var cKey = pidKey + '|' + td.id;
     var cOpenNow = !!todoCommentsOpen[cKey];
     var commentsRow = '';
     if (cOpenNow) {
@@ -10072,27 +10176,32 @@ function renderMyTodos() {
         return '<div class="comment-item">' +
           '<div class="comment-meta"><strong>' + c.author + '</strong> <span class="text-muted">' + c.date + '</span></div>' +
           '<div class="comment-text">' + c.text + '</div>' +
-          ((canEditThis || mine) ? '<div class="comment-actions"><button class="btn btn-sm" onclick="openEditTodoComment(\'' + p.id + '\',\'' + td.id + '\',\'' + c.id + '\')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTodoComment(\'' + p.id + '\',\'' + td.id + '\',\'' + c.id + '\')"><i class="ti ti-trash"></i></button></div>' : '') +
+          ((canEditThis || mine) ? '<div class="comment-actions"><button class="btn btn-sm" onclick="openEditTodoComment(' + (isPersonal?'null':("'"+p.id+"'")) + ',\'' + td.id + '\',\'' + c.id + '\')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTodoComment(' + (isPersonal?'null':("'"+p.id+"'")) + ',\'' + td.id + '\',\'' + c.id + '\')"><i class="ti ti-trash"></i></button></div>' : '') +
           '</div>';
       }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No comments yet</div>';
       commentsRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
         commentEntries +
-        '<div class="comment-add-row"><textarea id="todo-cmt-input-' + td.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addTodoComment(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
+        '<div class="comment-add-row"><textarea id="todo-cmt-input-' + td.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addTodoComment(' + (isPersonal?'null':("'"+p.id+"'")) + ',\'' + td.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
         '</div></td></tr>';
     }
 
-    var doneIconHtml = '<i class="ti ' + (td.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;cursor:pointer;color:' + (td.status==='Done' ? '#1D9E75' : '#ccc') + '" title="' + (td.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTodoDoneIcon(\'' + p.id + '\',' + idx + ')"></i>';
+    var doneIconHtml = '<i class="ti ' + (td.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;cursor:pointer;color:' + (td.status==='Done' ? '#1D9E75' : '#ccc') + '" title="' + (td.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTodoDoneIcon(' + (isPersonal?'null':("'"+p.id+"'")) + ',' + idx + ')"></i>';
     var titleCell = '<div style="display:flex;align-items:center;gap:8px">' + doneIconHtml + '<span style="font-size:13px' + (td.status==='Done' ? ';color:#999' : '') + '">' + td.title + '</span></div>';
 
-    return '<tr><td>' + titleCell + '</td>' +
-      '<td>' + p.name + ' ' +
+    var projectCell = isPersonal
+      ? '<span class="badge badge-gray">Personal</span>'
+      : p.name + ' ' +
         '<button class="btn btn-sm" title="View project overview" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-info-circle"></i></button> ' +
-        '<button class="btn btn-sm" title="View this project\'s to-do list" onclick="goToProject(\'' + p.id + '\',\'todos\')"><i class="ti ti-list"></i></button></td>' +
+        '<button class="btn btn-sm" title="View this project\'s to-do list" onclick="goToProject(\'' + p.id + '\',\'todos\')"><i class="ti ti-list"></i></button>';
+
+    return '<tr><td>' + titleCell + '</td>' +
+      '<td>' + projectCell + '</td>' +
       '<td>' + bdg(td.status) + '</td><td class="text-muted">' + (td.due || '—') + ' ' + lateBadgeHtml(isTodoLate(td)) + '</td>' +
       '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
-        '<button class="btn btn-sm" title="Description" onclick="toggleTodoDescription(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
-        '<button class="btn btn-sm" title="Comments" onclick="toggleTodoComments(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (comments.length ? ' ' + comments.length : '') + '</button>' +
-        '<button class="btn btn-sm" title="Change log" onclick="toggleTodoLog(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+        '<button class="btn btn-sm" title="Description" onclick="toggleTodoDescription(' + (isPersonal?'null':("'"+p.id+"'")) + ',\'' + td.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
+        '<button class="btn btn-sm" title="Comments" onclick="toggleTodoComments(' + (isPersonal?'null':("'"+p.id+"'")) + ',\'' + td.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (comments.length ? ' ' + comments.length : '') + '</button>' +
+        '<button class="btn btn-sm" title="Change log" onclick="toggleTodoLog(' + (isPersonal?'null':("'"+p.id+"'")) + ',\'' + td.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+        (isPersonal ? '<button class="btn btn-sm" title="Edit" onclick="openPersonalTodoModal(' + idx + ')"><i class="ti ti-edit"></i></button>' : '') +
       '</div></td></tr>' + descRow + logRow + commentsRow;
   }).join('');
 
@@ -10104,7 +10213,11 @@ function renderMyTodos() {
       '<div class="tab' + (st.tab==='open'?' active':'') + '" onclick="setMyTasksTab(\'open\')">Open to-dos <span class="badge badge-gray">' + openList.length + '</span></div>' +
       '<div class="tab' + (st.tab==='done'?' active':'') + '" onclick="setMyTasksTab(\'done\')">Completed to-dos <span class="badge badge-gray">' + doneList.length + '</span></div>' +
     '</div>' +
-    '<div class="card"><div class="section-title">' + (st.tab==='open'?'Open to-dos':'Completed to-dos') + '</div>' + searchBar +
+    '<div class="card">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">' +
+      '<div class="section-title" style="margin-bottom:0">' + (st.tab==='open'?'Open to-dos':'Completed to-dos') + '</div>' +
+      '<button class="btn btn-primary btn-sm" onclick="openPersonalTodoModal(null)"><i class="ti ti-plus"></i> Add a to-do</button>' +
+    '</div>' + searchBar +
     (currentList.length
       ? (displayed.length
         ? '<div class="table-wrap"><table><thead><tr>' +
