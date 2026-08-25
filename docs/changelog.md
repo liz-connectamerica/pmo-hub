@@ -14,6 +14,35 @@ A dated log of feature and fix changes to PMO Hub, newest first. Each entry is t
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-08-25-plan">
+  <h2>Plan</h2>
+  <p class="changelog-date">August 25, 2026 · 4:16 PM</p>
+  <ul>
+    <li>Added a List/Grid toggle to the top of the Plan tab. Grid is a dense, spreadsheet-style table (owner/admin-only to edit) where title, assignee, status, start/end, duration, and depends-on are all inline inputs or dropdowns that save the moment you change them -- no modal per edit.</li>
+    <li>A row at the bottom of Grid lets you type a task title and hit Enter to add it, then refocuses automatically so you can keep adding several tasks in a row without opening the Add Task dialog each time.</li>
+    <li>Grid shows the full outline, summary tasks included, with the same start/end locking rules as the task modal -- summary and dependency-driven tasks show computed dates rather than editable ones. Hierarchy restructuring (promote/demote/drag) and the Timeline stay List-only.</li>
+  </ul>
+</div>
+
+<div class="changelog-entry" id="cl-2026-08-25-todo">
+  <h2>To-Do</h2>
+  <p class="changelog-date">August 25, 2026 · 12:45 PM – 1:02 PM</p>
+  <ul>
+    <li>Expanded to-do status from Open/Done to Not Started / In Progress / Done, with Not Started as the default for a new to-do. Both Not Started and In Progress count as "open" everywhere the app already checked for not-Done -- the My Tasks Open tab, the Late badge, the project To-Do tab.</li>
+    <li>Reopening a completed to-do now sends it back to In Progress rather than Not Started, since marking something done that wasn't actually finished means work had already started on it.</li>
+  </ul>
+</div>
+
+<div class="changelog-entry" id="cl-2026-08-25-requests">
+  <h2>Requests</h2>
+  <p class="changelog-date">August 25, 2026 · 12:17 PM – 12:35 PM</p>
+  <ul>
+    <li>Sponsor on the Submit a Request &gt; Project Request form is now a search-and-pick individual picker, the same pattern used elsewhere in the app, instead of a free-text field.</li>
+    <li>A PMO Admin can now set Delivery Methodology (Agile/Waterfall/Hybrid) in the "Finalize before approving" section when reviewing a request -- previously a project created this way always landed with no methodology set at all. It's optional, not required, so it doesn't block approving a request when it isn't known yet.</li>
+    <li>Financial fields (value type, dollar estimate, frequency, confidence) are no longer required for an admin to submit a project request -- they're shown since admins have financial-view permission, but leaving them blank no longer blocks submission.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-08-20-import-work-requests">
   <h2>Import Work Requests</h2>
   <p class="changelog-date">August 20, 2026 · 10:40 AM</p>
