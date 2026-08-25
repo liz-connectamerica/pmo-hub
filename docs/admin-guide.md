@@ -12,7 +12,7 @@ The **Requests** page (with a live count badge for pending items) is where new p
 
 Opening a pending request shows the full proposal — submitter, business unit, sponsor, description, value type, and (admin-only) the dollar estimate, value justification, and cost estimate with confidence ratings. A **"Finalize before approving"** section lets you set or override:
 
-- Priority, Value Area, Business Unit, T-shirt size, Categories
+- Priority, Value Area, Business Unit, Delivery Methodology (Agile/Waterfall/Hybrid — required, since a request never collects this itself), T-shirt size, Categories
 - Either real Start/Target-End dates, **or**, if the timeline isn't known yet, an optional target quarter range (this just keeps it visible on the Future Planning timeline while it sits in Backlog)
 - Free-text feedback to the submitter
 

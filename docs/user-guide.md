@@ -79,8 +79,8 @@ One thing worth knowing: only an admin can reassign a project's **Owner**, and o
 
 - **Project Request** — a full-scale project with its own timeline, milestones, team, and budget. Goes through PMO review before it's approved and scheduled. You'll fill in:
   - Project title, business unit, and a description of the problem or opportunity (all required)
-  - An optional sponsor name
-  - A description of the expected value — for most users this is a simple free-text box ("what's the expected value?"); if you have financial-view permission, you'll instead get structured fields for a dollar estimate, frequency, and confidence rating
+  - An optional sponsor — search-and-pick from existing individuals, same picker pattern used elsewhere in the app, not a free-text name
+  - A description of the expected value — for most users this is a simple free-text box ("what's the expected value?"); if you have financial-view permission, you'll instead get optional structured fields for a value type, dollar estimate, frequency, and confidence rating — none of these are required to submit
   - Tags, and a proposed team (who you think should work on it)
 
   There's no category picker on this form — categories get set later, when a PMO admin reviews and approves the request. After you submit, it's **Pending** until reviewed. If approved, it becomes a real project — status changes to **Backlog**, **Planned**, or **Active** to match wherever the project landed (you generally won't see a literal "Approved" status). If rejected, you'll see optional feedback from the reviewer.
