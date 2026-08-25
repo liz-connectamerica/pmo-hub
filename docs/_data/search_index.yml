@@ -60,7 +60,13 @@
   page: /user-guide/
   anchor: my-projects-my-tasks-my-work-requests
   guide: User Guide
-  blurb: Your own personalized views -- appears once you have any connection to a project or work request.
+  blurb: Your own personalized views -- appears once your account is linked to a resource.
+
+- title: Personal to-dos
+  page: /user-guide/
+  anchor: personal-to-dos
+  guide: User Guide
+  blurb: A to-do with no project, private to you and admins, managed entirely by yourself.
 
 - title: Late items
   page: /user-guide/
