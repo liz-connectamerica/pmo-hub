@@ -1843,6 +1843,7 @@ var taskBaselineSelected = {};
 var teamAddKind = {};
 var teamTierInfoOpen = {};
 var projectInfoSubTab = 'identity';
+var projectInfoEditing = null;
 var PROJECT_INFO_SUBTABS = [
   { key:'identity',      label:'Identity & Classification',   icon:'ti-tag' },
   { key:'schedule',      label:'Schedule, Stage & Lifecycle',  icon:'ti-calendar-time' },
@@ -4274,6 +4275,16 @@ function pgProjectDetail(pid, tab) {
       function fieldBox(label, valueHtml) {
         return '<div><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">' + label + '</div><div style="font-size:13px">' + valueHtml + '</div></div>';
       }
+      function editBtnRow(key, allowed) {
+        if (allowed === undefined) allowed = editable;
+        return allowed ? '<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-sm" onclick="setProjectInfoEditing(\'' + key + '\')"><i class="ti ti-edit"></i> Edit</button></div>' : '';
+      }
+      function saveCancelRow(saveFn) {
+        return '<div style="display:flex;gap:8px;margin-top:14px">' +
+          '<button class="btn btn-primary btn-sm" id="pf-save" onclick="' + saveFn + '(\'' + p.id + '\')"><i class="ti ti-check"></i> Save</button>' +
+          '<button class="btn btn-sm" onclick="setProjectInfoEditing(null)">Cancel</button>' +
+        '</div>';
+      }
       var canViewFin = canViewFinancials(p);
       var canEditFin = canEditProjectFinancials(p);
 
@@ -4294,7 +4305,10 @@ function pgProjectDetail(pid, tab) {
             (editable ? '<button class="btn btn-sm" onclick="openProgramPickerForProject(\'' + p.id + '\')"><i class="ti ti-folders"></i> ' + (p.programId ? 'Change' : 'Add') + '</button>' : '') +
           '</div></div>' +
         '</div>' +
-        (editable ? '<button class="btn btn-primary btn-sm" onclick="closeModal();editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit project</button>' : '') +
+        '<div style="display:flex;gap:8px">' +
+          (D.role === 'admin' ? '<button class="btn btn-sm" onclick="editProjectOwnership(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
+          (D.role === 'admin' ? '<button class="btn btn-sm btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
+        '</div>' +
       '</div>';
 
       var subtabs = PROJECT_INFO_SUBTABS.filter(function(s){ return s.key !== 'financials' || canViewFin; });
@@ -4309,55 +4323,124 @@ function pgProjectDetail(pid, tab) {
 
       var panelHtml;
       if (active === 'identity') {
-        panelHtml = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin-bottom:16px">' +
-            fieldBox('Priority', bdg(p.priority)) +
-            fieldBox('Value area', badgeIf('badge-purple', p.value)) +
-            fieldBox('T-shirt size', p.tshirtSize ? '<span class="badge badge-gray">' + p.tshirtSize + '</span>' : '<span class="text-muted">Not sized</span>') +
-            fieldBox('Business unit', p.businessUnit || '—') +
-            fieldBox('Delivery methodology', p.deliveryMethodology ? '<span class="badge badge-gray">' + p.deliveryMethodology + '</span>' : '<span class="text-muted">Not selected</span>') +
-            fieldBox('Project ID', '<span class="text-muted">#' + (p.projectNumber || '—') + '</span>') +
-          '</div>' +
-          '<div class="form-group" style="margin-bottom:12px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Category</div>' +
-            (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted" style="font-size:13px">—</span>') +
-          '</div>' +
-          '<div class="form-group" style="margin-bottom:0"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
-            (p.tags && p.tags.length ? p.tags.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
-            (editable ? '<button class="btn btn-sm" onclick="openProjectTagPicker(\'' + p.id + '\')"><i class="ti ti-tag"></i> Edit tags</button>' : '') +
-          '</div></div>';
+        if (editable && projectInfoEditing === 'identity') {
+          var priorOptsI = PRIORITIES.map(function(s){
+            var isSelected = p.priority === s || (PRIORITIES.indexOf(p.priority) < 0 && s === 'Needs prioritization');
+            return '<option' + (isSelected ? ' selected' : '') + '>' + s + '</option>';
+          }).join('');
+          var valOptsI = (VALUE_AREAS.indexOf(p.value) < 0 ? '<option value="" selected>— Not set —</option>' : '') + VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
+          var tshirtOptsI = '<option value=""' + (!p.tshirtSize?' selected':'') + '>— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option' + (p.tshirtSize===s?' selected':'') + '>' + s + '</option>'; }).join('');
+          var buOptsI = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
+          var catCbsI = CATEGORIES.map(function(s){
+            var checked = (p.categories||[]).indexOf(s) >= 0;
+            return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="pfi-category-cb" value="' + s + '"' + (checked?' checked':'') + '> ' + s + '</label>';
+          }).join('');
+          panelHtml = '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Project name</div><input type="text" id="pfi-name" value="' + p.name.replace(/"/g,'&quot;') + '"></div>' +
+            '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px 16px;margin-bottom:12px">' +
+              '<div><div class="form-label">Priority</div><select id="pfi-priority">' + priorOptsI + '</select></div>' +
+              '<div><div class="form-label">Value area</div><select id="pfi-value">' + valOptsI + '</select></div>' +
+              '<div><div class="form-label">T-shirt size</div><select id="pfi-tshirt">' + tshirtOptsI + '</select></div>' +
+              '<div><div class="form-label">Business unit</div><select id="pfi-bu">' + buOptsI + '</select></div>' +
+              '<div><div class="form-label">Delivery methodology</div><select id="pfi-methodology"><option value=""' + (!p.deliveryMethodology?' selected':'') + '>Not selected</option><option' + (p.deliveryMethodology==='Agile'?' selected':'') + '>Agile</option><option' + (p.deliveryMethodology==='Waterfall'?' selected':'') + '>Waterfall</option><option' + (p.deliveryMethodology==='Hybrid'?' selected':'') + '>Hybrid</option></select></div>' +
+            '</div>' +
+            '<div class="form-group" style="margin-bottom:0"><div class="form-label">Category</div>' + catCbsI + '</div>' +
+            saveCancelRow('saveProjectIdentity');
+        } else {
+          panelHtml = editBtnRow('identity') +
+            fieldBox('Project name', p.name) +
+            '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin:12px 0 16px">' +
+              fieldBox('Priority', bdg(p.priority)) +
+              fieldBox('Value area', badgeIf('badge-purple', p.value)) +
+              fieldBox('T-shirt size', p.tshirtSize ? '<span class="badge badge-gray">' + p.tshirtSize + '</span>' : '<span class="text-muted">Not sized</span>') +
+              fieldBox('Business unit', p.businessUnit || '—') +
+              fieldBox('Delivery methodology', p.deliveryMethodology ? '<span class="badge badge-gray">' + p.deliveryMethodology + '</span>' : '<span class="text-muted">Not selected</span>') +
+              fieldBox('Project ID', '<span class="text-muted">#' + (p.projectNumber || '—') + '</span>') +
+            '</div>' +
+            '<div class="form-group" style="margin-bottom:12px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Category</div>' +
+              (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted" style="font-size:13px">—</span>') +
+            '</div>' +
+            '<div class="form-group" style="margin-bottom:0"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+              (p.tags && p.tags.length ? p.tags.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
+              (editable ? '<button class="btn btn-sm" onclick="openProjectTagPicker(\'' + p.id + '\')"><i class="ti ti-tag"></i> Edit tags</button>' : '') +
+            '</div></div>';
+        }
       } else if (active === 'schedule') {
-        panelHtml = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin-bottom:14px">' +
-            fieldBox('Stage', stagePill(p.stage)) +
-            fieldBox('Status', bdg(p.status)) +
-            fieldBox('Phase', badgeIf('badge-gray', p.phase)) +
-            fieldBox('Start', p.start||'—') +
-            fieldBox('Target end', p.end||'—') +
-          '</div>' +
-          (p.stage === 'hold' ? '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D;margin-bottom:14px"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
-          '<div class="form-group" style="margin-bottom:0"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Timeline</div>' + timelineHtml() +
-          '<button class="btn btn-sm mt-12" onclick="window.switchPTab(\'milestones\')"><i class="ti ti-list"></i> View milestones</button></div>' +
-          (editable && !isComplete ? '<div style="margin-top:16px;padding-top:14px;border-top:1px solid #e8e8e5;display:flex;gap:8px">' +
-            (p.stage === 'hold'
-              ? '<button class="btn btn-success btn-sm" onclick="resumeFromHold(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Resume</button>'
-              : ((p.stage === 'active' || p.stage === 'planned' || p.stage === 'backlog') ? '<button class="btn btn-sm" onclick="putOnHold(\'' + p.id + '\')"><i class="ti ti-player-pause"></i> Put on hold</button>' : '') +
-                '<button class="btn btn-success btn-sm" onclick="markComplete(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>'
-            ) +
-          '</div>' : '');
+        if (editable && projectInfoEditing === 'schedule') {
+          var statusOptsS = (STATUSES.indexOf(p.status) < 0 ? '<option value="" selected>— Not set —</option>' : '') + STATUSES.map(function(s){ return '<option' + (p.status===s?' selected':'') + '>' + s + '</option>'; }).join('');
+          var phaseOptsS  = (PHASES.indexOf(p.phase) < 0 ? '<option value="" selected>— Not set —</option>' : '') + PHASES.map(function(s){ return '<option' + (p.phase===s?' selected':'') + '>' + s + '</option>'; }).join('');
+          panelHtml = fieldBox('Stage', stagePill(p.stage) + ' <span class="text-muted" style="font-size:11px">changes via the actions below</span>') +
+            '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px 16px;margin:14px 0 12px">' +
+              '<div><div class="form-label">Status</div><select id="pfs-status">' + statusOptsS + '</select></div>' +
+              '<div><div class="form-label">Phase</div><select id="pfs-phase">' + phaseOptsS + '</select></div>' +
+              '<div><div class="form-label">Start date</div><input type="date" id="pfs-start" value="' + (p.start||'') + '"></div>' +
+              '<div><div class="form-label">Target end</div><input type="date" id="pfs-end" value="' + (p.end||'') + '"></div>' +
+            '</div>' +
+            saveCancelRow('saveProjectSchedule');
+        } else {
+          panelHtml = editBtnRow('schedule') +
+            '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin-bottom:14px">' +
+              fieldBox('Stage', stagePill(p.stage)) +
+              fieldBox('Status', bdg(p.status)) +
+              fieldBox('Phase', badgeIf('badge-gray', p.phase)) +
+              fieldBox('Start', p.start||'—') +
+              fieldBox('Target end', p.end||'—') +
+            '</div>' +
+            (p.stage === 'hold' ? '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D;margin-bottom:14px"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
+            '<div class="form-group" style="margin-bottom:0"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Timeline</div>' + timelineHtml() +
+            '<button class="btn btn-sm mt-12" onclick="window.switchPTab(\'milestones\')"><i class="ti ti-list"></i> View milestones</button></div>' +
+            (editable && !isComplete ? '<div style="margin-top:16px;padding-top:14px;border-top:1px solid #e8e8e5;display:flex;gap:8px">' +
+              (p.stage === 'hold'
+                ? '<button class="btn btn-success btn-sm" onclick="resumeFromHold(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Resume</button>'
+                : ((p.stage === 'active' || p.stage === 'planned' || p.stage === 'backlog') ? '<button class="btn btn-sm" onclick="putOnHold(\'' + p.id + '\')"><i class="ti ti-player-pause"></i> Put on hold</button>' : '') +
+                  '<button class="btn btn-success btn-sm" onclick="markComplete(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>'
+              ) +
+            '</div>' : '');
+        }
       } else if (active === 'progress') {
-        panelHtml = fieldBox('Progress', '<div style="display:flex;align-items:center;gap:8px;max-width:320px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div>');
+        if (editable && projectInfoEditing === 'progress') {
+          panelHtml = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px 16px;max-width:420px">' +
+              '<div><div class="form-label">Progress (%)</div><input type="number" id="pfp-progress" value="' + p.progress + '" min="0" max="100"></div>' +
+              '<div><div class="form-label">Health</div><select id="pfp-health"><option value=""' + (!p.health?' selected':'') + '>— Not set —</option><option value="green"' + (p.health==='green'?' selected':'') + '>Green</option><option value="amber"' + (p.health==='amber'?' selected':'') + '>Amber</option><option value="red"' + (p.health==='red'?' selected':'') + '>Red</option></select></div>' +
+            '</div>' +
+            saveCancelRow('saveProjectProgress');
+        } else {
+          panelHtml = editBtnRow('progress') +
+            '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px;max-width:420px">' +
+              fieldBox('Progress', '<div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div>') +
+              fieldBox('Health', hdot(p.health) + (p.health ? p.health.charAt(0).toUpperCase() + p.health.slice(1) : '<span class="text-muted">Not set</span>')) +
+            '</div>';
+        }
       } else if (active === 'description') {
-        panelHtml = '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
-          (p.blockers ? '<div class="blocker-note" style="margin-bottom:0"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '');
+        if (editable && projectInfoEditing === 'description') {
+          panelHtml = '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Description</div><textarea id="pfd-desc">' + (p.description||'') + '</textarea></div>' +
+            '<div class="form-group" style="margin-bottom:0"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="pfd-blocker" value="' + (p.blockers||'').replace(/"/g,'&quot;') + '"></div>' +
+            saveCancelRow('saveProjectDescription');
+        } else {
+          panelHtml = editBtnRow('description') +
+            '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
+            (p.blockers ? '<div class="blocker-note" style="margin-bottom:0"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '');
+        }
       } else if (active === 'financials') {
-        var hasFinData = p.estimatedAmount != null || p.costEstimate != null;
-        panelHtml = '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">' +
-            (canEditFin ? '<button class="btn btn-sm" onclick="openEditProjectFinancialsModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit financials</button>' : '') +
-          '</div>' +
-          (hasFinData
-            ? '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px">' +
-                (p.estimatedAmount != null ? fieldBox('Estimated ' + (p.estimatedType||'value'), fmtCost(p.estimatedAmount) + (p.estimatedFrequency ? ' / ' + p.estimatedFrequency.toLowerCase() : '') + (p.valueConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.valueConfidence + '</span>' : '')) : '') +
-                (p.costEstimate != null ? fieldBox('Cost estimate', fmtCost(p.costEstimate) + (p.costConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.costConfidence + '</span>' : '')) : '') +
-              '</div>'
-            : '<div class="text-muted" style="font-size:13px">No financial detail recorded yet</div>');
+        if (canEditFin && projectInfoEditing === 'financials') {
+          panelHtml = '<div class="form-group"><div class="form-label">This is a…</div><select id="pff-type"><option value="">— Not set —</option><option value="Revenue"' + (p.estimatedType==='Revenue'?' selected':'') + '>Revenue opportunity</option><option value="Savings"' + (p.estimatedType==='Savings'?' selected':'') + '>Cost savings opportunity</option></select></div>' +
+            '<div class="grid-2"><select id="pff-freq"><option' + (p.estimatedFrequency==='Monthly'?' selected':'') + '>Monthly</option><option' + (p.estimatedFrequency==='Annually'?' selected':'') + '>Annually</option></select>' +
+            '<input type="text" id="pff-amount" value="' + (p.estimatedAmount!=null?p.estimatedAmount:'') + '" placeholder="$ amount (optional)"></div>' +
+            '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="pff-value-confidence">' + confidenceOptsHtml(p.valueConfidence) + '</select></div>' +
+            '<div class="form-group"><div class="form-label">Cost estimate</div>' +
+              '<div class="grid-2"><input type="text" id="pff-cost-amount" value="' + (p.costEstimate!=null?p.costEstimate:'') + '" placeholder="$ amount (optional)"><select id="pff-cost-confidence">' + confidenceOptsHtml(p.costConfidence) + '</select></div>' +
+            '</div>' +
+            '<div id="pff-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter valid numbers (digits only)</div>' +
+            saveCancelRow('saveProjectFinancials');
+        } else {
+          var hasFinData = p.estimatedAmount != null || p.costEstimate != null;
+          panelHtml = editBtnRow('financials', canEditFin) +
+            (hasFinData
+              ? '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px">' +
+                  (p.estimatedAmount != null ? fieldBox('Estimated ' + (p.estimatedType||'value'), fmtCost(p.estimatedAmount) + (p.estimatedFrequency ? ' / ' + p.estimatedFrequency.toLowerCase() : '') + (p.valueConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.valueConfidence + '</span>' : '')) : '') +
+                  (p.costEstimate != null ? fieldBox('Cost estimate', fmtCost(p.costEstimate) + (p.costConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.costConfidence + '</span>' : '')) : '') +
+                '</div>'
+              : '<div class="text-muted" style="font-size:13px">No financial detail recorded yet</div>');
+        }
       } else if (active === 'relationships') {
         panelHtml = '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Depends on</div><div style="display:flex;flex-direction:column;gap:6px">' +
             (p.dependencies && p.dependencies.length
@@ -4981,7 +5064,21 @@ function pgProjectDetail(pid, tab) {
     };
   window.setProjectInfoSubTab = function(key) {
     projectInfoSubTab = key;
+    projectInfoEditing = null;
     document.getElementById('ptab-content').innerHTML = tabC('overview');
+  };
+  window.setProjectInfoEditing = function(key) {
+    projectInfoEditing = key;
+    document.getElementById('ptab-content').innerHTML = tabC('overview');
+    if (key === 'financials') {
+      ['pff-amount','pff-cost-amount'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('input', function() {
+          this.value = this.value.replace(/[^0-9]/g,'');
+          var err = document.getElementById('pff-err'); if (err) err.style.display = 'none';
+        });
+      });
+    }
   };
   window.toggleMS   = async function(pid2,idx){
     var pr=D.projects.find(function(x){return x.id===pid2;});
@@ -5977,6 +6074,200 @@ function openMoveDocModal(pid, idx) {
     closeModal(); if (window.switchPTab) window.switchPTab('documentation');
   };
 }
+
+// ── Information tab: inline per-section editing ─────────────────────────────
+// Each category panel on the Information tab edits and saves itself in place
+// (Edit -> form -> Save/Cancel), rather than opening the general-purpose
+// editProject() modal below -- that modal, and the financials one, are kept
+// only for the handful of entry points outside the project detail page
+// (Prioritize Backlog, a request's linked-project summary) that still need
+// a quick edit without navigating over to Information.
+
+function editProjectOwnership(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (D.role !== 'admin') return;
+  var ownerPoolEdit = p.owner && individualResourceNames().indexOf(p.owner) < 0 ? individualResourceNames().concat([p.owner]) : individualResourceNames();
+  var ownerOpts = '<option value="">— None —</option>' + ownerPoolEdit.map(function(n){
+    var isInactiveCurrent = p.owner===n && individualResourceNames().indexOf(n) < 0;
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
+  }).join('');
+  var sponsorPoolEdit = p.sponsor && individualResourceNames().indexOf(p.sponsor) < 0 ? individualResourceNames().concat([p.sponsor]) : individualResourceNames();
+  var sponsorOpts = '<option value="">— None —</option>' + sponsorPoolEdit.map(function(n){
+    var isUnlinkedCurrent = p.sponsor===n && individualResourceNames().indexOf(n) < 0;
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.sponsor===n?' selected':'') + '>' + n + (isUnlinkedCurrent ? ' (not linked to a resource)' : '') + '</option>';
+  }).join('');
+  showModal('<div class="modal-title">Edit ownership <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Sponsor</div><select id="eo-sponsor">' + sponsorOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Owner</div><select id="eo-owner">' + ownerOpts + '</select></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveProjectOwnership(\'' + pid + '\')"><i class="ti ti-check"></i> Save changes</button></div>');
+}
+
+async function saveProjectOwnership(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var beforeSnapshot = { sponsor: p.sponsor, owner: p.owner, ownerId: p.ownerId };
+  var sponsorName = document.getElementById('eo-sponsor').value;
+  var sponsorResource = resolveResource(sponsorName);
+  var ownerName = document.getElementById('eo-owner').value;
+  var ownerResource = resolveResource(ownerName);
+  var newVals = {
+    sponsor: sponsorName || null, sponsor_resource_id: sponsorResource ? sponsorResource.id : null,
+    owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null
+  };
+  var btn = document.querySelector('.modal-footer .btn-primary'); if (btn) btn.disabled = true;
+  var result = await sb.from('projects').update(newVals).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
+  p.sponsor = newVals.sponsor; p.sponsorResourceId = newVals.sponsor_resource_id;
+  p.owner = ownerName || ''; p.ownerId = newVals.owner_id;
+  closeModal(); showToast('Ownership updated');
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview');
+
+  try { await logProjectChanges(pid, beforeSnapshot, { sponsor: newVals.sponsor, owner: ownerName || null }, 'edit'); } catch (e) { console.error('Could not record change history:', e); }
+  if (p.ownerId !== beforeSnapshot.ownerId) {
+    try { await applyOwnerAsLead(p); } catch (e) { console.error('Could not set owner as Owner/Lead:', e); }
+  }
+}
+
+window.saveProjectIdentity = async function(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var beforeSnapshot = { name: p.name, priority: p.priority, value: p.value, tshirtSize: p.tshirtSize, businessUnit: p.businessUnit, deliveryMethodology: p.deliveryMethodology };
+  var newVals = {
+    name: document.getElementById('pfi-name').value.trim() || p.name,
+    priority: document.getElementById('pfi-priority').value || null,
+    value_area: document.getElementById('pfi-value').value || null,
+    tshirt_size: document.getElementById('pfi-tshirt').value || null,
+    business_unit: document.getElementById('pfi-bu').value || null,
+    delivery_methodology: document.getElementById('pfi-methodology').value || null
+  };
+  var catCbs = document.querySelectorAll('.pfi-category-cb');
+  var newCats = Array.from(catCbs).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
+  var oldCats = p.categories || [];
+
+  var btn = document.getElementById('pf-save'); if (btn) btn.disabled = true;
+  var result = await sb.from('projects').update(newVals).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
+
+  p.name = newVals.name; p.priority = newVals.priority; p.value = newVals.value_area;
+  p.tshirtSize = newVals.tshirt_size; p.businessUnit = newVals.business_unit; p.deliveryMethodology = newVals.delivery_methodology;
+  p.categories = newCats;
+  projectInfoEditing = null;
+  showToast('Saved'); pgProjectDetail(pid, 'overview');
+
+  try {
+    await logProjectChanges(pid, beforeSnapshot, {
+      name: newVals.name, priority: newVals.priority, value: newVals.value_area,
+      tshirtSize: newVals.tshirt_size, businessUnit: newVals.business_unit, deliveryMethodology: newVals.delivery_methodology
+    }, 'edit');
+  } catch (e) { console.error('Could not record change history:', e); }
+
+  try {
+    var catsToAdd = newCats.filter(function(c){ return oldCats.indexOf(c) < 0; });
+    var catsToRemove = oldCats.filter(function(c){ return newCats.indexOf(c) < 0; });
+    if (catsToAdd.length) await sb.from('project_categories').insert(catsToAdd.map(function(c){ return { project_id: pid, category: c }; }));
+    for (var ci = 0; ci < catsToRemove.length; ci++) { await sb.from('project_categories').delete().eq('project_id', pid).eq('category', catsToRemove[ci]); }
+  } catch (e) { console.error('Could not sync categories:', e); }
+};
+
+window.saveProjectSchedule = async function(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var beforeSnapshot = { stage: p.stage, status: p.status, phase: p.phase, start: p.start, end: p.end };
+  var newVals = {
+    status: document.getElementById('pfs-status').value || null,
+    phase: document.getElementById('pfs-phase').value || null,
+    start_date: document.getElementById('pfs-start').value || null,
+    end_date: document.getElementById('pfs-end').value || null
+  };
+
+  // If this project is still in backlog or planned, editing in real dates should
+  // move it forward automatically, rather than leaving it stranded until someone
+  // separately reschedules or reloads the page.
+  if (p.stage === 'backlog' || p.stage === 'planned') {
+    var newStage = computeStageFromDates(newVals.start_date, newVals.end_date);
+    if (newStage !== p.stage) {
+      newVals.stage = newStage;
+      if (newStage !== 'backlog' && !p.plannedStart) newVals.planned_start = newVals.start_date;
+    }
+  }
+
+  var btn = document.getElementById('pf-save'); if (btn) btn.disabled = true;
+  var result = await sb.from('projects').update(newVals).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
+
+  if (newVals.stage) { p.stage = newVals.stage; if (newVals.planned_start) p.plannedStart = newVals.planned_start; }
+  p.status = newVals.status; p.phase = newVals.phase; p.start = newVals.start_date; p.end = newVals.end_date;
+  projectInfoEditing = null;
+  showToast('Saved'); pgProjectDetail(pid, 'overview');
+
+  try {
+    await logProjectChanges(pid, beforeSnapshot, {
+      status: newVals.status, phase: newVals.phase, start: newVals.start_date, end: newVals.end_date, stage: newVals.stage || beforeSnapshot.stage
+    }, 'edit');
+  } catch (e) { console.error('Could not record change history:', e); }
+};
+
+window.saveProjectProgress = async function(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var beforeSnapshot = { progress: p.progress, health: p.health };
+  var newVals = {
+    progress: parseInt(document.getElementById('pfp-progress').value) || 0,
+    health: document.getElementById('pfp-health').value || null
+  };
+  var btn = document.getElementById('pf-save'); if (btn) btn.disabled = true;
+  var result = await sb.from('projects').update(newVals).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
+
+  p.progress = newVals.progress; p.health = newVals.health;
+  projectInfoEditing = null;
+  showToast('Saved'); pgProjectDetail(pid, 'overview');
+
+  try { await logProjectChanges(pid, beforeSnapshot, { progress: newVals.progress, health: newVals.health }, 'edit'); } catch (e) { console.error('Could not record change history:', e); }
+};
+
+window.saveProjectDescription = async function(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var beforeSnapshot = { description: p.description, blockers: p.blockers };
+  var newVals = {
+    description: document.getElementById('pfd-desc').value,
+    blockers: document.getElementById('pfd-blocker').value
+  };
+  var btn = document.getElementById('pf-save'); if (btn) btn.disabled = true;
+  var result = await sb.from('projects').update(newVals).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
+
+  p.description = newVals.description; p.blockers = newVals.blockers;
+  projectInfoEditing = null;
+  showToast('Saved'); pgProjectDetail(pid, 'overview');
+
+  try { await logProjectChanges(pid, beforeSnapshot, { description: newVals.description, blockers: newVals.blockers }, 'edit'); } catch (e) { console.error('Could not record change history:', e); }
+};
+
+window.saveProjectFinancials = async function(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var estType = document.getElementById('pff-type').value || null;
+  var estAmountRaw = document.getElementById('pff-amount').value.trim();
+  var costAmountRaw = document.getElementById('pff-cost-amount').value.trim();
+  if ((estAmountRaw && isNaN(Number(estAmountRaw))) || (costAmountRaw && isNaN(Number(costAmountRaw)))) {
+    document.getElementById('pff-err').style.display = 'block'; return;
+  }
+  var btn = document.getElementById('pf-save'); if (btn) btn.disabled = true;
+  var updates = {
+    estimated_type: estType,
+    estimated_frequency: estAmountRaw ? document.getElementById('pff-freq').value : null,
+    estimated_amount: estAmountRaw ? Number(estAmountRaw) : null,
+    value_confidence: document.getElementById('pff-value-confidence').value || null,
+    cost_estimate: costAmountRaw ? Number(costAmountRaw) : null,
+    cost_confidence: document.getElementById('pff-cost-confidence').value || null
+  };
+  // Deliberately not logged via logProjectChanges: the general Change Log tab
+  // is visible to anyone who can see the project, regardless of financial
+  // permission, so logging dollar figures there would leak them.
+  var result = await sb.from('projects').update(updates).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
+  p.estimatedType = updates.estimated_type; p.estimatedFrequency = updates.estimated_frequency;
+  p.estimatedAmount = updates.estimated_amount; p.valueConfidence = updates.value_confidence;
+  p.costEstimate = updates.cost_estimate; p.costConfidence = updates.cost_confidence;
+  projectInfoEditing = null;
+  showToast('Financial detail updated'); pgProjectDetail(pid, 'overview');
+};
 
 // ── Edit / New Project ─────────────────────────────────────────────────────────
 
