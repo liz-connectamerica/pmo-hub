@@ -581,6 +581,30 @@ async function ensureOnTeam(p, res) {
   p.teamIds.push(res.id);
 }
 
+// Factored out of the Team tab's own tier dropdown so the "owner is set"
+// flows below can write a tier without depending on window.setAllocationTier
+// having been defined yet (it's only assigned once pgProjectDetail has
+// rendered at least once this session).
+async function writeAllocationTier(pid, resourceId, tier) {
+  return sb.from('resource_projects').update({ allocation_tier: tier || null }).eq('project_id', pid).eq('resource_id', resourceId);
+}
+
+// A project's owner is assumed to be its Owner/Lead for capacity purposes --
+// adds them to the team if they're not already on it, and sets their
+// allocation tier to Owner/Lead if it isn't already set to anything. Never
+// overwrites a tier someone already explicitly chose.
+async function applyOwnerAsLead(p) {
+  if (!p || !p.ownerId) return;
+  var ownerResource = D.resources.find(function(r){ return r.id === p.ownerId; });
+  if (!ownerResource) return;
+  await ensureOnTeam(p, ownerResource);
+  p.teamTiers = p.teamTiers || {};
+  if (!p.teamTiers[p.ownerId]) {
+    var result = await writeAllocationTier(p.id, p.ownerId, 'Owner/Lead');
+    if (!result.error) p.teamTiers[p.ownerId] = 'Owner/Lead';
+  }
+}
+
 var TAG_COLOR_CLASSES = ['badge-purple','badge-teal','badge-amber','badge-red','badge-blue','badge-green','badge-coral'];
 function tagColorClass(name) {
   var hash = 0;
@@ -3775,6 +3799,7 @@ async function scheduleProject(pid) {
   p.team = newTeamNames; p.teamIds = newRealIds;
   p.owner = ownerName; p.ownerId = ownerResource ? ownerResource.id : null;
   p.plannedStart = start; p.start = start; p.end = end; p.stage = newStage;
+  await applyOwnerAsLead(p);
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) await syncRequestStatus(r.id, { status: 'Planned', linkedProject: pid });
   addNotif(r ? r.submitter : '', 'Great news! "' + p.name + '" has been scheduled to start on ' + start + (p.owner ? '. Owner: ' + p.owner : '') + '.', 'planned');
@@ -4860,7 +4885,7 @@ function pgProjectDetail(pid, tab) {
   };
   window.setAllocationTier = async function(pid2, resourceId, tier) {
     var pr = D.projects.find(function(x){ return x.id === pid2; });
-    var result = await sb.from('resource_projects').update({ allocation_tier: tier || null }).eq('project_id', pid2).eq('resource_id', resourceId);
+    var result = await writeAllocationTier(pid2, resourceId, tier);
     if (result.error) { showToast('Could not update allocation: ' + result.error.message); return; }
     pr.teamTiers = pr.teamTiers || {};
     pr.teamTiers[resourceId] = tier || null;
@@ -5939,7 +5964,7 @@ async function saveProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   var beforeSnapshot = {
     name: p.name, stage: p.stage, status: p.status, phase: p.phase, priority: p.priority, value: p.value,
-    businessUnit: p.businessUnit, sponsor: p.sponsor, owner: p.owner, start: p.start, end: p.end,
+    businessUnit: p.businessUnit, sponsor: p.sponsor, owner: p.owner, ownerId: p.ownerId, start: p.start, end: p.end,
     progress: p.progress, health: p.health, description: p.description, blockers: p.blockers,
     deliveryMethodology: p.deliveryMethodology, tshirtSize: p.tshirtSize
   };
@@ -6033,6 +6058,10 @@ async function saveProject(pid) {
       for (var ci = 0; ci < catsToRemove.length; ci++) { await sb.from('project_categories').delete().eq('project_id', pid).eq('category', catsToRemove[ci]); }
     } catch (e) { console.error('Could not sync categories:', e); }
   }
+
+  if (pmEl && p.ownerId !== beforeSnapshot.ownerId) {
+    try { await applyOwnerAsLead(p); } catch (e) { console.error('Could not set owner as Owner/Lead:', e); }
+  }
 }
 
 async function deleteProject(pid) {
@@ -6107,7 +6136,7 @@ function openNewProjectModal() {
     var newProject = {
       id: result.data.id, name:name, owner:ownerName, ownerId: ownerResource?ownerResource.id:null,
       sponsor:sponsorName, sponsorResourceId: sponsorResource?sponsorResource.id:null, programId: programId,
-      categories:selectedCats, businessUnit:record.business_unit, team:[], teamIds:[],
+      categories:selectedCats, businessUnit:record.business_unit, team:[], teamIds:[], teamTiers:{},
       status:record.status, phase:'Not Started', progress:0, start:startDate||'', end:endDate||'',
       value:record.value_area, priority:record.priority, description:record.description,
       blockers:'', health:null, stage:newStage, plannedStart:record.planned_start||'', requestId:'',
@@ -6116,6 +6145,7 @@ function openNewProjectModal() {
       documents:[], docFolders:['General'], docFolderIds:{}
     };
     D.projects.push(newProject);
+    await applyOwnerAsLead(newProject);
     closeModal(); showToast('Project created');
     nav(currentPage);
   };
@@ -6814,6 +6844,11 @@ async function runImport() {
   importState = { rows: null, profilesByEmail: null };
   await refreshProjects();
   await refreshTags();
+  var insertedIds = insertedProjects.map(function(pr){ return pr.id; });
+  for (var pi = 0; pi < insertedIds.length; pi++) {
+    var importedP = D.projects.find(function(x){ return x.id === insertedIds[pi]; });
+    if (importedP) await applyOwnerAsLead(importedP);
+  }
   nav('projects');
 }
 
@@ -7200,7 +7235,7 @@ function pgAllProjects() {
       if (result.error) { failed++; continue; }
       var proj = D.projects.find(function(x){ return x.id === selectedIds[i]; });
       if (!proj) continue;
-      if (field === 'owner') { proj.owner = value || ''; proj.ownerId = ownerResource ? ownerResource.id : null; }
+      if (field === 'owner') { proj.owner = value || ''; proj.ownerId = ownerResource ? ownerResource.id : null; if (ownerResource) await applyOwnerAsLead(proj); }
       else if (field === 'sponsor') { proj.sponsor = value || ''; proj.sponsorResourceId = sponsorResource ? sponsorResource.id : null; }
       else if (field === 'businessUnit') proj.businessUnit = value;
       else if (field === 'value') proj.value = value;
