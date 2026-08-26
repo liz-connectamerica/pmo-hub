@@ -14,6 +14,15 @@ A dated log of feature and fix changes to PMO Hub, newest first. Each entry is t
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-08-26-team-2">
+  <h2>Team</h2>
+  <p class="changelog-date">August 26, 2026 · 11:07 AM</p>
+  <ul>
+    <li>A project's <strong>owner</strong> is now automatically added to the team and defaulted to the <strong>Owner/Lead</strong> allocation tier the moment they're set as owner — new project, edit, schedule/backlog conversion, bulk edit, or import. This only fills in a default: changing their tier afterward sticks, it's never overwritten back.</li>
+    <li>Ran a one-time backfill so every existing project's owner is correctly reflected this way too.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-08-26-resources">
   <h2>Resources</h2>
   <p class="changelog-date">August 26, 2026 · 10:45 AM – 10:54 AM</p>
