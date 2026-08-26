@@ -4929,10 +4929,10 @@ function pgProjectDetail(pid, tab) {
   tb(p.name);
 
   document.getElementById('content').innerHTML =
-    '<div class="card">' +
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + lateBadgeHtml(isProjectLate(p)) + '</div>' +
-    '<div class="tab-bar">' + tabsHtml + '</div>' +
-    '<div id="ptab-content">' + tabC(tab) + '</div>' +
+    '<div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 112px);box-sizing:border-box;overflow:hidden">' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;flex-shrink:0">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + lateBadgeHtml(isProjectLate(p)) + '</div>' +
+    '<div class="tab-bar" style="flex-shrink:0">' + tabsHtml + '</div>' +
+    '<div id="ptab-content" style="flex:1;overflow-y:auto">' + tabC(tab) + '</div>' +
     '</div>';
   if (tab === 'tasks') attachTaskDragHandlers();
 
