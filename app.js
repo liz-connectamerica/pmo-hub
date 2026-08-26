@@ -379,6 +379,11 @@ async function loadAllProjects() {
     // someone assigns one.
     var teamTiers = {};
     teamRowsForProj.forEach(function(t){ teamTiers[t.resource_id] = t.allocation_tier || null; });
+    // A team member's own override of the %-of-time their tier implies for
+    // this project, set from their My Capacity page. Always wins over the
+    // computed tier/size default -- see effectiveAllocationPct.
+    var teamOverrides = {};
+    teamRowsForProj.forEach(function(t){ teamOverrides[t.resource_id] = t.allocation_pct_override != null ? t.allocation_pct_override : null; });
 
     var milestones = (milestonesByProj[pr.id] || []).map(function(m) {
       return {
@@ -459,7 +464,7 @@ async function loadAllProjects() {
       sponsor: pr.sponsor, sponsorResourceId: pr.sponsor_resource_id, programId: pr.program_id,
       categories: (categoriesByProj[pr.id]||[]).map(function(c){ return c.category; }), businessUnit: pr.business_unit,
       dependencies: (dependenciesByProject[pr.id]||[]).map(function(d){ return projectInfoById[d.depends_on_project_id]; }).filter(Boolean),
-      team: teamNames, teamIds: teamIds, teamTiers: teamTiers,
+      team: teamNames, teamIds: teamIds, teamTiers: teamTiers, teamOverrides: teamOverrides,
       status: pr.status, phase: pr.phase, progress: pr.progress,
       start: pr.start_date, end: pr.end_date, plannedStart: pr.planned_start,
       value: pr.value_area, priority: pr.priority, description: pr.description,
@@ -1881,11 +1886,33 @@ var rejectedFilterState = { range:'30' };
 // Capacity planning: a team member's involvement in a given project is set
 // as one of these tiers (by the project owner or an admin) rather than a
 // raw percent, and each tier maps to an assumed %-of-time for the heat map.
+// This is the base rate at a "typical" (M) project size -- see
+// TSHIRT_SIZE_LOAD_MULTIPLIER and effectiveAllocationPct below for how a
+// project's actual size scales it, and how a person can override the result
+// for themselves from My Capacity.
 var ALLOCATION_TIERS = ['Owner/Lead', 'Core', 'Light touch'];
 var ALLOCATION_TIER_PERCENT = { 'Owner/Lead': 50, 'Core': 25, 'Light touch': 10 };
+// Being the Owner/Lead of an XL project is assumed to carry more load than
+// the same role on an XS one -- this scales the base tier % by T-shirt size,
+// centered on M (1x). A project with no size set also uses 1x.
+var TSHIRT_SIZE_LOAD_MULTIPLIER = { XS: 0.5, S: 0.75, M: 1, L: 1.25, XL: 1.5 };
 // Used to convert an accepted work request's estimated_hours into a %-of-month
 // figure for the capacity heat map.
 var STANDARD_WORK_WEEK_HOURS = 40;
+
+// The actual %-of-time contribution a team member's tier implies for one
+// project: the tier's base % weighted by the project's T-shirt size, unless
+// that person has set their own override from My Capacity, which always
+// wins over the computed default.
+function effectiveAllocationPct(p, resourceId) {
+  var override = p.teamOverrides ? p.teamOverrides[resourceId] : null;
+  if (override != null) return override;
+  var tier = p.teamTiers ? p.teamTiers[resourceId] : null;
+  if (!tier) return 0;
+  var base = ALLOCATION_TIER_PERCENT[tier] || 0;
+  var mult = TSHIRT_SIZE_LOAD_MULTIPLIER[p.tshirtSize] || 1;
+  return Math.round(base * mult);
+}
 
 function buildQuarterOptions() {
   var thisYear = new Date().getFullYear();
@@ -2189,7 +2216,8 @@ function renderNav() {
     defs.splice(1, 0, { s:'My Work', items:[
       {id:'my-projects', icon:'ti-briefcase',   label:'My Projects'},
       {id:'my-tasks',    icon:'ti-check',       label:'My Tasks', badge:'my-tasks'},
-      {id:'my-work-requests', icon:'ti-list-check', label:'My Work Requests', badge:'my-work-requests'}
+      {id:'my-work-requests', icon:'ti-list-check', label:'My Work Requests', badge:'my-work-requests'},
+      {id:'my-capacity', icon:'ti-gauge',       label:'My Capacity'}
     ]});
   }
   var anyExpanded = defs.some(function(sec){ return !isNavSectionCollapsed(sec.s); });
@@ -2225,11 +2253,12 @@ var PAGE_RENDERERS = {
   'my-projects':pgMyProjectsResource, 'my-tasks':pgMyTasks,
   'import-projects':pgImportProjects, 'import-work-requests':pgImportWorkRequests, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
   'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems,
-  'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests, 'admin-personal-todos':pgAdminPersonalTodos
+  'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests, 'admin-personal-todos':pgAdminPersonalTodos,
+  'my-capacity':pgMyCapacity
 };
 
 function pageAllowedForRole(page, role) {
-  if (page === 'my-projects' || page === 'my-tasks' || page === 'my-work-requests') {
+  if (page === 'my-projects' || page === 'my-tasks' || page === 'my-work-requests' || page === 'my-capacity') {
     return hasAssignedWork();
   }
   var defs = NAV_DEF[role] || [];
@@ -4336,13 +4365,17 @@ function pgProjectDetail(pid, tab) {
             var ini = m.split(' ').map(function(x){ return x[0]; }).join('');
             var resId = p.teamIds[i];
             var curTier = (p.teamTiers && p.teamTiers[resId]) || '';
+            var isOverridden = p.teamOverrides && p.teamOverrides[resId] != null;
             var tierSelect = '<select style="font-size:12px" ' + (editable ? '' : 'disabled ') + 'onchange="setAllocationTier(\'' + p.id + '\',\'' + resId + '\',this.value)">' +
               '<option value=""' + (curTier === '' ? ' selected' : '') + '>Not set</option>' +
               ALLOCATION_TIERS.map(function(tier){ return '<option value="' + tier + '"' + (curTier === tier ? ' selected' : '') + '>' + tier + '</option>'; }).join('') +
               '</select>';
+            var effPctHint = curTier
+              ? '<span class="text-muted" style="font-size:11px;white-space:nowrap" title="' + (isOverridden ? 'This person has overridden this from their My Capacity page' : 'Based on tier + this project\'s T-shirt size') + '">≈' + effectiveAllocationPct(p, resId) + '%' + (isOverridden ? ' (self-set)' : '') + '</span>'
+              : '';
             return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0ede8">' +
               '<div style="display:flex;align-items:center;gap:10px">' + (isTeam ? '<i class="ti ti-users" style="color:#185FA5"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:13px">' + m + '</span>' + (isTeam ? teamManagerSuffix(m) : '') + '</div>' +
-              '<div style="display:flex;align-items:center;gap:10px">' + tierSelect +
+              '<div style="display:flex;align-items:center;gap:10px">' + tierSelect + effPctHint +
               (editable ? '<button class="btn btn-sm btn-danger" onclick="removeTeamMemberDirect(\'' + p.id + '\',\'' + m.replace(/'/g,"\\'") + '\')"><i class="ti ti-x"></i></button>' : '') +
               '</div></div>';
           }).join('')
@@ -4353,11 +4386,14 @@ function pgProjectDetail(pid, tab) {
         return '<div class="team-add-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + n + (addKind==='team' ? teamManagerSuffix(n) : '') + (rec ? ' <span class="badge badge-teal" style="font-size:10px">Recommended</span>' : '') + '</span><button class="btn btn-sm" onclick="addTeamMemberDirect(\'' + p.id + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button></div>';
       }).join('');
       var tierInfoOpenNow = !!teamTierInfoOpen[p.id];
+      var sizeMultText = TSHIRT_SIZES.map(function(sz){ return sz + ' ' + Math.round(TSHIRT_SIZE_LOAD_MULTIPLIER[sz] * 100) + '%'; }).join(' &nbsp;·&nbsp; ');
       var tierInfoBlock = tierInfoOpenNow
         ? '<div class="text-muted" style="font-size:12px;margin-bottom:10px;padding:10px;background:#faf9f7;border-radius:8px;line-height:1.6">' +
-          'Each person\'s <strong>allocation tier</strong> is an assumed % of their time this project takes, and feeds directly into their total load on the Capacity page (alongside their self-reported BAU % and any open work requests):<br>' +
+          'Each person\'s <strong>allocation tier</strong> is an assumed % of their time this project takes, and feeds directly into their total load on the Capacity page (alongside their self-reported BAU % and any open work requests). Base rate at a typical (M) size:<br>' +
           ALLOCATION_TIERS.map(function(tier){ return '<strong>' + tier + '</strong> ≈ ' + ALLOCATION_TIER_PERCENT[tier] + '%'; }).join(' &nbsp;·&nbsp; ') +
-          '<br>Leaving someone at "Not set" contributes 0% until a tier is chosen — set one for anyone whose load here should count, including the project owner if they\'re on this team.' +
+          '<br>That base rate is then scaled by this project\'s <strong>T-shirt size</strong> — being Owner/Lead on an XL project is assumed to take more time than the same role on an XS one:<br>' +
+          sizeMultText +
+          '<br>Leaving someone at "Not set" contributes 0% until a tier is chosen — set one for anyone whose load here should count, including the project owner if they\'re on this team. The person themselves can override the computed % from their own <strong>My Capacity</strong> page if it doesn\'t match reality.' +
           '</div>'
         : '';
       return '<div class="card"><div class="section-title" style="display:flex;align-items:center;gap:6px">Team members ' +
@@ -6136,7 +6172,7 @@ function openNewProjectModal() {
     var newProject = {
       id: result.data.id, name:name, owner:ownerName, ownerId: ownerResource?ownerResource.id:null,
       sponsor:sponsorName, sponsorResourceId: sponsorResource?sponsorResource.id:null, programId: programId,
-      categories:selectedCats, businessUnit:record.business_unit, team:[], teamIds:[], teamTiers:{},
+      categories:selectedCats, businessUnit:record.business_unit, team:[], teamIds:[], teamTiers:{}, teamOverrides:{},
       status:record.status, phase:'Not Started', progress:0, start:startDate||'', end:endDate||'',
       value:record.value_area, priority:record.priority, description:record.description,
       blockers:'', health:null, stage:newStage, plannedStart:record.planned_start||'', requestId:'',
@@ -9033,8 +9069,7 @@ function resourceMonthLoadPct(r, placed, openWR, m) {
   var bau = r.bauPercent || 0;
   var projectPct = placed.reduce(function(sum, x) {
     if (!(x.range.end >= m.start && x.range.start < m.end)) return sum;
-    var tier = x.project.teamTiers ? x.project.teamTiers[r.id] : null;
-    return sum + (tier ? (ALLOCATION_TIER_PERCENT[tier] || 0) : 0);
+    return sum + effectiveAllocationPct(x.project, r.id);
   }, 0);
   var wrHours = openWR.reduce(function(sum, w){ return sum + workRequestHoursInMonth(w, m); }, 0);
   var cap = monthCapacityHours();
@@ -9072,7 +9107,10 @@ function capacityDetailBarHtml(entry, windowStart, totalMonths, r) {
   var endPos = capacityMonthPos(range.end, windowStart) + 0.05;
   var clampedStart = Math.max(0, startPos), clampedEnd = Math.min(totalMonths, endPos);
   var tier = p.teamTiers ? p.teamTiers[r.id] : null;
-  var tierBadge = ' <span class="badge ' + (tier ? 'badge-purple' : 'badge-gray') + '" style="font-size:10px">' + (tier ? tier : 'Tier not set') + '</span>';
+  var overridden = p.teamOverrides && p.teamOverrides[r.id] != null;
+  var tierBadge = tier
+    ? ' <span class="badge badge-purple" style="font-size:10px">' + tier + ' · ' + effectiveAllocationPct(p, r.id) + '%' + (overridden ? ' (self-set)' : '') + '</span>'
+    : ' <span class="badge badge-gray" style="font-size:10px">Tier not set</span>';
   var viewBtn = '<button class="btn btn-sm" style="padding:1px 5px;margin-right:4px" title="View project" onclick="event.stopPropagation();goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button>';
   if (clampedEnd <= 0 || clampedStart >= totalMonths) {
     return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + viewBtn + p.name + tierBadge + '</div><div class="tl-wrap"><span class="text-muted" style="font-size:11px;padding-left:8px">Outside this window</span></div></div>';
@@ -10220,8 +10258,6 @@ function pgMyTasks() {
   tb('My Tasks');
   var st = myTasksState;
   if (st.kind === 'todo') renderMyTodos(); else renderMyPlanTasks();
-  var content = document.getElementById('content');
-  if (content) content.insertAdjacentHTML('afterbegin', bauPercentCardHtml());
 }
 
 function bauPercentCardHtml() {
@@ -10246,8 +10282,84 @@ window.editBauPercent = async function() {
   if (result.error) { showToast('Could not update: ' + result.error.message); return; }
   me.bauPercent = val;
   showToast('BAU % updated');
-  pgMyTasks();
+  pgMyCapacity();
 };
+
+function pgMyCapacity() {
+  tb('My Capacity');
+  var me = D.myResourceId;
+  var meRes = D.resources.find(function(r){ return r.id === me; });
+  var myProjects = D.projects.filter(function(p){ return p.stage !== 'complete' && (p.teamIds||[]).indexOf(me) >= 0; });
+
+  var rows = myProjects.map(function(p){
+    return {
+      p: p,
+      tier: p.teamTiers ? p.teamTiers[me] : null,
+      overridden: !!(p.teamOverrides && p.teamOverrides[me] != null),
+      effPct: effectiveAllocationPct(p, me)
+    };
+  }).sort(function(a, b){ return b.effPct - a.effPct || a.p.name.localeCompare(b.p.name); });
+
+  var projectTotal = rows.reduce(function(sum, x){ return sum + x.effPct; }, 0);
+  var bau = (meRes && meRes.bauPercent != null) ? meRes.bauPercent : 0;
+  var totalPct = bau + projectTotal;
+  var totalBg = totalPct >= 110 ? '#F0A7A3' : totalPct >= 80 ? '#F5CE8B' : totalPct >= 50 ? '#BFE3D3' : '#f0ede8';
+
+  var rowsHtml = rows.length
+    ? rows.map(myCapacityRowHtml).join('')
+    : '<div class="empty-state" style="padding:24px"><i class="ti ti-gauge"></i><p>You\'re not on any project team yet</p></div>';
+
+  document.getElementById('content').innerHTML =
+    bauPercentCardHtml() +
+    '<div class="card mb-16" style="display:flex;align-items:center;justify-content:space-between">' +
+      '<div><div class="section-title" style="margin-bottom:2px">Estimated total load</div>' +
+      '<div class="text-muted" style="font-size:12px">Non-project time plus your project allocations below. The admin Capacity page also breaks this out by month and factors in open work requests.</div></div>' +
+      '<span style="font-size:20px;font-weight:700;padding:4px 12px;border-radius:8px;background:' + totalBg + '">' + totalPct + '%</span>' +
+    '</div>' +
+    '<div class="card"><div class="section-title">Your projects</div>' + rowsHtml + '</div>';
+}
+
+function myCapacityRowHtml(entry) {
+  var p = entry.p, tier = entry.tier, effPct = entry.effPct, overridden = entry.overridden;
+  var sizeLabel = p.tshirtSize || 'Not sized';
+  return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0ede8">' +
+    '<div style="min-width:0">' +
+      '<div style="font-size:13px" class="bold">' + p.name + ' ' + stagePill(p.stage) + '</div>' +
+      '<div class="text-muted" style="font-size:11px;margin-top:2px">' + (tier ? tier : 'Tier not set') + ' · ' + sizeLabel + (overridden ? ' · custom override' : '') + '</div>' +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:10px">' +
+      '<span style="font-size:16px;font-weight:600">' + effPct + '%</span>' +
+      '<button class="btn btn-sm" title="Override this %" onclick="openMyCapacityOverride(\'' + p.id + '\')"><i class="ti ti-edit"></i></button>' +
+      (overridden ? '<button class="btn btn-sm" title="Reset to default" onclick="resetMyCapacityOverride(\'' + p.id + '\')"><i class="ti ti-refresh"></i></button>' : '') +
+      '<button class="btn btn-sm" title="View project" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button>' +
+    '</div></div>';
+}
+
+window.openMyCapacityOverride = async function(pid2) {
+  var p = D.projects.find(function(x){ return x.id === pid2; });
+  if (!p) return;
+  var me = D.myResourceId;
+  var current = effectiveAllocationPct(p, me);
+  var raw = prompt('Override your % allocation for "' + p.name + '" (currently ' + current + '%, based on your tier and this project\'s size):', String(current));
+  if (raw === null) return;
+  var val = parseInt(raw, 10);
+  if (isNaN(val) || val < 0 || val > 100) { showToast('Enter a whole number between 0 and 100'); return; }
+  await setMyCapacityOverride(pid2, val);
+};
+
+window.resetMyCapacityOverride = async function(pid2) {
+  await setMyCapacityOverride(pid2, null);
+};
+
+async function setMyCapacityOverride(pid2, val) {
+  var me = D.myResourceId;
+  var result = await sb.from('resource_projects').update({ allocation_pct_override: val }).eq('project_id', pid2).eq('resource_id', me);
+  if (result.error) { showToast('Could not update: ' + result.error.message); return; }
+  var p = D.projects.find(function(x){ return x.id === pid2; });
+  if (p) { p.teamOverrides = p.teamOverrides || {}; p.teamOverrides[me] = val; }
+  showToast(val == null ? 'Reset to default' : 'Allocation updated');
+  pgMyCapacity();
+}
 
 function myTasksKindTabsHtml() {
   var st = myTasksState;
