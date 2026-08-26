@@ -1847,7 +1847,6 @@ var PROJECT_INFO_SUBTABS = [
   { key:'identity',      label:'Identity & Classification',   icon:'ti-tag' },
   { key:'schedule',      label:'Schedule, Stage & Lifecycle',  icon:'ti-calendar-time' },
   { key:'progress',      label:'Progress & Health',            icon:'ti-chart-line' },
-  { key:'description',   label:'Description & Content',        icon:'ti-file-text' },
   { key:'financials',    label:'Financials',                   icon:'ti-currency-dollar' },
   { key:'relationships', label:'Relationships',                icon:'ti-link' },
   { key:'audit',         label:'System & Audit',               icon:'ti-history' }
@@ -4344,6 +4343,7 @@ function pgProjectDetail(pid, tab) {
             return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="pfi-category-cb" value="' + s + '"' + (checked?' checked':'') + '> ' + s + '</label>';
           }).join('');
           return '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Project name</div><input type="text" id="pfi-name" value="' + p.name.replace(/"/g,'&quot;') + '"></div>' +
+            '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Description</div><textarea id="pfi-desc">' + (p.description||'') + '</textarea></div>' +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px 16px;margin-bottom:12px">' +
               '<div><div class="form-label">Priority</div><select id="pfi-priority">' + priorOptsI + '</select></div>' +
               '<div><div class="form-label">Value area</div><select id="pfi-value">' + valOptsI + '</select></div>' +
@@ -4356,6 +4356,7 @@ function pgProjectDetail(pid, tab) {
         }
         return editBtnRow('identity') +
             fieldBox('Project name', p.name) +
+            '<div class="form-group" style="margin:12px 0"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin:12px 0 16px">' +
               fieldBox('Priority', bdg(p.priority)) +
               fieldBox('Value area', badgeIf('badge-purple', p.value)) +
@@ -4408,28 +4409,19 @@ function pgProjectDetail(pid, tab) {
 
       var progressBody = (function() {
         if (editable && projectInfoEditing === 'progress') {
-          return '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px 16px;max-width:420px">' +
+          return '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px 16px;max-width:420px;margin-bottom:12px">' +
               '<div><div class="form-label">Progress (%)</div><input type="number" id="pfp-progress" value="' + p.progress + '" min="0" max="100"></div>' +
               '<div><div class="form-label">Health</div><select id="pfp-health"><option value=""' + (!p.health?' selected':'') + '>— Not set —</option><option value="green"' + (p.health==='green'?' selected':'') + '>Green</option><option value="amber"' + (p.health==='amber'?' selected':'') + '>Amber</option><option value="red"' + (p.health==='red'?' selected':'') + '>Red</option></select></div>' +
             '</div>' +
+            '<div class="form-group" style="margin-bottom:0"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="pfp-blocker" value="' + (p.blockers||'').replace(/"/g,'&quot;') + '"></div>' +
             saveCancelRow('saveProjectProgress');
         }
         return editBtnRow('progress') +
             '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px;max-width:420px">' +
               fieldBox('Progress', '<div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div>') +
               fieldBox('Health', hdot(p.health) + (p.health ? p.health.charAt(0).toUpperCase() + p.health.slice(1) : '<span class="text-muted">Not set</span>')) +
-            '</div>';
-      })();
-
-      var descriptionBody = (function() {
-        if (editable && projectInfoEditing === 'description') {
-          return '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Description</div><textarea id="pfd-desc">' + (p.description||'') + '</textarea></div>' +
-            '<div class="form-group" style="margin-bottom:0"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="pfd-blocker" value="' + (p.blockers||'').replace(/"/g,'&quot;') + '"></div>' +
-            saveCancelRow('saveProjectDescription');
-        }
-        return editBtnRow('description') +
-            '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
-            (p.blockers ? '<div class="blocker-note" style="margin-bottom:0"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '');
+            '</div>' +
+            (p.blockers ? '<div class="blocker-note" style="margin-top:14px"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '');
       })();
 
       var financialsBody = canViewFin ? (function() {
@@ -4481,7 +4473,7 @@ function pgProjectDetail(pid, tab) {
       loadAndRenderChangeLog(p.id);
 
       var bodiesByKey = {
-        identity: identityBody, schedule: scheduleBody, progress: progressBody, description: descriptionBody,
+        identity: identityBody, schedule: scheduleBody, progress: progressBody,
         financials: financialsBody, relationships: relationshipsBody, audit: auditBody
       };
       var sectionsHtml = sectionDefs.map(function(s){ return section(s.key, s.label, bodiesByKey[s.key]); }).join('') +
@@ -6144,9 +6136,10 @@ async function saveProjectOwnership(pid) {
 
 window.saveProjectIdentity = async function(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  var beforeSnapshot = { name: p.name, priority: p.priority, value: p.value, tshirtSize: p.tshirtSize, businessUnit: p.businessUnit, deliveryMethodology: p.deliveryMethodology };
+  var beforeSnapshot = { name: p.name, priority: p.priority, value: p.value, tshirtSize: p.tshirtSize, businessUnit: p.businessUnit, deliveryMethodology: p.deliveryMethodology, description: p.description };
   var newVals = {
     name: document.getElementById('pfi-name').value.trim() || p.name,
+    description: document.getElementById('pfi-desc').value,
     priority: document.getElementById('pfi-priority').value || null,
     value_area: document.getElementById('pfi-value').value || null,
     tshirt_size: document.getElementById('pfi-tshirt').value || null,
@@ -6161,7 +6154,7 @@ window.saveProjectIdentity = async function(pid) {
   var result = await sb.from('projects').update(newVals).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
 
-  p.name = newVals.name; p.priority = newVals.priority; p.value = newVals.value_area;
+  p.name = newVals.name; p.description = newVals.description; p.priority = newVals.priority; p.value = newVals.value_area;
   p.tshirtSize = newVals.tshirt_size; p.businessUnit = newVals.business_unit; p.deliveryMethodology = newVals.delivery_methodology;
   p.categories = newCats;
   projectInfoEditing = null;
@@ -6169,7 +6162,7 @@ window.saveProjectIdentity = async function(pid) {
 
   try {
     await logProjectChanges(pid, beforeSnapshot, {
-      name: newVals.name, priority: newVals.priority, value: newVals.value_area,
+      name: newVals.name, description: newVals.description, priority: newVals.priority, value: newVals.value_area,
       tshirtSize: newVals.tshirt_size, businessUnit: newVals.business_unit, deliveryMethodology: newVals.delivery_methodology
     }, 'edit');
   } catch (e) { console.error('Could not record change history:', e); }
@@ -6221,38 +6214,23 @@ window.saveProjectSchedule = async function(pid) {
 
 window.saveProjectProgress = async function(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  var beforeSnapshot = { progress: p.progress, health: p.health };
+  var beforeSnapshot = { progress: p.progress, health: p.health, blockers: p.blockers };
   var newVals = {
     progress: parseInt(document.getElementById('pfp-progress').value) || 0,
-    health: document.getElementById('pfp-health').value || null
+    health: document.getElementById('pfp-health').value || null,
+    blockers: document.getElementById('pfp-blocker').value
   };
   var btn = document.getElementById('pf-save'); if (btn) btn.disabled = true;
   var result = await sb.from('projects').update(newVals).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
 
-  p.progress = newVals.progress; p.health = newVals.health;
+  p.progress = newVals.progress; p.health = newVals.health; p.blockers = newVals.blockers;
   projectInfoEditing = null;
   showToast('Saved'); pgProjectDetail(pid, 'overview');
 
-  try { await logProjectChanges(pid, beforeSnapshot, { progress: newVals.progress, health: newVals.health }, 'edit'); } catch (e) { console.error('Could not record change history:', e); }
-};
-
-window.saveProjectDescription = async function(pid) {
-  var p = D.projects.find(function(x){ return x.id === pid; });
-  var beforeSnapshot = { description: p.description, blockers: p.blockers };
-  var newVals = {
-    description: document.getElementById('pfd-desc').value,
-    blockers: document.getElementById('pfd-blocker').value
-  };
-  var btn = document.getElementById('pf-save'); if (btn) btn.disabled = true;
-  var result = await sb.from('projects').update(newVals).eq('id', pid);
-  if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
-
-  p.description = newVals.description; p.blockers = newVals.blockers;
-  projectInfoEditing = null;
-  showToast('Saved'); pgProjectDetail(pid, 'overview');
-
-  try { await logProjectChanges(pid, beforeSnapshot, { description: newVals.description, blockers: newVals.blockers }, 'edit'); } catch (e) { console.error('Could not record change history:', e); }
+  try {
+    await logProjectChanges(pid, beforeSnapshot, { progress: newVals.progress, health: newVals.health, blockers: newVals.blockers }, 'edit');
+  } catch (e) { console.error('Could not record change history:', e); }
 };
 
 window.saveProjectFinancials = async function(pid) {
