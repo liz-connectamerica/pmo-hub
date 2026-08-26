@@ -14,6 +14,42 @@ A dated log of feature and fix changes to PMO Hub, newest first. Each entry is t
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-08-26-resources">
+  <h2>Resources</h2>
+  <p class="changelog-date">August 26, 2026 · 10:45 AM – 10:54 AM</p>
+  <ul>
+    <li>Renamed the Load column to <strong>Current Load</strong>, and made it and the Work requests column sortable, like every other column.</li>
+    <li>On the Teams tab, the Members count is now a button that expands into an alphabetical roster of that team's members, each with a quick edit shortcut.</li>
+    <li>Action buttons in the expanded Projects and Members lists now sit to the left of each item instead of stretched to the far right, so it's clear which button belongs to which row.</li>
+  </ul>
+</div>
+
+<div class="changelog-entry" id="cl-2026-08-26-capacity">
+  <h2>Capacity</h2>
+  <p class="changelog-date">August 26, 2026 · 10:45 AM</p>
+  <ul>
+    <li>The Teams tab now shows two rows per team: the team's own row (projects assigned directly to the team), and a new <strong>Team members (avg)</strong> row showing the average %-load across that team's individual members — collapsed by default, expandable into each member's own full row.</li>
+  </ul>
+</div>
+
+<div class="changelog-entry" id="cl-2026-08-26-team">
+  <h2>Team</h2>
+  <p class="changelog-date">August 26, 2026 · 10:45 AM</p>
+  <ul>
+    <li>Added an (i) icon next to "Team members" on a project's Team tab explaining what each allocation tier assumes and how it feeds into Capacity.</li>
+  </ul>
+</div>
+
+<div class="changelog-entry" id="cl-2026-08-25-capacity">
+  <h2>Capacity</h2>
+  <p class="changelog-date">August 25, 2026 · 5:46 PM</p>
+  <ul>
+    <li>Replaced the flat project-count heat map with a combined %-load figure per resource per month: a self-reported BAU % baseline, a per-project allocation tier set on the project's Team tab (Owner/Lead, Core, Light touch), and open work requests prorated into the same total.</li>
+    <li>Heat map cells are now colored by % load (Light / Moderate / Full / Over-allocated) instead of raw project count. Expanding a row shows BAU %, each project's tier, and each work request's approximate %.</li>
+    <li>Added a BAU (non-project) % self-report control to My Tasks, and a Load column to the Resources page linking into Capacity.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-08-25-plan">
   <h2>Plan</h2>
   <p class="changelog-date">August 25, 2026 · 4:16 PM</p>
