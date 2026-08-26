@@ -4577,10 +4577,10 @@ function pgProjectDetail(pid, tab) {
           '<br>Leaving someone at "Not set" contributes 0% until a tier is chosen — set one for anyone whose load here should count, including the project owner if they\'re on this team. The person themselves can override the computed % from their own <strong>My Capacity</strong> page if it doesn\'t match reality.' +
           '</div>'
         : '';
-      return peopleRolesHtml + '<div class="card"><div class="section-title" style="display:flex;align-items:center;gap:6px">Team members ' +
+      return peopleRolesHtml + '<div class="card mb-16"><div class="section-title" style="display:flex;align-items:center;gap:6px">Team members ' +
           '<button class="btn btn-sm" style="padding:1px 6px" title="How allocation tiers affect capacity" onclick="toggleTeamTierInfo(\'' + p.id + '\')"><i class="ti ti-info-circle"></i></button>' +
         '</div>' + tierInfoBlock + teamRows + '</div>' +
-        (editable ? '<div class="card mt-16"><div class="section-title">Add a team member</div>' +
+        (editable ? '<div class="card"><div class="section-title">Add a team member</div>' +
           '<div class="tab-bar" style="margin-bottom:12px">' +
             '<div class="tab' + (addKind==='individual'?' active':'') + '" onclick="setTeamAddKind(\'' + p.id + '\',\'individual\')">Individuals</div>' +
             '<div class="tab' + (addKind==='team'?' active':'') + '" onclick="setTeamAddKind(\'' + p.id + '\',\'team\')">Teams</div>' +
