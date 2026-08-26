@@ -56,9 +56,9 @@
   guide: User Guide
   blurb: Your own submitted Project Requests and Work Requests, with status and Reassign/Withdraw/Reply.
 
-- title: My Projects, My Tasks & My Work Requests
+- title: My Projects, My Tasks, My Work Requests & My Capacity
   page: /user-guide/
-  anchor: my-projects-my-tasks-my-work-requests
+  anchor: my-projects-my-tasks-my-work-requests-my-capacity
   guide: User Guide
   blurb: Your own personalized views -- appears once your account is linked to a resource.
 
@@ -175,6 +175,12 @@
   anchor: manage-values
   guide: Admin Guide
   blurb: Value Area, Business Unit, and Category dropdown lists.
+
+- title: Capacity Weights
+  page: /admin-guide/
+  anchor: capacity-weights
+  guide: Admin Guide
+  blurb: Admin-editable tier base %s and T-shirt size %s behind every capacity calculation.
 
 - title: Deleted Items
   page: /admin-guide/

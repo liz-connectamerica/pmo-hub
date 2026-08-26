@@ -4,7 +4,7 @@ title: Changelog
 permalink: /changelog/
 ---
 
-A dated log of feature and fix changes to PMO Hub, newest first. Each entry is titled by the area of the app it changed. Use the search box below to filter by keyword (area name, feature, or anything in the description).
+A dated log of feature and fix changes to PMO Hub, newest first — one entry per day, grouped by the area(s) of the app it touched. Use the search box below to filter by keyword (area name, feature, or anything in the description).
 
 
 <div class="changelog-search">
@@ -14,38 +14,17 @@ A dated log of feature and fix changes to PMO Hub, newest first. Each entry is t
 
 <div id="changelog-list">
 
-<div class="changelog-entry" id="cl-2026-08-26-team-2">
-  <h2>Team</h2>
-  <p class="changelog-date">August 26, 2026 · 11:07 AM</p>
-  <ul>
-    <li>A project's <strong>owner</strong> is now automatically added to the team and defaulted to the <strong>Owner/Lead</strong> allocation tier the moment they're set as owner — new project, edit, schedule/backlog conversion, bulk edit, or import. This only fills in a default: changing their tier afterward sticks, it's never overwritten back.</li>
-    <li>Ran a one-time backfill so every existing project's owner is correctly reflected this way too.</li>
-  </ul>
-</div>
-
-<div class="changelog-entry" id="cl-2026-08-26-resources">
-  <h2>Resources</h2>
-  <p class="changelog-date">August 26, 2026 · 10:45 AM – 10:54 AM</p>
-  <ul>
-    <li>Renamed the Load column to <strong>Current Load</strong>, and made it and the Work requests column sortable, like every other column.</li>
-    <li>On the Teams tab, the Members count is now a button that expands into an alphabetical roster of that team's members, each with a quick edit shortcut.</li>
-    <li>Action buttons in the expanded Projects and Members lists now sit to the left of each item instead of stretched to the far right, so it's clear which button belongs to which row.</li>
-  </ul>
-</div>
-
-<div class="changelog-entry" id="cl-2026-08-26-capacity">
+<div class="changelog-entry" id="cl-2026-08-26">
   <h2>Capacity</h2>
-  <p class="changelog-date">August 26, 2026 · 10:45 AM</p>
+  <p class="changelog-date">August 26, 2026 · 10:45 AM – 2:28 PM</p>
   <ul>
-    <li>The Teams tab now shows two rows per team: the team's own row (projects assigned directly to the team), and a new <strong>Team members (avg)</strong> row showing the average %-load across that team's individual members — collapsed by default, expandable into each member's own full row.</li>
-  </ul>
-</div>
-
-<div class="changelog-entry" id="cl-2026-08-26-team">
-  <h2>Team</h2>
-  <p class="changelog-date">August 26, 2026 · 10:45 AM</p>
-  <ul>
-    <li>Added an (i) icon next to "Team members" on a project's Team tab explaining what each allocation tier assumes and how it feeds into Capacity.</li>
+    <li><strong>Capacity:</strong> The Teams tab now shows two rows per team: the team's own row (projects assigned directly to the team), and a new <strong>Team members (avg)</strong> row showing the average %-load across that team's individual members — collapsed by default, expandable into each member's own full row.</li>
+    <li><strong>Team:</strong> Added an (i) icon next to "Team members" on a project's Team tab explaining what each allocation tier assumes and how it feeds into Capacity.</li>
+    <li><strong>Team:</strong> A project's <strong>owner</strong> is now automatically added to the team and defaulted to the <strong>Owner/Lead</strong> allocation tier the moment they're set as owner — new project, edit, schedule/backlog conversion, bulk edit, or import. This only fills in a default: changing their tier afterward sticks, it's never overwritten back. Ran a one-time backfill so every existing project's owner is correctly reflected this way too.</li>
+    <li><strong>Resources:</strong> Renamed the Load column to <strong>Current Load</strong>, and made it and the Work requests column sortable, like every other column. On the Teams tab, the Members count is now a button that expands into an alphabetical roster of that team's members. Action buttons in the expanded Projects and Members lists now sit to the left of each item instead of stretched to the far right.</li>
+    <li><strong>My Capacity:</strong> New page under My Work — self-report your non-project (BAU) % here (moved off My Tasks), see every project you're on the team for with its allocation tier and computed %, and override that % for yourself if it doesn't match reality. An "Estimated total load" figure combines BAU % with your project allocations for a chosen month (Previous / Current / Next tabs), plus a prorated share of your open work requests — the same math the admin Capacity page uses.</li>
+    <li><strong>Capacity:</strong> A team member's allocation tier now also scales by the project's <strong>T-shirt size</strong> — e.g. Owner/Lead on an XL project carries more assumed load than the same role on an XS one — instead of a flat rate regardless of size.</li>
+    <li><strong>Administration:</strong> Added a <strong>Capacity Weights</strong> page for admins to tune the tier base %s and T-shirt size %s that drive every capacity calculation in the app, with a live preview of the resulting matrix.</li>
   </ul>
 </div>
 

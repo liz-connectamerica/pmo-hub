@@ -122,7 +122,7 @@ A month-by-month timeline showing how loaded each individual or team really is �
 Each month cell is a single combined **% load** figure, made up of:
 
 - **BAU %** — a flat baseline added to every month, self-reported by the individual from their My Tasks page (or set by an admin from Resources). Teams don't have a BAU % of their own.
-- **Project allocation tier** — for every project placed on the timeline that overlaps that month, the tier the project's owner (or an admin) set for that person on the project's **Team** tab: **Owner/Lead** (50%), **Core** (25%), or **Light touch** (10%). A team member with no tier set yet contributes 0% until someone sets one — the project still shows up when you expand the row, just flagged **Tier not set**, so it isn't silently invisible.
+- **Project allocation tier** — for every project placed on the timeline that overlaps that month, the tier the project's owner (or an admin) set for that person on the project's **Team** tab: **Owner/Lead**, **Core**, or **Light touch**. Each tier's base % is then scaled by the project's **T-shirt size** — being Owner/Lead on an XL project is assumed to carry more load than the same role on an XS one. Both the tier base %s and the size %s are admin-editable from [Capacity Weights](#capacity-weights) below; a person can also override the computed result for themselves, for one specific project, from their own My Capacity page. A team member with no tier set yet contributes 0% until someone sets one — the project still shows up when you expand the row, just flagged **Tier not set**, so it isn't silently invisible.
 - **Work requests** — each of an individual's open work requests (New, Needs Info, or Accepted) is prorated across the working days between when it was accepted (or today, if still New/Needs Info) and its estimated completion date, and converted to a % of a standard work month. A request with no estimated completion date yet can't be placed on the timeline, same limitation as an unscheduled project.
 
 Cells are colored **Light** (under 50%), **Moderate** (50–79%), **Full** (80–109%), or **Over-allocated** (110%+) — the same scale used for the Current Load column on Resources.
@@ -199,6 +199,10 @@ Tags are a single shared pool used across projects, resources, and requests — 
 ## Manage Values
 
 Manages three independent dropdown lists: **Value Area**, **Business Unit**, and **Category**. Renaming cascades everywhere that value is currently used. Deleting only removes it from the picker for *new* selections — anything already using that value keeps displaying it as-is, it just can't be newly assigned going forward.
+
+## Capacity Weights
+
+Controls the two numbers behind every allocation-tier calculation in the app (the [Capacity](#capacity) page, My Capacity, and the Resources Current Load column): each tier's base % (Owner/Lead, Core, Light touch) and each T-shirt size's %-multiplier (XS through XL). A live preview shows the resulting 5×3 matrix — tier base % × size % — as you edit, before you save. Defaults to Owner/Lead 50% / Core 25% / Light touch 10%, and XS 20% / S 50% / M 100% / L 150% / XL 180% (so, for example, Owner/Lead on an XL project computes to 90%). Changes apply immediately to every capacity calculation across the app; a specific person's specific project can still be overridden from their own My Capacity page regardless of what's set here.
 
 ## Deleted Items
 
