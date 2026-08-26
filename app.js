@@ -1890,16 +1890,34 @@ var rejectedFilterState = { range:'30' };
 // This is the base rate at a "typical" (M) project size -- see
 // TSHIRT_SIZE_LOAD_MULTIPLIER and effectiveAllocationPct below for how a
 // project's actual size scales it, and how a person can override the result
-// for themselves from My Capacity.
+// for themselves from My Capacity. Both maps below are just fallback
+// defaults -- loadCapacityWeights() overwrites them from the
+// capacity_weights table at boot, and an admin can edit that table from
+// Administration > Capacity Weights.
 var ALLOCATION_TIERS = ['Owner/Lead', 'Core', 'Light touch'];
 var ALLOCATION_TIER_PERCENT = { 'Owner/Lead': 50, 'Core': 25, 'Light touch': 10 };
 // Being the Owner/Lead of an XL project is assumed to carry more load than
 // the same role on an XS one -- this scales the base tier % by T-shirt size,
 // centered on M (1x). A project with no size set also uses 1x.
-var TSHIRT_SIZE_LOAD_MULTIPLIER = { XS: 0.5, S: 0.75, M: 1, L: 1.25, XL: 1.5 };
+var TSHIRT_SIZE_LOAD_MULTIPLIER = { XS: 0.2, S: 0.5, M: 1, L: 1.5, XL: 1.8 };
 // Used to convert an accepted work request's estimated_hours into a %-of-month
 // figure for the capacity heat map.
 var STANDARD_WORK_WEEK_HOURS = 40;
+
+function capacityWeightTierInputId(tier) { return 'caw-tier-' + tier.replace(/[^a-zA-Z0-9]/g, ''); }
+function capacityWeightSizeInputId(sz) { return 'caw-size-' + sz; }
+
+// Overwrites ALLOCATION_TIER_PERCENT / TSHIRT_SIZE_LOAD_MULTIPLIER from the
+// single admin-editable row in capacity_weights, if one exists -- falls
+// back to leaving the hardcoded defaults above in place otherwise (e.g.
+// before the row has ever been created).
+async function loadCapacityWeights() {
+  var result = await sb.from('capacity_weights').select('*').eq('id', 'default');
+  var row = result.data && result.data[0];
+  if (!row) return;
+  if (row.tier_percent) ALLOCATION_TIER_PERCENT = row.tier_percent;
+  if (row.size_multiplier) TSHIRT_SIZE_LOAD_MULTIPLIER = row.size_multiplier;
+}
 
 // The actual %-of-time contribution a team member's tier implies for one
 // project: the tier's base % weighted by the project's T-shirt size, unless
@@ -2169,6 +2187,7 @@ var NAV_DEF = {
       {id:'all-projects', icon:'ti-table', label:'All Projects'},
       {id:'admin-work-requests', icon:'ti-clipboard-list', label:'Work Requests'},
       {id:'admin-personal-todos', icon:'ti-list-check', label:'Personal To-Dos'},
+      {id:'admin-capacity-weights', icon:'ti-adjustments', label:'Capacity Weights'},
       {id:'deleted-items', icon:'ti-trash', label:'Deleted Items'}
     ]}
   ],
@@ -2255,7 +2274,7 @@ var PAGE_RENDERERS = {
   'import-projects':pgImportProjects, 'import-work-requests':pgImportWorkRequests, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
   'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems,
   'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests, 'admin-personal-todos':pgAdminPersonalTodos,
-  'my-capacity':pgMyCapacity
+  'my-capacity':pgMyCapacity, 'admin-capacity-weights':pgAdminCapacityWeights
 };
 
 function pageAllowedForRole(page, role) {
@@ -2327,7 +2346,7 @@ async function bootAppForUser(skipReload) {
 
   if (!skipReload) {
     document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading your projects…</p></div>';
-    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests(), loadTags(), loadFieldOptions(), loadPrograms(), loadWorkRequests()]);
+    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests(), loadTags(), loadFieldOptions(), loadPrograms(), loadWorkRequests(), loadCapacityWeights()]);
     D.projects = loaded[0];
     D.resources = loaded[1];
     D.requests = loaded[2];
@@ -8337,6 +8356,72 @@ async function deleteWorkRequest(id) {
 // RLS grants them, i.e. all of them, so there's no separate query needed
 // here -- same data My Tasks reads, just not filtered down to "mine."
 var adminPersonalTodosState = { search: '', sort: 'title', dir: 'asc', filters: { assignee: [], status: [] } };
+
+function pgAdminCapacityWeights() {
+  tb('Capacity Weights');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access this page.</p></div>';
+    return;
+  }
+
+  var tierInputsHtml = ALLOCATION_TIERS.map(function(tier){
+    return '<div class="form-group"><div class="form-label">' + tier + '</div>' +
+      '<input type="number" min="0" max="100" id="' + capacityWeightTierInputId(tier) + '" value="' + (ALLOCATION_TIER_PERCENT[tier] != null ? ALLOCATION_TIER_PERCENT[tier] : '') + '" oninput="updateCapacityWeightsPreview()"></div>';
+  }).join('');
+
+  var sizeInputsHtml = TSHIRT_SIZES.map(function(sz){
+    var pct = TSHIRT_SIZE_LOAD_MULTIPLIER[sz] != null ? Math.round(TSHIRT_SIZE_LOAD_MULTIPLIER[sz] * 100) : '';
+    return '<div class="form-group"><div class="form-label">' + sz + '</div>' +
+      '<input type="number" min="0" max="500" id="' + capacityWeightSizeInputId(sz) + '" value="' + pct + '" oninput="updateCapacityWeightsPreview()"></div>';
+  }).join('');
+
+  document.getElementById('content').innerHTML =
+    '<div class="card mb-16"><div class="section-title">How this works</div>' +
+    '<div class="text-muted" style="font-size:13px;line-height:1.6">A project team member\'s assumed %-of-time load is their <strong>allocation tier</strong>\'s base % (set on the project\'s Team tab, values below) multiplied by the project\'s <strong>T-shirt size</strong> % (also below) — e.g. Owner/Lead at 50% on an XL project at 180% comes out to 90%. This feeds the Capacity page, My Capacity, and the Resources Current Load column everywhere in the app. A person can still override their own computed % for a specific project from their My Capacity page.</div></div>' +
+    '<div class="card mb-16"><div class="section-title">Allocation tier base %</div><div class="grid-3">' + tierInputsHtml + '</div></div>' +
+    '<div class="card mb-16"><div class="section-title">T-shirt size %</div><div class="grid-3">' + sizeInputsHtml + '</div></div>' +
+    '<div class="card mb-16"><div class="section-title">Preview</div><div id="caw-preview"></div></div>' +
+    '<button class="btn btn-primary" id="caw-save" onclick="saveCapacityWeights()"><i class="ti ti-check"></i> Save changes</button>';
+
+  window.updateCapacityWeightsPreview = function() {
+    var tierVals = {};
+    ALLOCATION_TIERS.forEach(function(tier){ tierVals[tier] = parseFloat(document.getElementById(capacityWeightTierInputId(tier)).value) || 0; });
+    var sizeVals = {};
+    TSHIRT_SIZES.forEach(function(sz){ sizeVals[sz] = (parseFloat(document.getElementById(capacityWeightSizeInputId(sz)).value) || 0) / 100; });
+    var head = '<tr><th></th>' + ALLOCATION_TIERS.map(function(tier){ return '<th>' + tier + ' (' + tierVals[tier] + '%)</th>'; }).join('') + '</tr>';
+    var body = TSHIRT_SIZES.map(function(sz){
+      return '<tr><td class="bold">' + sz + ' (' + Math.round(sizeVals[sz] * 100) + '%)</td>' +
+        ALLOCATION_TIERS.map(function(tier){ return '<td>' + Math.round(tierVals[tier] * sizeVals[sz]) + '%</td>'; }).join('') +
+        '</tr>';
+    }).join('');
+    var el = document.getElementById('caw-preview');
+    if (el) el.innerHTML = '<div class="table-wrap"><table><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+  };
+  updateCapacityWeightsPreview();
+}
+
+window.saveCapacityWeights = async function() {
+  var btn = document.getElementById('caw-save'); if (btn) btn.disabled = true;
+  var tierVals = {};
+  ALLOCATION_TIERS.forEach(function(tier){
+    var v = parseFloat(document.getElementById(capacityWeightTierInputId(tier)).value);
+    tierVals[tier] = isNaN(v) ? 0 : Math.max(0, Math.min(100, v));
+  });
+  var sizeVals = {};
+  TSHIRT_SIZES.forEach(function(sz){
+    var v = parseFloat(document.getElementById(capacityWeightSizeInputId(sz)).value);
+    sizeVals[sz] = (isNaN(v) ? 100 : Math.max(0, v)) / 100;
+  });
+  var result = await sb.from('capacity_weights').update({
+    tier_percent: tierVals, size_multiplier: sizeVals, updated_at: new Date().toISOString(), updated_by: D.currentProfile.id
+  }).eq('id', 'default');
+  if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
+  ALLOCATION_TIER_PERCENT = tierVals;
+  TSHIRT_SIZE_LOAD_MULTIPLIER = sizeVals;
+  showToast('Capacity weights updated');
+  pgAdminCapacityWeights();
+};
 
 function pgAdminPersonalTodos() {
   tb('Personal To-Dos');
