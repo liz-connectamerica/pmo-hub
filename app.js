@@ -462,6 +462,7 @@ async function loadAllProjects() {
       id: pr.id, name: pr.name,
       owner: pr.owner_name || (pr.owner_id ? resourceNameById[pr.owner_id] : ''), ownerId: pr.owner_id,
       sponsor: pr.sponsor, sponsorResourceId: pr.sponsor_resource_id, programId: pr.program_id,
+      requirementsOwner: pr.requirements_owner_name || (pr.requirements_owner_id ? resourceNameById[pr.requirements_owner_id] : ''), requirementsOwnerId: pr.requirements_owner_id,
       categories: (categoriesByProj[pr.id]||[]).map(function(c){ return c.category; }), businessUnit: pr.business_unit,
       dependencies: (dependenciesByProject[pr.id]||[]).map(function(d){ return projectInfoById[d.depends_on_project_id]; }).filter(Boolean),
       team: teamNames, teamIds: teamIds, teamTiers: teamTiers, teamOverrides: teamOverrides,
@@ -1843,6 +1844,7 @@ var taskBaselineSelected = {};
 var teamAddKind = {};
 var teamTierInfoOpen = {};
 var projectInfoEditing = null;
+var peopleEditing = false;
 var PROJECT_INFO_SUBTABS = [
   { key:'identity',      label:'Identity & Classification',   icon:'ti-tag' },
   { key:'schedule',      label:'Schedule, Stage & Lifecycle',  icon:'ti-calendar-time' },
@@ -1955,7 +1957,7 @@ var STAGE_SORT_RANK = { active: 0, planned: 1, backlog: 2, hold: 3, complete: 4 
 
 var CHANGE_LOG_FIELDS = {
   name: 'Project Name', stage: 'Stage', status: 'Status', phase: 'Phase', priority: 'Priority',
-  value: 'Value Area', businessUnit: 'Business Unit', sponsor: 'Sponsor', owner: 'Owner',
+  value: 'Value Area', businessUnit: 'Business Unit', sponsor: 'Sponsor', owner: 'Owner', requirementsOwner: 'Requirements Owner',
   start: 'Start Date', end: 'Target End Date', progress: 'Progress %', health: 'Health',
   description: 'Description', blockers: 'Blockers', holdReason: 'Hold Reason', deliveryMethodology: 'Delivery Methodology',
   tshirtSize: 'T-shirt Size'
@@ -4292,29 +4294,6 @@ function pgProjectDetail(pid, tab) {
       var canViewFin = canViewFinancials(p);
       var canEditFin = canEditProjectFinancials(p);
 
-      var ownershipStrip = '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:10px 14px;background:#faf9f7;border:1px solid #f0ede8;border-radius:8px;margin-bottom:16px">' +
-        '<div style="display:flex;gap:22px;flex-wrap:wrap;align-items:center">' +
-          fieldBox('Sponsor', p.sponsor||'—') +
-          fieldBox('Owner', p.owner||'—') +
-          '<div><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Program</div><div style="display:flex;align-items:center;gap:8px;font-size:13px">' +
-            (p.programId
-              ? (function(){
-                  var prog = D.programs.find(function(x){ return x.id === p.programId; });
-                  return prog
-                    ? '<span><i class="ti ti-eye" style="cursor:pointer;margin-right:4px" onclick="goToProgram(\'' + prog.id + '\')"></i>' + programLabel(prog) + ' — ' + prog.name + '</span>' +
-                      (editable ? '<button class="btn btn-sm btn-danger" onclick="removeProjectProgram(\'' + p.id + '\')"><i class="ti ti-x"></i></button>' : '')
-                    : '<span class="text-muted">No program</span>';
-                })()
-              : '<span class="text-muted">No program</span>') +
-            (editable ? '<button class="btn btn-sm" onclick="openProgramPickerForProject(\'' + p.id + '\')"><i class="ti ti-folders"></i> ' + (p.programId ? 'Change' : 'Add') + '</button>' : '') +
-          '</div></div>' +
-        '</div>' +
-        '<div style="display:flex;gap:8px">' +
-          (D.role === 'admin' ? '<button class="btn btn-sm" onclick="editProjectOwnership(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
-          (D.role === 'admin' ? '<button class="btn btn-sm btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
-        '</div>' +
-      '</div>';
-
       var sectionDefs = PROJECT_INFO_SUBTABS.filter(function(s){ return s.key !== 'financials' || canViewFin; });
 
       function section(key, label, bodyHtml) {
@@ -4459,6 +4438,18 @@ function pgProjectDetail(pid, tab) {
               : '<span class="text-muted" style="font-size:13px">No dependencies</span>') +
             (editable ? '<button class="btn btn-sm" style="align-self:flex-start" onclick="openDependencyPicker(\'' + p.id + '\')"><i class="ti ti-link"></i> Add dependency</button>' : '') +
           '</div></div>' +
+          '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Program</div><div style="display:flex;align-items:center;gap:8px;font-size:13px">' +
+            (p.programId
+              ? (function(){
+                  var prog = D.programs.find(function(x){ return x.id === p.programId; });
+                  return prog
+                    ? '<span><i class="ti ti-eye" style="cursor:pointer;margin-right:4px" onclick="goToProgram(\'' + prog.id + '\')"></i>' + programLabel(prog) + ' — ' + prog.name + '</span>' +
+                      (editable ? '<button class="btn btn-sm btn-danger" onclick="removeProjectProgram(\'' + p.id + '\')"><i class="ti ti-x"></i></button>' : '')
+                    : '<span class="text-muted">No program</span>';
+                })()
+              : '<span class="text-muted">No program</span>') +
+            (editable ? '<button class="btn btn-sm" onclick="openProgramPickerForProject(\'' + p.id + '\')"><i class="ti ti-folders"></i> ' + (p.programId ? 'Change' : 'Add') + '</button>' : '') +
+          '</div></div>' +
           fieldBox('Linked request', (function(){
             var linkedReq = p.requestId ? D.requests.find(function(r){ return r.id === p.requestId; }) : null;
             return linkedReq ? '<button class="btn btn-sm" onclick="reviewRequest(\'' + linkedReq.id + '\')"><i class="ti ti-eye"></i> ' + linkedReq.title + '</button>' : '<span class="text-muted">—</span>';
@@ -4479,9 +4470,55 @@ function pgProjectDetail(pid, tab) {
       var sectionsHtml = sectionDefs.map(function(s){ return section(s.key, s.label, bodiesByKey[s.key]); }).join('') +
         section('changelog', 'Change Log', changelogBody);
 
-      return ownershipStrip + '<div style="display:flex;gap:24px;align-items:flex-start">' + navHtml + '<div style="flex:1;min-width:0">' + sectionsHtml + '</div></div>';
+      return '<div style="display:flex;gap:24px;align-items:flex-start">' + navHtml + '<div style="flex:1;min-width:0">' + sectionsHtml + '</div></div>';
     }
     if (t === 'team') {
+      function peopleFieldBox(label, valueHtml) {
+        return '<div><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">' + label + '</div><div style="font-size:13px">' + valueHtml + '</div></div>';
+      }
+      var peopleRolesHtml;
+      if (D.role === 'admin' && peopleEditing) {
+        var ownerPoolEdit = p.owner && individualResourceNames().indexOf(p.owner) < 0 ? individualResourceNames().concat([p.owner]) : individualResourceNames();
+        var ownerOpts = '<option value="">— None —</option>' + ownerPoolEdit.map(function(n){
+          var isInactiveCurrent = p.owner===n && individualResourceNames().indexOf(n) < 0;
+          return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
+        }).join('');
+        var sponsorPoolEdit = p.sponsor && individualResourceNames().indexOf(p.sponsor) < 0 ? individualResourceNames().concat([p.sponsor]) : individualResourceNames();
+        var sponsorOpts = '<option value="">— None —</option>' + sponsorPoolEdit.map(function(n){
+          var isUnlinkedCurrent = p.sponsor===n && individualResourceNames().indexOf(n) < 0;
+          return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.sponsor===n?' selected':'') + '>' + n + (isUnlinkedCurrent ? ' (not linked to a resource)' : '') + '</option>';
+        }).join('');
+        var reqOwnerPoolEdit = p.requirementsOwner && individualResourceNames().indexOf(p.requirementsOwner) < 0 ? individualResourceNames().concat([p.requirementsOwner]) : individualResourceNames();
+        var reqOwnerOpts = '<option value="">— None —</option>' + reqOwnerPoolEdit.map(function(n){
+          var isUnlinkedCurrent = p.requirementsOwner===n && individualResourceNames().indexOf(n) < 0;
+          return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.requirementsOwner===n?' selected':'') + '>' + n + (isUnlinkedCurrent ? ' (not linked to a resource)' : '') + '</option>';
+        }).join('');
+        peopleRolesHtml = '<div class="card mb-16">' +
+          '<div class="grid-3">' +
+            '<div><div class="form-label">Sponsor</div><select id="pp-sponsor">' + sponsorOpts + '</select></div>' +
+            '<div><div class="form-label">Owner</div><select id="pp-owner">' + ownerOpts + '</select></div>' +
+            '<div><div class="form-label">Requirements owner</div><select id="pp-reqowner">' + reqOwnerOpts + '</select></div>' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;margin-top:14px">' +
+            '<button class="btn btn-primary btn-sm" id="pp-save" onclick="savePeopleRoles(\'' + p.id + '\')"><i class="ti ti-check"></i> Save</button>' +
+            '<button class="btn btn-sm" onclick="setPeopleEditing(false)">Cancel</button>' +
+          '</div>' +
+        '</div>';
+      } else {
+        peopleRolesHtml = '<div class="card mb-16">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">' +
+            '<div style="display:flex;gap:22px;flex-wrap:wrap">' +
+              peopleFieldBox('Sponsor', p.sponsor||'—') +
+              peopleFieldBox('Owner', p.owner||'—') +
+              peopleFieldBox('Requirements owner', p.requirementsOwner||'—') +
+            '</div>' +
+            (D.role === 'admin' ? '<div style="display:flex;gap:8px">' +
+              '<button class="btn btn-sm" onclick="setPeopleEditing(true)"><i class="ti ti-edit"></i> Edit</button>' +
+              '<button class="btn btn-sm btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' +
+            '</div>' : '') +
+          '</div>' +
+        '</div>';
+      }
       var addKind = teamAddKind[p.id] || 'individual';
       var candidatePeople = individualResourceNames().filter(function(n){ return p.team.indexOf(n) < 0; });
       var candidateTeams = teamNames().filter(function(n){ return p.team.indexOf(n) < 0; });
@@ -4540,7 +4577,7 @@ function pgProjectDetail(pid, tab) {
           '<br>Leaving someone at "Not set" contributes 0% until a tier is chosen — set one for anyone whose load here should count, including the project owner if they\'re on this team. The person themselves can override the computed % from their own <strong>My Capacity</strong> page if it doesn\'t match reality.' +
           '</div>'
         : '';
-      return '<div class="card"><div class="section-title" style="display:flex;align-items:center;gap:6px">Team members ' +
+      return peopleRolesHtml + '<div class="card"><div class="section-title" style="display:flex;align-items:center;gap:6px">Team members ' +
           '<button class="btn btn-sm" style="padding:1px 6px" title="How allocation tiers affect capacity" onclick="toggleTeamTierInfo(\'' + p.id + '\')"><i class="ti ti-info-circle"></i></button>' +
         '</div>' + tierInfoBlock + teamRows + '</div>' +
         (editable ? '<div class="card mt-16"><div class="section-title">Add a team member</div>' +
@@ -4915,7 +4952,7 @@ function pgProjectDetail(pid, tab) {
   }
 
   var tabsHtml = tbs.map(function(t) {
-    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'overview' ? 'Information' : t === 'tasks' ? 'Plan' : t === 'todos' ? 'To-Do' : t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t) + '</div>';
+    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'overview' ? 'Information' : t === 'team' ? 'People' : t === 'tasks' ? 'Plan' : t === 'todos' ? 'To-Do' : t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t) + '</div>';
   }).join('');
 
   tb(p.name);
@@ -5086,6 +5123,10 @@ function pgProjectDetail(pid, tab) {
         });
       });
     }
+  };
+  window.setPeopleEditing = function(val) {
+    peopleEditing = val;
+    document.getElementById('ptab-content').innerHTML = tabC('team');
   };
   window.toggleMS   = async function(pid2,idx){
     var pr=D.projects.find(function(x){return x.id===pid2;});
@@ -6090,49 +6131,38 @@ function openMoveDocModal(pid, idx) {
 // (Prioritize Backlog, a request's linked-project summary) that still need
 // a quick edit without navigating over to Information.
 
-function editProjectOwnership(pid) {
+window.savePeopleRoles = async function(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  if (D.role !== 'admin') return;
-  var ownerPoolEdit = p.owner && individualResourceNames().indexOf(p.owner) < 0 ? individualResourceNames().concat([p.owner]) : individualResourceNames();
-  var ownerOpts = '<option value="">— None —</option>' + ownerPoolEdit.map(function(n){
-    var isInactiveCurrent = p.owner===n && individualResourceNames().indexOf(n) < 0;
-    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
-  }).join('');
-  var sponsorPoolEdit = p.sponsor && individualResourceNames().indexOf(p.sponsor) < 0 ? individualResourceNames().concat([p.sponsor]) : individualResourceNames();
-  var sponsorOpts = '<option value="">— None —</option>' + sponsorPoolEdit.map(function(n){
-    var isUnlinkedCurrent = p.sponsor===n && individualResourceNames().indexOf(n) < 0;
-    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.sponsor===n?' selected':'') + '>' + n + (isUnlinkedCurrent ? ' (not linked to a resource)' : '') + '</option>';
-  }).join('');
-  showModal('<div class="modal-title">Edit ownership <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div class="form-group"><div class="form-label">Sponsor</div><select id="eo-sponsor">' + sponsorOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Owner</div><select id="eo-owner">' + ownerOpts + '</select></div>' +
-    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveProjectOwnership(\'' + pid + '\')"><i class="ti ti-check"></i> Save changes</button></div>');
-}
-
-async function saveProjectOwnership(pid) {
-  var p = D.projects.find(function(x){ return x.id === pid; });
-  var beforeSnapshot = { sponsor: p.sponsor, owner: p.owner, ownerId: p.ownerId };
-  var sponsorName = document.getElementById('eo-sponsor').value;
+  var beforeSnapshot = { sponsor: p.sponsor, owner: p.owner, ownerId: p.ownerId, requirementsOwner: p.requirementsOwner };
+  var sponsorName = document.getElementById('pp-sponsor').value;
   var sponsorResource = resolveResource(sponsorName);
-  var ownerName = document.getElementById('eo-owner').value;
+  var ownerName = document.getElementById('pp-owner').value;
   var ownerResource = resolveResource(ownerName);
+  var reqOwnerName = document.getElementById('pp-reqowner').value;
+  var reqOwnerResource = resolveResource(reqOwnerName);
   var newVals = {
     sponsor: sponsorName || null, sponsor_resource_id: sponsorResource ? sponsorResource.id : null,
-    owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null
+    owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
+    requirements_owner_id: reqOwnerResource ? reqOwnerResource.id : null, requirements_owner_name: reqOwnerName || null
   };
-  var btn = document.querySelector('.modal-footer .btn-primary'); if (btn) btn.disabled = true;
+  var btn = document.getElementById('pp-save'); if (btn) btn.disabled = true;
   var result = await sb.from('projects').update(newVals).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
   p.sponsor = newVals.sponsor; p.sponsorResourceId = newVals.sponsor_resource_id;
   p.owner = ownerName || ''; p.ownerId = newVals.owner_id;
-  closeModal(); showToast('Ownership updated');
-  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview');
+  p.requirementsOwner = reqOwnerName || ''; p.requirementsOwnerId = newVals.requirements_owner_id;
+  peopleEditing = false;
+  showToast('Saved'); pgProjectDetail(pid, 'team');
 
-  try { await logProjectChanges(pid, beforeSnapshot, { sponsor: newVals.sponsor, owner: ownerName || null }, 'edit'); } catch (e) { console.error('Could not record change history:', e); }
+  try {
+    await logProjectChanges(pid, beforeSnapshot, {
+      sponsor: newVals.sponsor, owner: ownerName || null, requirementsOwner: reqOwnerName || null
+    }, 'edit');
+  } catch (e) { console.error('Could not record change history:', e); }
   if (p.ownerId !== beforeSnapshot.ownerId) {
     try { await applyOwnerAsLead(p); } catch (e) { console.error('Could not set owner as Owner/Lead:', e); }
   }
-}
+};
 
 window.saveProjectIdentity = async function(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
@@ -6448,6 +6478,7 @@ function openNewProjectModal() {
   var priorOpts = PRIORITIES.map(function(s){ return '<option' + (s==='Needs prioritization'?' selected':'') + '>' + s + '</option>'; }).join('');
   var ownerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var sponsorOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
+  var reqOwnerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var programOpts = '<option value="">— None —</option>' + D.programs.slice().sort(function(a,b){ return a.programNumber - b.programNumber; }).map(function(pr){ return '<option value="' + pr.id + '">' + programLabel(pr) + ' — ' + pr.name + '</option>'; }).join('');
   var catCheckboxesNew = CATEGORIES.map(function(s){ return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="np-category-cb" value="' + s + '"> ' + s + '</label>'; }).join('');
   var buOpts = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
@@ -6464,6 +6495,7 @@ function openNewProjectModal() {
     '<div class="form-group"><div class="form-label">Description</div><textarea id="np-desc" placeholder="What is this project about?"></textarea></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Sponsor</div><select id="np-sponsor">' + sponsorOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Owner</div><select id="np-owner">' + ownerOpts + '</select></div></div>' +
+    '<div class="form-group"><div class="form-label">Requirements owner</div><select id="np-reqowner">' + reqOwnerOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Program</div><select id="np-program">' + programOpts + '</select></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
     '<button class="btn btn-primary" id="np-save"><i class="ti ti-plus"></i> Create project</button></div>', true);
@@ -6474,6 +6506,8 @@ function openNewProjectModal() {
     var ownerResource = resolveResource(ownerName);
     var sponsorName = document.getElementById('np-sponsor').value;
     var sponsorResource = resolveResource(sponsorName);
+    var reqOwnerName = document.getElementById('np-reqowner').value;
+    var reqOwnerResource = resolveResource(reqOwnerName);
     var programId = document.getElementById('np-program').value || null;
     var btn = document.getElementById('np-save'); btn.disabled = true;
 
@@ -6484,6 +6518,7 @@ function openNewProjectModal() {
     var record = {
       name: name, owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
       sponsor: sponsorName || null, sponsor_resource_id: sponsorResource ? sponsorResource.id : null,
+      requirements_owner_id: reqOwnerResource ? reqOwnerResource.id : null, requirements_owner_name: reqOwnerName || null,
       program_id: programId,
       business_unit: document.getElementById('np-bu').value || null,
       delivery_methodology: document.getElementById('np-methodology').value || null,
@@ -6498,13 +6533,14 @@ function openNewProjectModal() {
     if (selectedCats.length) await sb.from('project_categories').insert(selectedCats.map(function(c){ return { project_id: result.data.id, category: c }; }));
     await logProjectChanges(result.data.id, null, {
       name: name, stage: newStage, status: record.status, priority: record.priority, value: record.value_area,
-      businessUnit: record.business_unit, sponsor: sponsorName, owner: ownerName, description: record.description,
+      businessUnit: record.business_unit, sponsor: sponsorName, owner: ownerName, requirementsOwner: reqOwnerName, description: record.description,
       deliveryMethodology: record.delivery_methodology, start: startDate, end: endDate
     }, 'edit');
 
     var newProject = {
       id: result.data.id, name:name, owner:ownerName, ownerId: ownerResource?ownerResource.id:null,
-      sponsor:sponsorName, sponsorResourceId: sponsorResource?sponsorResource.id:null, programId: programId,
+      sponsor:sponsorName, sponsorResourceId: sponsorResource?sponsorResource.id:null,
+      requirementsOwner: reqOwnerName, requirementsOwnerId: reqOwnerResource?reqOwnerResource.id:null, programId: programId,
       categories:selectedCats, businessUnit:record.business_unit, team:[], teamIds:[], teamTiers:{}, teamOverrides:{},
       status:record.status, phase:'Not Started', progress:0, start:startDate||'', end:endDate||'',
       value:record.value_area, priority:record.priority, description:record.description,
