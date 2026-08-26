@@ -1842,6 +1842,16 @@ var taskTimelineOpen = {};
 var taskBaselineSelected = {};
 var teamAddKind = {};
 var teamTierInfoOpen = {};
+var projectInfoSubTab = 'identity';
+var PROJECT_INFO_SUBTABS = [
+  { key:'identity',      label:'Identity & Classification',   icon:'ti-tag' },
+  { key:'schedule',      label:'Schedule, Stage & Lifecycle',  icon:'ti-calendar-time' },
+  { key:'progress',      label:'Progress & Health',            icon:'ti-chart-line' },
+  { key:'description',   label:'Description & Content',        icon:'ti-file-text' },
+  { key:'financials',    label:'Financials',                   icon:'ti-currency-dollar' },
+  { key:'relationships', label:'Relationships',                icon:'ti-link' },
+  { key:'audit',         label:'System & Audit',               icon:'ti-history' }
+];
 var taskDescOpen = {};
 var taskOutlineCollapsed = {};
 var todoLogOpen = {};
@@ -4194,44 +4204,8 @@ function openEditProjectFinancialsModal(pid) {
     p.estimatedAmount = updates.estimated_amount; p.valueConfidence = updates.value_confidence;
     p.costEstimate = updates.cost_estimate; p.costConfidence = updates.cost_confidence;
     showToast('Financial detail updated'); closeModal();
-    if (currentPage === 'projectDetail') pgProjectDetail(pid, 'metadata');
+    if (currentPage === 'projectDetail') { projectInfoSubTab = 'financials'; pgProjectDetail(pid, 'overview'); }
   };
-}
-
-function renderMetadataStatic(p, editable) {
-  var linkedReq = p.requestId ? D.requests.find(function(r){ return r.id === p.requestId; }) : null;
-  var canEditFin = canEditProjectFinancials(p);
-  var financialsHtml = '';
-  if (canViewFinancials(p)) {
-    var hasFinData = p.estimatedAmount != null || p.costEstimate != null;
-    financialsHtml = '<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="section-title" style="font-size:14px;margin-bottom:0">Financial detail</div>' +
-      (canEditFin ? '<button class="btn btn-sm" onclick="openEditProjectFinancialsModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit financials</button>' : '') +
-    '</div>' +
-    (hasFinData
-      ? '<div class="grid-2 mb-16">' +
-          (p.estimatedAmount != null ? '<div><div class="form-label">Estimated ' + (p.estimatedType||'value') + '</div>' + fmtCost(p.estimatedAmount) + (p.estimatedFrequency ? ' / ' + p.estimatedFrequency.toLowerCase() : '') + (p.valueConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.valueConfidence + '</span>' : '') + '</div>' : '') +
-          (p.costEstimate != null ? '<div><div class="form-label">Cost estimate</div>' + fmtCost(p.costEstimate) + (p.costConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.costConfidence + '</span>' : '') + '</div>' : '') +
-        '</div>'
-      : '<div class="text-muted" style="font-size:13px;margin-bottom:12px">No financial detail recorded yet</div>');
-  }
-  return '<div class="card">' +
-    (editable ? '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-sm" onclick="editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit</button></div>' : '') +
-    '<div class="grid-2 mb-16">' +
-      '<div><div class="form-label">Project ID</div><span class="text-muted">#' + (p.projectNumber || '—') + '</span></div>' +
-      '<div><div class="form-label">Value area</div>' + badgeIf('badge-purple', p.value) + '</div>' +
-      '<div><div class="form-label">Category</div>' + (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</div>' +
-      '<div><div class="form-label">Business unit</div>' + (p.businessUnit || '—') + '</div>' +
-      '<div><div class="form-label">Delivery methodology</div>' + (p.deliveryMethodology ? '<span class="badge badge-gray">' + p.deliveryMethodology + '</span>' : '<span class="text-muted">Not selected</span>') + '</div>' +
-      '<div><div class="form-label">T-shirt size</div>' + (p.tshirtSize ? '<span class="badge badge-gray">' + p.tshirtSize + '</span>' : '<span class="text-muted">Not sized</span>') + '</div>' +
-      '<div><div class="form-label">Linked request</div>' + (linkedReq ? '<button class="btn btn-sm" onclick="reviewRequest(\'' + linkedReq.id + '\')"><i class="ti ti-eye"></i> ' + linkedReq.title + '</button>' : '<span class="text-muted">—</span>') + '</div>' +
-    '</div>' +
-    financialsHtml +
-    '<div class="divider"></div>' +
-    '<div class="grid-2">' +
-      '<div><div class="form-label">Created</div>' + fmtDate(p.createdAt) + '</div>' +
-      '<div id="pmeta-last-edited"><div class="form-label">Last edited</div><span class="text-muted">Loading…</span></div>' +
-    '</div>' +
-  '</div>';
 }
 
 async function loadAndRenderMetadata(pid) {
@@ -4279,7 +4253,7 @@ function pgProjectDetail(pid, tab) {
   renderNav();
   var editable = canEdit(p);
   var isComplete = p.stage === 'complete';
-  var tbs = ['overview','team','milestones','tasks','todos','raid','documentation','metadata','changelog'];
+  var tbs = ['overview','team','milestones','tasks','todos','raid','documentation','changelog'];
 
   function sortedMilestones() {
     return p.milestones.slice().sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
@@ -4297,65 +4271,120 @@ function pgProjectDetail(pid, tab) {
 
   function tabC(t) {
     if (t === 'overview') {
-      return '<div class="grid-2 mb-16">' +
-        '<div><div class="form-label">Stage</div>' + stagePill(p.stage) + '</div>' +
-        '<div><div class="form-label">Status</div>' + bdg(p.status) + '</div>' +
-        '<div><div class="form-label">Phase</div>' + badgeIf('badge-gray', p.phase) + '</div>' +
-        '<div><div class="form-label">Priority</div>' + bdg(p.priority) + '</div>' +
-        '<div><div class="form-label">Progress</div><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></div>' +
-        '<div><div class="form-label">Start</div>' + (p.start||'—') + '</div>' +
-        '<div><div class="form-label">Target end</div>' + (p.end||'—') + '</div>' +
+      function fieldBox(label, valueHtml) {
+        return '<div><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">' + label + '</div><div style="font-size:13px">' + valueHtml + '</div></div>';
+      }
+      var canViewFin = canViewFinancials(p);
+      var canEditFin = canEditProjectFinancials(p);
+
+      var ownershipStrip = '<div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:10px 14px;background:#faf9f7;border:1px solid #f0ede8;border-radius:8px;margin-bottom:16px">' +
+        '<div style="display:flex;gap:22px;flex-wrap:wrap;align-items:center">' +
+          fieldBox('Sponsor', p.sponsor||'—') +
+          fieldBox('Owner', p.owner||'—') +
+          '<div><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Program</div><div style="display:flex;align-items:center;gap:8px;font-size:13px">' +
+            (p.programId
+              ? (function(){
+                  var prog = D.programs.find(function(x){ return x.id === p.programId; });
+                  return prog
+                    ? '<span><i class="ti ti-eye" style="cursor:pointer;margin-right:4px" onclick="goToProgram(\'' + prog.id + '\')"></i>' + programLabel(prog) + ' — ' + prog.name + '</span>' +
+                      (editable ? '<button class="btn btn-sm btn-danger" onclick="removeProjectProgram(\'' + p.id + '\')"><i class="ti ti-x"></i></button>' : '')
+                    : '<span class="text-muted">No program</span>';
+                })()
+              : '<span class="text-muted">No program</span>') +
+            (editable ? '<button class="btn btn-sm" onclick="openProgramPickerForProject(\'' + p.id + '\')"><i class="ti ti-folders"></i> ' + (p.programId ? 'Change' : 'Add') + '</button>' : '') +
+          '</div></div>' +
         '</div>' +
-        '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'') + '</div></div>' +
-        '<div class="grid-2 mb-16">' +
-        '<div class="form-group"><div class="form-label">Sponsor</div>' + (p.sponsor||'—') + '</div>' +
-        '<div class="form-group"><div class="form-label">Owner</div>' + (p.owner||'—') + '</div>' +
-        '</div>' +
-        '<div class="form-group mb-16"><div class="form-label">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
-          (p.tags && p.tags.length ? p.tags.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
-          (editable ? '<button class="btn btn-sm" onclick="openProjectTagPicker(\'' + p.id + '\')"><i class="ti ti-tag"></i> Edit tags</button>' : '') +
-        '</div></div>' +
-        '<div class="grid-2 mb-16">' +
-        '<div class="form-group" style="margin-bottom:0"><div class="form-label">Depends on</div><div style="display:flex;flex-direction:column;gap:6px">' +
-          (p.dependencies && p.dependencies.length
-            ? p.dependencies.map(function(d){
-                var isPlanned = !!(d.start && d.end);
-                return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:#faf9f7;border-radius:6px">' +
-                  '<span style="font-size:13px"><i class="ti ti-eye" style="cursor:pointer;margin-right:6px" onclick="goToProject(\'' + d.id + '\')"></i>' + d.name + '</span>' +
-                  (isPlanned ? '<span class="badge badge-teal" style="font-size:11px">Planned: ' + d.start + ' – ' + d.end + '</span>' : '<span class="badge badge-amber" style="font-size:11px"><i class="ti ti-alert-triangle"></i> Not yet planned</span>') +
-                  (editable ? '<button class="btn btn-sm btn-danger" onclick="removeProjectDependency(\'' + p.id + '\',\'' + d.id + '\')"><i class="ti ti-x"></i></button>' : '') +
-                  '</div>';
-              }).join('')
-            : '<span class="text-muted" style="font-size:13px">No dependencies</span>') +
-          (editable ? '<button class="btn btn-sm" style="align-self:flex-start" onclick="openDependencyPicker(\'' + p.id + '\')"><i class="ti ti-link"></i> Add dependency</button>' : '') +
-        '</div></div>' +
-        '<div class="form-group" style="margin-bottom:0"><div class="form-label">Program</div><div style="display:flex;flex-direction:column;gap:6px">' +
-          (p.programId
-            ? (function(){
-                var prog = D.programs.find(function(x){ return x.id === p.programId; });
-                return prog
-                  ? '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:#faf9f7;border-radius:6px">' +
-                      '<span style="font-size:13px"><i class="ti ti-eye" style="cursor:pointer;margin-right:6px" onclick="goToProgram(\'' + prog.id + '\')"></i>' + programLabel(prog) + ' — ' + prog.name + '</span>' +
-                      (editable ? '<button class="btn btn-sm btn-danger" onclick="removeProjectProgram(\'' + p.id + '\')"><i class="ti ti-x"></i></button>' : '') +
-                    '</div>'
-                  : '<span class="text-muted" style="font-size:13px">No program</span>';
-              })()
-            : '<span class="text-muted" style="font-size:13px">No program</span>') +
-          (editable ? '<button class="btn btn-sm" style="align-self:flex-start" onclick="openProgramPickerForProject(\'' + p.id + '\')"><i class="ti ti-folders"></i> ' + (p.programId ? 'Change program' : 'Add program') + '</button>' : '') +
-        '</div></div>' +
-        '</div>' +
-        (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '') +
-        (p.stage === 'hold' ? '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
-        '<div class="form-group" style="margin-top:16px"><div class="form-label">Timeline</div>' + timelineHtml() +
-        '<button class="btn btn-sm mt-12" onclick="window.switchPTab(\'milestones\')"><i class="ti ti-list"></i> View milestones</button></div>' +
-        (editable ? '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #e8e8e5;display:flex;justify-content:flex-end;gap:8px">' +
-          '<button class="btn btn-primary" onclick="closeModal();editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit project</button>' +
-          (!isComplete ? (p.stage === 'hold'
-            ? '<button class="btn btn-success" onclick="resumeFromHold(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Resume</button>'
-            : ((p.stage === 'active' || p.stage === 'planned' || p.stage === 'backlog') ? '<button class="btn" onclick="putOnHold(\'' + p.id + '\')"><i class="ti ti-player-pause"></i> Put on hold</button>' : '') +
-              '<button class="btn btn-success" onclick="markComplete(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>'
-          ) : '') +
+        (editable ? '<button class="btn btn-primary btn-sm" onclick="closeModal();editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit project</button>' : '') +
+      '</div>';
+
+      var subtabs = PROJECT_INFO_SUBTABS.filter(function(s){ return s.key !== 'financials' || canViewFin; });
+      if (!subtabs.some(function(s){ return s.key === projectInfoSubTab; })) projectInfoSubTab = 'identity';
+      var active = projectInfoSubTab;
+
+      var navHtml = '<div style="width:210px;flex-shrink:0;display:flex;flex-direction:column;gap:2px">' +
+        subtabs.map(function(s){
+          return '<div class="nav-item' + (active===s.key?' active':'') + '" onclick="setProjectInfoSubTab(\'' + s.key + '\')"><i class="ti ' + s.icon + '"></i>' + s.label + '</div>';
+        }).join('') +
+      '</div>';
+
+      var panelHtml;
+      if (active === 'identity') {
+        panelHtml = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin-bottom:16px">' +
+            fieldBox('Priority', bdg(p.priority)) +
+            fieldBox('Value area', badgeIf('badge-purple', p.value)) +
+            fieldBox('T-shirt size', p.tshirtSize ? '<span class="badge badge-gray">' + p.tshirtSize + '</span>' : '<span class="text-muted">Not sized</span>') +
+            fieldBox('Business unit', p.businessUnit || '—') +
+            fieldBox('Delivery methodology', p.deliveryMethodology ? '<span class="badge badge-gray">' + p.deliveryMethodology + '</span>' : '<span class="text-muted">Not selected</span>') +
+            fieldBox('Project ID', '<span class="text-muted">#' + (p.projectNumber || '—') + '</span>') +
+          '</div>' +
+          '<div class="form-group" style="margin-bottom:12px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Category</div>' +
+            (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted" style="font-size:13px">—</span>') +
+          '</div>' +
+          '<div class="form-group" style="margin-bottom:0"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+            (p.tags && p.tags.length ? p.tags.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
+            (editable ? '<button class="btn btn-sm" onclick="openProjectTagPicker(\'' + p.id + '\')"><i class="ti ti-tag"></i> Edit tags</button>' : '') +
+          '</div></div>';
+      } else if (active === 'schedule') {
+        panelHtml = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin-bottom:14px">' +
+            fieldBox('Stage', stagePill(p.stage)) +
+            fieldBox('Status', bdg(p.status)) +
+            fieldBox('Phase', badgeIf('badge-gray', p.phase)) +
+            fieldBox('Start', p.start||'—') +
+            fieldBox('Target end', p.end||'—') +
+          '</div>' +
+          (p.stage === 'hold' ? '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D;margin-bottom:14px"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
+          '<div class="form-group" style="margin-bottom:0"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Timeline</div>' + timelineHtml() +
+          '<button class="btn btn-sm mt-12" onclick="window.switchPTab(\'milestones\')"><i class="ti ti-list"></i> View milestones</button></div>' +
+          (editable && !isComplete ? '<div style="margin-top:16px;padding-top:14px;border-top:1px solid #e8e8e5;display:flex;gap:8px">' +
+            (p.stage === 'hold'
+              ? '<button class="btn btn-success btn-sm" onclick="resumeFromHold(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Resume</button>'
+              : ((p.stage === 'active' || p.stage === 'planned' || p.stage === 'backlog') ? '<button class="btn btn-sm" onclick="putOnHold(\'' + p.id + '\')"><i class="ti ti-player-pause"></i> Put on hold</button>' : '') +
+                '<button class="btn btn-success btn-sm" onclick="markComplete(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>'
+            ) +
           '</div>' : '');
+      } else if (active === 'progress') {
+        panelHtml = fieldBox('Progress', '<div style="display:flex;align-items:center;gap:8px;max-width:320px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div>');
+      } else if (active === 'description') {
+        panelHtml = '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
+          (p.blockers ? '<div class="blocker-note" style="margin-bottom:0"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '');
+      } else if (active === 'financials') {
+        var hasFinData = p.estimatedAmount != null || p.costEstimate != null;
+        panelHtml = '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">' +
+            (canEditFin ? '<button class="btn btn-sm" onclick="openEditProjectFinancialsModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit financials</button>' : '') +
+          '</div>' +
+          (hasFinData
+            ? '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px">' +
+                (p.estimatedAmount != null ? fieldBox('Estimated ' + (p.estimatedType||'value'), fmtCost(p.estimatedAmount) + (p.estimatedFrequency ? ' / ' + p.estimatedFrequency.toLowerCase() : '') + (p.valueConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.valueConfidence + '</span>' : '')) : '') +
+                (p.costEstimate != null ? fieldBox('Cost estimate', fmtCost(p.costEstimate) + (p.costConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.costConfidence + '</span>' : '')) : '') +
+              '</div>'
+            : '<div class="text-muted" style="font-size:13px">No financial detail recorded yet</div>');
+      } else if (active === 'relationships') {
+        panelHtml = '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Depends on</div><div style="display:flex;flex-direction:column;gap:6px">' +
+            (p.dependencies && p.dependencies.length
+              ? p.dependencies.map(function(d){
+                  var isPlanned = !!(d.start && d.end);
+                  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:#faf9f7;border-radius:6px">' +
+                    '<span style="font-size:13px"><i class="ti ti-eye" style="cursor:pointer;margin-right:6px" onclick="goToProject(\'' + d.id + '\')"></i>' + d.name + '</span>' +
+                    (isPlanned ? '<span class="badge badge-teal" style="font-size:11px">Planned: ' + d.start + ' – ' + d.end + '</span>' : '<span class="badge badge-amber" style="font-size:11px"><i class="ti ti-alert-triangle"></i> Not yet planned</span>') +
+                    (editable ? '<button class="btn btn-sm btn-danger" onclick="removeProjectDependency(\'' + p.id + '\',\'' + d.id + '\')"><i class="ti ti-x"></i></button>' : '') +
+                    '</div>';
+                }).join('')
+              : '<span class="text-muted" style="font-size:13px">No dependencies</span>') +
+            (editable ? '<button class="btn btn-sm" style="align-self:flex-start" onclick="openDependencyPicker(\'' + p.id + '\')"><i class="ti ti-link"></i> Add dependency</button>' : '') +
+          '</div></div>' +
+          fieldBox('Linked request', (function(){
+            var linkedReq = p.requestId ? D.requests.find(function(r){ return r.id === p.requestId; }) : null;
+            return linkedReq ? '<button class="btn btn-sm" onclick="reviewRequest(\'' + linkedReq.id + '\')"><i class="ti ti-eye"></i> ' + linkedReq.title + '</button>' : '<span class="text-muted">—</span>';
+          })());
+      } else if (active === 'audit') {
+        loadAndRenderMetadata(p.id);
+        panelHtml = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px">' +
+            fieldBox('Created', fmtDate(p.createdAt)) +
+            '<div id="pmeta-last-edited"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Last edited</div><span class="text-muted" style="font-size:13px">Loading…</span></div>' +
+          '</div>';
+      }
+
+      return ownershipStrip + '<div style="display:flex;gap:24px;align-items:flex-start">' + navHtml + '<div style="flex:1;min-width:0">' + panelHtml + '</div></div>';
     }
     if (t === 'team') {
       var addKind = teamAddKind[p.id] || 'individual';
@@ -4787,10 +4816,6 @@ function pgProjectDetail(pid, tab) {
         (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddDoc(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add document</button>' : '') +
         (shown.length ? rows : '<div class="empty-state" style="padding:30px"><i class="ti ti-files"></i><p>No documents in this folder</p></div>');
     }
-    if (t === 'metadata') {
-      loadAndRenderMetadata(p.id);
-      return renderMetadataStatic(p, editable);
-    }
     if (t === 'changelog') {
       loadAndRenderChangeLog(p.id);
       return '<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading change history…</p></div>';
@@ -4799,7 +4824,7 @@ function pgProjectDetail(pid, tab) {
   }
 
   var tabsHtml = tbs.map(function(t) {
-    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'tasks' ? 'Plan' : t === 'todos' ? 'To-Do' : t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t === 'changelog' ? 'Change Log' : t) + '</div>';
+    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'overview' ? 'Information' : t === 'tasks' ? 'Plan' : t === 'todos' ? 'To-Do' : t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t === 'changelog' ? 'Change Log' : t) + '</div>';
   }).join('');
 
   tb(p.name);
@@ -4954,6 +4979,10 @@ function pgProjectDetail(pid, tab) {
     var h = '#/project/' + pid + '/' + t;
     if (location.hash !== h) location.hash = h;
     };
+  window.setProjectInfoSubTab = function(key) {
+    projectInfoSubTab = key;
+    document.getElementById('ptab-content').innerHTML = tabC('overview');
+  };
   window.toggleMS   = async function(pid2,idx){
     var pr=D.projects.find(function(x){return x.id===pid2;});
     var m = pr.milestones[idx];
