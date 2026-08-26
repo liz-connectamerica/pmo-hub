@@ -1879,6 +1879,7 @@ var allProjectsState = {
 var tagAdminState = { expandedId: null };
 var myTasksState = { kind:'plan', sort:'end', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var myProjectsPageState = { tab:'sponsor' };
+var myCapacityPageState = { month:'current' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
 var rejectedFilterState = { range:'30' };
@@ -10289,35 +10290,72 @@ function pgMyCapacity() {
   tb('My Capacity');
   var me = D.myResourceId;
   var meRes = D.resources.find(function(r){ return r.id === me; });
-  var myProjects = D.projects.filter(function(p){ return p.stage !== 'complete' && (p.teamIds||[]).indexOf(me) >= 0; });
+  if (!meRes) { document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-gauge"></i><p>No resource record linked to your account yet.</p></div>'; return; }
 
-  var rows = myProjects.map(function(p){
+  var today = new Date();
+  var months = capacityMonthBuckets(new Date(today.getFullYear(), today.getMonth() - 1, 1), 3);
+  var monthDefs = [
+    { key:'prev',    label:'Previous month', m: months[0] },
+    { key:'current', label:'Current month',  m: months[1] },
+    { key:'next',    label:'Next month',     m: months[2] }
+  ];
+  var st = myCapacityPageState;
+  var activeDef = monthDefs.filter(function(d){ return d.key === st.month; })[0] || monthDefs[1];
+  var m = activeDef.m;
+
+  var placed = resourcePlacedProjects(meRes);
+  var openWR = resourceOpenWorkRequests(meRes);
+  var placedThisMonth = placed.filter(function(x){ return x.range.end >= m.start && x.range.start < m.end; });
+  var notShownCount = resourceCombinedProjectIds(meRes).allIds.length - placedThisMonth.length;
+
+  var bau = meRes.bauPercent != null ? meRes.bauPercent : 0;
+  var projectPct = placedThisMonth.reduce(function(sum, x){ return sum + effectiveAllocationPct(x.project, me); }, 0);
+  var wrHours = openWR.reduce(function(sum, w){ return sum + workRequestHoursInMonth(w, m); }, 0);
+  var cap = monthCapacityHours();
+  var wrPct = Math.round(cap > 0 ? (wrHours / cap) * 100 : 0);
+  // Rounded independently and summed, rather than rounding one combined
+  // total, so the "BAU + projects + work requests" breakdown always adds up
+  // to the number shown -- may drift by 1% from the admin Capacity page's
+  // figure for the same person/month, which rounds the total as a whole.
+  var totalPct = bau + projectPct + wrPct;
+  var totalBg = totalPct >= 110 ? '#F0A7A3' : totalPct >= 80 ? '#F5CE8B' : totalPct >= 50 ? '#BFE3D3' : '#f0ede8';
+
+  var rows = placedThisMonth.map(function(x){
     return {
-      p: p,
-      tier: p.teamTiers ? p.teamTiers[me] : null,
-      overridden: !!(p.teamOverrides && p.teamOverrides[me] != null),
-      effPct: effectiveAllocationPct(p, me)
+      p: x.project,
+      tier: x.project.teamTiers ? x.project.teamTiers[me] : null,
+      overridden: !!(x.project.teamOverrides && x.project.teamOverrides[me] != null),
+      effPct: effectiveAllocationPct(x.project, me)
     };
   }).sort(function(a, b){ return b.effPct - a.effPct || a.p.name.localeCompare(b.p.name); });
 
-  var projectTotal = rows.reduce(function(sum, x){ return sum + x.effPct; }, 0);
-  var bau = (meRes && meRes.bauPercent != null) ? meRes.bauPercent : 0;
-  var totalPct = bau + projectTotal;
-  var totalBg = totalPct >= 110 ? '#F0A7A3' : totalPct >= 80 ? '#F5CE8B' : totalPct >= 50 ? '#BFE3D3' : '#f0ede8';
+  var monthTabsHtml = '<div class="tab-bar" style="margin-bottom:16px">' + monthDefs.map(function(d){
+    return '<div class="tab' + (st.month===d.key?' active':'') + '" onclick="setMyCapacityMonth(\'' + d.key + '\')">' + d.label + '</div>';
+  }).join('') + '</div>';
 
   var rowsHtml = rows.length
     ? rows.map(myCapacityRowHtml).join('')
-    : '<div class="empty-state" style="padding:24px"><i class="ti ti-gauge"></i><p>You\'re not on any project team yet</p></div>';
+    : '<div class="empty-state" style="padding:24px"><i class="ti ti-gauge"></i><p>No projects placed in ' + m.label + '</p></div>';
 
   document.getElementById('content').innerHTML =
     bauPercentCardHtml() +
-    '<div class="card mb-16" style="display:flex;align-items:center;justify-content:space-between">' +
-      '<div><div class="section-title" style="margin-bottom:2px">Estimated total load</div>' +
-      '<div class="text-muted" style="font-size:12px">Non-project time plus your project allocations below. The admin Capacity page also breaks this out by month and factors in open work requests.</div></div>' +
-      '<span style="font-size:20px;font-weight:700;padding:4px 12px;border-radius:8px;background:' + totalBg + '">' + totalPct + '%</span>' +
+    monthTabsHtml +
+    '<div class="card mb-16">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between">' +
+        '<div><div class="section-title" style="margin-bottom:2px">Estimated total load — ' + m.label + '</div>' +
+        '<div class="text-muted" style="font-size:12px">Your non-project (BAU) % plus the allocation % for every project of yours active in ' + m.label + ', plus a prorated share of your open work requests due around then. This mirrors what admins see for you on the Capacity page.</div></div>' +
+        '<span style="font-size:20px;font-weight:700;padding:4px 12px;border-radius:8px;background:' + totalBg + '">' + totalPct + '%</span>' +
+      '</div>' +
+      '<div class="text-muted" style="font-size:11px;margin-top:10px;padding-top:10px;border-top:1px solid #eee">' +
+        'BAU ' + bau + '% + projects ' + projectPct + '% + work requests ≈' + wrPct + '%' +
+      '</div>' +
     '</div>' +
-    '<div class="card"><div class="section-title">Your projects</div>' + rowsHtml + '</div>';
+    '<div class="card"><div class="section-title">Your projects in ' + m.label + '</div>' + rowsHtml +
+      (notShownCount > 0 ? '<div class="text-muted" style="font-size:11px;margin-top:10px">+' + notShownCount + ' other assigned project' + (notShownCount===1?'':'s') + ' not shown here (on hold, completed, no schedule, or not active in ' + m.label + ')</div>' : '') +
+    '</div>';
 }
+
+window.setMyCapacityMonth = function(key) { myCapacityPageState.month = key; pgMyCapacity(); };
 
 function myCapacityRowHtml(entry) {
   var p = entry.p, tier = entry.tier, effPct = entry.effPct, overridden = entry.overridden;
