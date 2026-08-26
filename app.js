@@ -1849,7 +1849,7 @@ var todoCommentsOpen = {};
 var todoDescOpen = {};
 var raidSearchState = {};
 var docFolderState = {};
-var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fStatus:[], openFilter:null };
+var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fOwner:[], openFilter:null };
 var roadmapCategoryFilter = 'All';
 var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#534AB7', 'Build':'#1D9E75', 'Testing':'#EF9F27', 'Deployment':'#D85A30', 'Monitor':'#993556' };
 var TASK_STATUS_COLORS = { 'To Do':'#9B9B93', 'In Progress':'#534AB7', 'On Hold':'#C98A2C', 'Done':'#1D9E75' };
@@ -6604,7 +6604,7 @@ function pgRoadmap() {
   var msItems = [];
   D.projects.filter(function(p){ return p.stage==='active'; }).forEach(function(p) {
     p.milestones.filter(function(m){ return !m.done; }).forEach(function(m) {
-      msItems.push({ project:p.name, milestone:m.name, due:m.date, status:'Upcoming', late: isMilestoneLate(m), categories: p.categories || [], tags: p.tags || [] });
+      msItems.push({ project:p.name, milestone:m.name, due:m.date, owner: p.owner || 'Unassigned', late: isMilestoneLate(m), categories: p.categories || [], tags: p.tags || [] });
     });
   });
   if (roadmapCategoryFilter !== 'All') {
@@ -6623,7 +6623,9 @@ function pgRoadmap() {
   }
   var projectChoices = [];
   msItems.forEach(function(it){ if (projectChoices.indexOf(it.project) < 0) projectChoices.push(it.project); });
-  var statusChoices = ['Upcoming'];
+  var ownerChoices = [];
+  msItems.forEach(function(it){ if (ownerChoices.indexOf(it.owner) < 0) ownerChoices.push(it.owner); });
+  ownerChoices.sort();
 
   function msFilterIcon(col, active) {
     return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMsFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
@@ -6634,7 +6636,7 @@ function pgRoadmap() {
   var msList = msItems.slice();
   if (st.search) { var q = st.search.toLowerCase(); msList = msList.filter(function(it){ return it.milestone.toLowerCase().indexOf(q) >= 0; }); }
   if (st.fProject.length) msList = msList.filter(function(it){ return st.fProject.indexOf(it.project) >= 0; });
-  if (st.fStatus.length) msList = msList.filter(function(it){ return st.fStatus.indexOf(it.status) >= 0; });
+  if (st.fOwner.length) msList = msList.filter(function(it){ return st.fOwner.indexOf(it.owner) >= 0; });
   if (st.sort) {
     msList.sort(function(a,b){
       var av = (a[st.sort]||'').toString(), bv = (b[st.sort]||'').toString();
@@ -6645,14 +6647,14 @@ function pgRoadmap() {
   }
 
   var msRows = msList.map(function(it) {
-    return '<tr><td class="bold">' + it.project + '</td><td>' + it.milestone + '</td><td class="text-muted">' + it.due + ' ' + lateBadgeHtml(it.late) + '</td><td><span class="badge badge-amber">' + it.status + '</span></td></tr>';
+    return '<tr><td class="bold">' + it.project + '</td><td>' + it.milestone + '</td><td class="text-muted">' + it.due + ' ' + lateBadgeHtml(it.late) + '</td><td class="text-muted">' + it.owner + '</td></tr>';
   }).join('');
 
   var msHeader = '<tr>' +
     '<th class="sortable-th"><span onclick="setMsSort(\'project\')">Project ' + msArrow('project') + '</span>' + msFilterIcon('fProject', st.fProject.length>0) + '</th>' +
     '<th class="sortable-th" onclick="setMsSort(\'milestone\')">Milestone ' + msArrow('milestone') + '</th>' +
     '<th class="sortable-th" onclick="setMsSort(\'due\')">Due ' + msArrow('due') + '</th>' +
-    '<th class="sortable-th"><span onclick="setMsSort(\'status\')">Status ' + msArrow('status') + '</span>' + msFilterIcon('fStatus', st.fStatus.length>0) + '</th>' +
+    '<th class="sortable-th"><span onclick="setMsSort(\'owner\')">Owner ' + msArrow('owner') + '</span>' + msFilterIcon('fOwner', st.fOwner.length>0) + '</th>' +
     '</tr>';
   document.getElementById('content').innerHTML =
     dateRangeControlHtml(roadmapRangeMode, roadmapSelectedYear, 'setRoadmapRangeMode', 'setRoadmapYear') +
@@ -6690,8 +6692,8 @@ function pgRoadmap() {
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
   window.toggleMsFilterPanel = function(col) {
-    var label = col === 'fProject' ? 'Project' : 'Status';
-    var choices = col === 'fProject' ? projectChoices : statusChoices;
+    var label = col === 'fProject' ? 'Project' : 'Owner';
+    var choices = col === 'fProject' ? projectChoices : ownerChoices;
     openFilterModal(label, choices,
       function() { return st[col] || []; },
       function(val) { var arr = st[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
