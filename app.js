@@ -8837,9 +8837,9 @@ function pgResources() {
     rows.sort(function(a,b){ return (STAGE_SORT_RANK[a.stage]!=null?STAGE_SORT_RANK[a.stage]:9) - (STAGE_SORT_RANK[b.stage]!=null?STAGE_SORT_RANK[b.stage]:9); });
     var body = rows.length
       ? rows.map(function(p){
-          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0">' +
-            '<span>' + p.name + ' ' + stagePill(p.stage) + ' <span class="badge ' + (p.isOwner ? 'badge-purple' : 'badge-gray') + '" style="font-size:10px">' + (p.isOwner ? 'Owner' : 'Contributor') + '</span></span>' +
-            '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button></div>';
+          return '<div style="display:flex;align-items:center;gap:10px;padding:4px 0">' +
+            '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button>' +
+            '<span>' + p.name + ' ' + stagePill(p.stage) + ' <span class="badge ' + (p.isOwner ? 'badge-purple' : 'badge-gray') + '" style="font-size:10px">' + (p.isOwner ? 'Owner' : 'Contributor') + '</span></span></div>';
         }).join('')
       : '<span class="text-muted">No projects assigned</span>';
     return '<tr><td colspan="' + colspan + '" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
@@ -8851,8 +8851,9 @@ function pgResources() {
     var body = names.length
       ? names.map(function(n){
           var mr = D.resources.find(function(x){ return x.name === n; });
-          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0"><span>' + n + '</span>' +
-            (mr ? '<button class="btn btn-sm" onclick="editResource(\'' + mr.id + '\')"><i class="ti ti-edit"></i></button>' : '') + '</div>';
+          return '<div style="display:flex;align-items:center;gap:10px;padding:4px 0">' +
+            (mr ? '<button class="btn btn-sm" onclick="editResource(\'' + mr.id + '\')"><i class="ti ti-edit"></i></button>' : '<span style="display:inline-block;width:26px"></span>') +
+            '<span>' + n + '</span></div>';
         }).join('')
       : '<span class="text-muted">No members yet</span>';
     return '<tr><td colspan="' + colspan + '" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
