@@ -1812,6 +1812,7 @@ var taskChecklistOpen = {};
 var taskTimelineOpen = {};
 var taskBaselineSelected = {};
 var teamAddKind = {};
+var teamTierInfoOpen = {};
 var taskDescOpen = {};
 var taskOutlineCollapsed = {};
 var todoLogOpen = {};
@@ -1824,8 +1825,8 @@ var roadmapCategoryFilter = 'All';
 var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#534AB7', 'Build':'#1D9E75', 'Testing':'#EF9F27', 'Deployment':'#D85A30', 'Monitor':'#993556' };
 var TASK_STATUS_COLORS = { 'To Do':'#9B9B93', 'In Progress':'#534AB7', 'On Hold':'#C98A2C', 'Done':'#1D9E75' };
 var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null, tagFilter:[] };
-var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null };
-var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null };
+var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null, expandedMembersId:null };
+var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null, expandedAvgId:null };
 var portfolioTagFilter = [];
 var prioritizeBacklogState = { category:'All', dragPid:null, search:'', materializing:false, lastMove:null };
 var backlogProjState = { sort:'name', dir:'asc', search:'', category:'All',
@@ -4326,7 +4327,17 @@ function pgProjectDetail(pid, tab) {
         var rec = sharesTag(n);
         return '<div class="team-add-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + n + (addKind==='team' ? teamManagerSuffix(n) : '') + (rec ? ' <span class="badge badge-teal" style="font-size:10px">Recommended</span>' : '') + '</span><button class="btn btn-sm" onclick="addTeamMemberDirect(\'' + p.id + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button></div>';
       }).join('');
-      return '<div class="card"><div class="section-title">Team members</div>' + teamRows + '</div>' +
+      var tierInfoOpenNow = !!teamTierInfoOpen[p.id];
+      var tierInfoBlock = tierInfoOpenNow
+        ? '<div class="text-muted" style="font-size:12px;margin-bottom:10px;padding:10px;background:#faf9f7;border-radius:8px;line-height:1.6">' +
+          'Each person\'s <strong>allocation tier</strong> is an assumed % of their time this project takes, and feeds directly into their total load on the Capacity page (alongside their self-reported BAU % and any open work requests):<br>' +
+          ALLOCATION_TIERS.map(function(tier){ return '<strong>' + tier + '</strong> ≈ ' + ALLOCATION_TIER_PERCENT[tier] + '%'; }).join(' &nbsp;·&nbsp; ') +
+          '<br>Leaving someone at "Not set" contributes 0% until a tier is chosen — set one for anyone whose load here should count, including the project owner if they\'re on this team.' +
+          '</div>'
+        : '';
+      return '<div class="card"><div class="section-title" style="display:flex;align-items:center;gap:6px">Team members ' +
+          '<button class="btn btn-sm" style="padding:1px 6px" title="How allocation tiers affect capacity" onclick="toggleTeamTierInfo(\'' + p.id + '\')"><i class="ti ti-info-circle"></i></button>' +
+        '</div>' + tierInfoBlock + teamRows + '</div>' +
         (editable ? '<div class="card mt-16"><div class="section-title">Add a team member</div>' +
           '<div class="tab-bar" style="margin-bottom:12px">' +
             '<div class="tab' + (addKind==='individual'?' active':'') + '" onclick="setTeamAddKind(\'' + p.id + '\',\'individual\')">Individuals</div>' +
@@ -4811,6 +4822,10 @@ function pgProjectDetail(pid, tab) {
   };
   window.setTeamAddKind = function(pid2, kind) {
     teamAddKind[pid2] = kind;
+    document.getElementById('ptab-content').innerHTML = tabC('team');
+  };
+  window.toggleTeamTierInfo = function(pid2) {
+    teamTierInfoOpen[pid2] = !teamTierInfoOpen[pid2];
     document.getElementById('ptab-content').innerHTML = tabC('team');
   };
   window.filterTeamAddList = function(query) {
@@ -8793,11 +8808,16 @@ function pgResources() {
         (r.managerName||'').toLowerCase().indexOf(q) >= 0;
     });
   }
+  var resSortMonth = capacityMonthBuckets(new Date(), 1)[0];
+  function resLoadPct(r) { return resourceMonthLoadPct(r, resourcePlacedProjects(r), r.type === 'individual' ? resourceOpenWorkRequests(r) : [], resSortMonth); }
+  function resWorkRequestHours(r) { return resourceOpenWorkRequests(r).reduce(function(sum, w){ return sum + (w.estimatedHours || 0); }, 0); }
   list = list.slice().sort(function(a, b) {
     var av, bv;
     if (st.sort === 'projects') { av = resourceCombinedProjectIds(a).allIds.length; bv = resourceCombinedProjectIds(b).allIds.length; }
     else if (st.sort === 'tasks') { av = resourceOpenTaskCount(a) || 0; bv = resourceOpenTaskCount(b) || 0; }
     else if (st.sort === 'members') { av = (a.members||[]).length; bv = (b.members||[]).length; }
+    else if (st.sort === 'workRequests') { av = resWorkRequestHours(a); bv = resWorkRequestHours(b); }
+    else if (st.sort === 'load') { av = resLoadPct(a); bv = resLoadPct(b); }
     else { av = (a[st.sort]||'').toString().toLowerCase(); bv = (b[st.sort]||'').toString().toLowerCase(); }
     if (av < bv) return st.dir === 'asc' ? -1 : 1;
     if (av > bv) return st.dir === 'asc' ? 1 : -1;
@@ -8825,6 +8845,19 @@ function pgResources() {
     return '<tr><td colspan="' + colspan + '" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
   }
   window.toggleResourceExpand = function(rid) { resourcesPageState.expandedId = resourcesPageState.expandedId === rid ? null : rid; pgResources(); };
+  function teamMembersExpandRow(r, colspan) {
+    if (resourcesPageState.expandedMembersId !== r.id) return '';
+    var names = (r.members||[]).slice().sort(function(a,b){ return a.localeCompare(b); });
+    var body = names.length
+      ? names.map(function(n){
+          var mr = D.resources.find(function(x){ return x.name === n; });
+          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0"><span>' + n + '</span>' +
+            (mr ? '<button class="btn btn-sm" onclick="editResource(\'' + mr.id + '\')"><i class="ti ti-edit"></i></button>' : '') + '</div>';
+        }).join('')
+      : '<span class="text-muted">No members yet</span>';
+    return '<tr><td colspan="' + colspan + '" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
+  }
+  window.toggleResourceMembersExpand = function(rid) { resourcesPageState.expandedMembersId = resourcesPageState.expandedMembersId === rid ? null : rid; pgResources(); };
 
   var tableHtml;
   if (st.tab === 'individual') {
@@ -8853,27 +8886,28 @@ function pgResources() {
       '<th class="sortable-th" onclick="setResourceSort(\'teamName\')">Team ' + arrow('teamName') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'projects\')">Projects ' + arrow('projects') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'tasks\')">Open tasks ' + arrow('tasks') + '</th>' +
-      '<th>Work requests</th>' +
-      '<th title="This month\'s capacity load — BAU % + project tiers + work requests">Load</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'workRequests\')">Work requests ' + arrow('workRequests') + '</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'load\')" title="This month\'s capacity load — BAU % + project tiers + work requests">Current Load ' + arrow('load') + '</th>' +
       '<th></th></tr></thead><tbody>' + rows + '</tbody></table>';
   } else {
     var trows = list.map(function(r) {
       var combinedCount = resourceCombinedProjectIds(r).allIds.length;
+      var memberCount = (r.members||[]).length;
       return '<tr>' +
         '<td class="bold">' + r.name + '</td>' +
         '<td class="text-muted">' + (r.managerName||'—') + '</td>' +
-        '<td class="text-muted">' + (r.members||[]).length + '</td>' +
+        '<td><button class="btn btn-sm" onclick="toggleResourceMembersExpand(\'' + r.id + '\')">' + memberCount + ' <i class="ti ' + (resourcesPageState.expandedMembersId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
         '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + combinedCount + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
         '<td>' + resourceCurrentLoadBadgeHtml(r) + '</td>' +
         '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button></td>' +
-        '</tr>' + projectExpandRow(r, 6);
+        '</tr>' + teamMembersExpandRow(r, 6) + projectExpandRow(r, 6);
     }).join('');
     tableHtml = '<table><thead><tr>' +
       '<th class="sortable-th" onclick="setResourceSort(\'name\')">Team ' + arrow('name') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'managerName\')">Manager ' + arrow('managerName') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'members\')">Members ' + arrow('members') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'projects\')">Projects ' + arrow('projects') + '</th>' +
-      '<th title="This month\'s capacity load — BAU % + project tiers + work requests">Load</th>' +
+      '<th class="sortable-th" onclick="setResourceSort(\'load\')" title="This month\'s capacity load — BAU % + project tiers + work requests">Current Load ' + arrow('load') + '</th>' +
       '<th></th></tr></thead><tbody>' + trows + '</tbody></table>';
   }
 
@@ -8886,7 +8920,7 @@ function pgResources() {
     (list.length ? '<div class="table-wrap">' + tableHtml + '</div>' : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No resources match your search</p></div>') +
     '</div>';
 
-  window.setResourceTab = function(t) { resourcesPageState.tab = t; resourcesPageState.sort = t === 'individual' ? 'firstName' : 'name'; resourcesPageState.dir = 'asc'; resourcesPageState.expandedId = null; pgResources(); };
+  window.setResourceTab = function(t) { resourcesPageState.tab = t; resourcesPageState.sort = t === 'individual' ? 'firstName' : 'name'; resourcesPageState.dir = 'asc'; resourcesPageState.expandedId = null; resourcesPageState.expandedMembersId = null; pgResources(); };
   window.setResourceSort = function(col) {
     if (resourcesPageState.sort === col) resourcesPageState.dir = resourcesPageState.dir === 'asc' ? 'desc' : 'asc';
     else { resourcesPageState.sort = col; resourcesPageState.dir = 'asc'; }
@@ -9074,6 +9108,34 @@ function capacityResourceRowHtml(r, months, windowStart, indent) {
   '</div>' + detail;
 }
 
+// The Teams tab's second row per team -- the average %-load across that
+// team's individual members (as opposed to the team's own row above it,
+// which is only the projects assigned directly to the team resource).
+// Collapsed by default; expanding it lists each member as their own full
+// capacityResourceRowHtml, so a member's own project bars/work requests are
+// still just one more click away.
+function capacityTeamAverageRowHtml(team, members, months, windowStart) {
+  var perMember = members.map(function(m){
+    return { r: m, placed: resourcePlacedProjects(m), openWR: m.type === 'individual' ? resourceOpenWorkRequests(m) : [] };
+  });
+  var cells = months.map(function(m) {
+    if (!perMember.length) return capacityHeatCellHtml(0, m.label);
+    var total = perMember.reduce(function(sum, x){ return sum + resourceMonthLoadPct(x.r, x.placed, x.openWR, m); }, 0);
+    return capacityHeatCellHtml(Math.round(total / perMember.length), m.label);
+  }).join('');
+  var expanded = capacityPageState.expandedAvgId === team.id;
+  var detail = expanded
+    ? (members.length
+        ? members.map(function(m){ return capacityResourceRowHtml(m, months, windowStart, 24); }).join('')
+        : '<div class="text-muted" style="font-size:12px;padding:6px 0 6px 24px">No individual members on this team</div>')
+    : '';
+  return '<div class="tl-row" style="cursor:pointer" onclick="toggleCapacityAvgExpand(\'' + team.id + '\')">' +
+    '<div class="tl-label" title="Average load across ' + members.length + ' team member' + (members.length===1?'':'s') + '"><i class="ti ' + (expanded ? 'ti-chevron-down' : 'ti-chevron-right') + '"></i> Team members (avg)</div>' +
+    '<div class="cap-heat-track">' + cells + '</div>' +
+    '<div style="width:140px;min-width:140px"></div>' +
+  '</div>' + detail;
+}
+
 function pgCapacity() {
   tb('Capacity');
   if (D.role !== 'admin') {
@@ -9132,7 +9194,7 @@ function pgCapacity() {
           var members = sortedByLoad(memberResources, 'lastName');
           return '<div class="cap-team-group">' +
             capacityResourceRowHtml(team, months, window_.windowStart, 0) +
-            members.map(function(m){ return capacityResourceRowHtml(m, months, window_.windowStart, 24); }).join('') +
+            capacityTeamAverageRowHtml(team, members, months, window_.windowStart) +
           '</div>';
         }).join('')
       : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No teams match your search</p></div>';
@@ -9153,6 +9215,7 @@ function pgCapacity() {
   window.setCapacityDateMode = function(m) { st.dateMode = m; pgCapacity(); };
   window.setCapacityDateYear = function(y) { st.dateYear = parseInt(y); pgCapacity(); };
   window.toggleCapacityExpand = function(rid) { st.expandedId = st.expandedId === rid ? null : rid; pgCapacity(); };
+  window.toggleCapacityAvgExpand = function(teamId) { st.expandedAvgId = st.expandedAvgId === teamId ? null : teamId; pgCapacity(); };
   window.onCapacitySearch = function(val) {
     st.search = val;
     pgCapacity();
