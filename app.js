@@ -1842,7 +1842,6 @@ var taskTimelineOpen = {};
 var taskBaselineSelected = {};
 var teamAddKind = {};
 var teamTierInfoOpen = {};
-var projectInfoSubTab = 'identity';
 var projectInfoEditing = null;
 var PROJECT_INFO_SUBTABS = [
   { key:'identity',      label:'Identity & Classification',   icon:'ti-tag' },
@@ -4205,45 +4204,51 @@ function openEditProjectFinancialsModal(pid) {
     p.estimatedAmount = updates.estimated_amount; p.valueConfidence = updates.value_confidence;
     p.costEstimate = updates.cost_estimate; p.costConfidence = updates.cost_confidence;
     showToast('Financial detail updated'); closeModal();
-    if (currentPage === 'projectDetail') { projectInfoSubTab = 'financials'; pgProjectDetail(pid, 'overview'); }
+    if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview');
   };
 }
 
-async function loadAndRenderMetadata(pid) {
-  var result = await sb.from('project_change_log').select('*').eq('project_id', pid);
-  var el = document.getElementById('pmeta-last-edited');
-  if (!el) return; // user navigated away from this tab before the fetch finished
-  if (result.error || !result.data || !result.data.length) {
-    el.innerHTML = '<div class="form-label">Last edited</div><span class="text-muted">No changes recorded yet</span>';
-    return;
-  }
-  var latest = result.data.slice().sort(function(a,b){ return (b.changed_at||'').localeCompare(a.changed_at||''); })[0];
-  el.innerHTML = '<div class="form-label">Last edited</div>' + fmtDate(latest.changed_at) + ' <span class="text-muted">by ' + latest.changed_by_name + '</span>';
-}
-
+// Fetches project_change_log once and populates both the System & Audit
+// "Last edited" line and the Change Log section at the bottom of the
+// Information tab -- they used to be two separate tabs with their own
+// fetch each; now that they're both always on the page together, one
+// fetch serves both instead of duplicating the query on every render.
 async function loadAndRenderChangeLog(pid) {
   var result = await sb.from('project_change_log').select('*').eq('project_id', pid);
-  var container = document.getElementById('ptab-content');
-  if (!container) return; // user navigated away from this tab before the fetch finished
-  if (result.error) { container.innerHTML = '<div class="empty-state" style="padding:40px"><p>Could not load change history: ' + result.error.message + '</p></div>'; return; }
+  var lastEditedEl = document.getElementById('pmeta-last-edited');
+  var logEl = document.getElementById('pinfo-changelog-body');
+  if (!lastEditedEl && !logEl) return; // user navigated away before the fetch finished
+
+  if (result.error) {
+    if (lastEditedEl) lastEditedEl.innerHTML = '<div class="form-label">Last edited</div><span class="text-muted">Could not load</span>';
+    if (logEl) logEl.innerHTML = '<div class="empty-state" style="padding:24px"><p>Could not load change history: ' + result.error.message + '</p></div>';
+    return;
+  }
 
   var entries = (result.data || []).slice().sort(function(a,b){ return (b.changed_at||'').localeCompare(a.changed_at||''); });
-  if (!entries.length) { container.innerHTML = '<div class="empty-state" style="padding:40px"><i class="ti ti-history"></i><p>No changes recorded yet</p></div>'; return; }
 
-  container.innerHTML = '<div class="card"><div class="section-title">Change history</div>' +
-    entries.map(function(e) {
-      var oldDisp = e.old_value == null ? '<em style="color:#999">empty</em>' : e.old_value;
-      var newDisp = e.new_value == null ? '<em style="color:#999">empty</em>' : e.new_value;
-      return '<div style="padding:10px 0;border-bottom:1px solid #f0ede8">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
-          '<span class="bold" style="font-size:13px">' + e.field_label + '</span>' +
-          '<span class="badge badge-gray" style="font-size:10px">' + (SOURCE_LABELS[e.source] || e.source) + '</span>' +
-        '</div>' +
-        '<div style="font-size:13px;color:#444">' + oldDisp + ' <i class="ti ti-arrow-right" style="color:#999"></i> ' + newDisp + '</div>' +
-        '<div class="text-muted" style="font-size:11px;margin-top:2px">' + e.changed_by_name + ' · ' + fmtDate(e.changed_at) + '</div>' +
-      '</div>';
-    }).join('') +
-  '</div>';
+  if (lastEditedEl) {
+    lastEditedEl.innerHTML = entries.length
+      ? '<div class="form-label">Last edited</div>' + fmtDate(entries[0].changed_at) + ' <span class="text-muted">by ' + entries[0].changed_by_name + '</span>'
+      : '<div class="form-label">Last edited</div><span class="text-muted">No changes recorded yet</span>';
+  }
+
+  if (logEl) {
+    logEl.innerHTML = entries.length
+      ? entries.map(function(e) {
+          var oldDisp = e.old_value == null ? '<em style="color:#999">empty</em>' : e.old_value;
+          var newDisp = e.new_value == null ? '<em style="color:#999">empty</em>' : e.new_value;
+          return '<div style="padding:10px 0;border-bottom:1px solid #f0ede8">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+              '<span class="bold" style="font-size:13px">' + e.field_label + '</span>' +
+              '<span class="badge badge-gray" style="font-size:10px">' + (SOURCE_LABELS[e.source] || e.source) + '</span>' +
+            '</div>' +
+            '<div style="font-size:13px;color:#444">' + oldDisp + ' <i class="ti ti-arrow-right" style="color:#999"></i> ' + newDisp + '</div>' +
+            '<div class="text-muted" style="font-size:11px;margin-top:2px">' + e.changed_by_name + ' · ' + fmtDate(e.changed_at) + '</div>' +
+          '</div>';
+        }).join('')
+      : '<div class="empty-state" style="padding:24px"><i class="ti ti-history"></i><p>No changes recorded yet</p></div>';
+  }
 }
 
 function pgProjectDetail(pid, tab) {
@@ -4254,7 +4259,7 @@ function pgProjectDetail(pid, tab) {
   renderNav();
   var editable = canEdit(p);
   var isComplete = p.stage === 'complete';
-  var tbs = ['overview','team','milestones','tasks','todos','raid','documentation','changelog'];
+  var tbs = ['overview','team','milestones','tasks','todos','raid','documentation'];
 
   function sortedMilestones() {
     return p.milestones.slice().sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
@@ -4311,18 +4316,21 @@ function pgProjectDetail(pid, tab) {
         '</div>' +
       '</div>';
 
-      var subtabs = PROJECT_INFO_SUBTABS.filter(function(s){ return s.key !== 'financials' || canViewFin; });
-      if (!subtabs.some(function(s){ return s.key === projectInfoSubTab; })) projectInfoSubTab = 'identity';
-      var active = projectInfoSubTab;
+      var sectionDefs = PROJECT_INFO_SUBTABS.filter(function(s){ return s.key !== 'financials' || canViewFin; });
 
-      var navHtml = '<div style="width:210px;flex-shrink:0;display:flex;flex-direction:column;gap:2px">' +
-        subtabs.map(function(s){
-          return '<div class="nav-item' + (active===s.key?' active':'') + '" onclick="setProjectInfoSubTab(\'' + s.key + '\')"><i class="ti ' + s.icon + '"></i>' + s.label + '</div>';
+      function section(key, label, bodyHtml) {
+        return '<div id="pinfo-' + key + '" style="scroll-margin-top:16px;padding-bottom:24px;margin-bottom:24px;border-bottom:1px solid #f0ede8">' +
+          '<div class="section-title">' + label + '</div>' + bodyHtml + '</div>';
+      }
+
+      var navHtml = '<div style="width:210px;flex-shrink:0;position:sticky;top:16px;display:flex;flex-direction:column;gap:2px">' +
+        sectionDefs.map(function(s){
+          return '<div class="nav-item" onclick="scrollToProjectInfoSection(\'' + s.key + '\')"><i class="ti ' + s.icon + '"></i>' + s.label + '</div>';
         }).join('') +
+        '<div class="nav-item" onclick="scrollToProjectInfoSection(\'changelog\')"><i class="ti ti-history"></i>Change Log</div>' +
       '</div>';
 
-      var panelHtml;
-      if (active === 'identity') {
+      var identityBody = (function() {
         if (editable && projectInfoEditing === 'identity') {
           var priorOptsI = PRIORITIES.map(function(s){
             var isSelected = p.priority === s || (PRIORITIES.indexOf(p.priority) < 0 && s === 'Needs prioritization');
@@ -4335,7 +4343,7 @@ function pgProjectDetail(pid, tab) {
             var checked = (p.categories||[]).indexOf(s) >= 0;
             return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="pfi-category-cb" value="' + s + '"' + (checked?' checked':'') + '> ' + s + '</label>';
           }).join('');
-          panelHtml = '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Project name</div><input type="text" id="pfi-name" value="' + p.name.replace(/"/g,'&quot;') + '"></div>' +
+          return '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Project name</div><input type="text" id="pfi-name" value="' + p.name.replace(/"/g,'&quot;') + '"></div>' +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px 16px;margin-bottom:12px">' +
               '<div><div class="form-label">Priority</div><select id="pfi-priority">' + priorOptsI + '</select></div>' +
               '<div><div class="form-label">Value area</div><select id="pfi-value">' + valOptsI + '</select></div>' +
@@ -4345,8 +4353,8 @@ function pgProjectDetail(pid, tab) {
             '</div>' +
             '<div class="form-group" style="margin-bottom:0"><div class="form-label">Category</div>' + catCbsI + '</div>' +
             saveCancelRow('saveProjectIdentity');
-        } else {
-          panelHtml = editBtnRow('identity') +
+        }
+        return editBtnRow('identity') +
             fieldBox('Project name', p.name) +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin:12px 0 16px">' +
               fieldBox('Priority', bdg(p.priority)) +
@@ -4363,12 +4371,13 @@ function pgProjectDetail(pid, tab) {
               (p.tags && p.tags.length ? p.tags.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
               (editable ? '<button class="btn btn-sm" onclick="openProjectTagPicker(\'' + p.id + '\')"><i class="ti ti-tag"></i> Edit tags</button>' : '') +
             '</div></div>';
-        }
-      } else if (active === 'schedule') {
+      })();
+
+      var scheduleBody = (function() {
         if (editable && projectInfoEditing === 'schedule') {
           var statusOptsS = (STATUSES.indexOf(p.status) < 0 ? '<option value="" selected>— Not set —</option>' : '') + STATUSES.map(function(s){ return '<option' + (p.status===s?' selected':'') + '>' + s + '</option>'; }).join('');
           var phaseOptsS  = (PHASES.indexOf(p.phase) < 0 ? '<option value="" selected>— Not set —</option>' : '') + PHASES.map(function(s){ return '<option' + (p.phase===s?' selected':'') + '>' + s + '</option>'; }).join('');
-          panelHtml = fieldBox('Stage', stagePill(p.stage) + ' <span class="text-muted" style="font-size:11px">changes via the actions below</span>') +
+          return fieldBox('Stage', stagePill(p.stage) + ' <span class="text-muted" style="font-size:11px">changes via the actions below</span>') +
             '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px 16px;margin:14px 0 12px">' +
               '<div><div class="form-label">Status</div><select id="pfs-status">' + statusOptsS + '</select></div>' +
               '<div><div class="form-label">Phase</div><select id="pfs-phase">' + phaseOptsS + '</select></div>' +
@@ -4376,8 +4385,8 @@ function pgProjectDetail(pid, tab) {
               '<div><div class="form-label">Target end</div><input type="date" id="pfs-end" value="' + (p.end||'') + '"></div>' +
             '</div>' +
             saveCancelRow('saveProjectSchedule');
-        } else {
-          panelHtml = editBtnRow('schedule') +
+        }
+        return editBtnRow('schedule') +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin-bottom:14px">' +
               fieldBox('Stage', stagePill(p.stage)) +
               fieldBox('Status', bdg(p.status)) +
@@ -4395,34 +4404,37 @@ function pgProjectDetail(pid, tab) {
                   '<button class="btn btn-success btn-sm" onclick="markComplete(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Mark complete</button>'
               ) +
             '</div>' : '');
-        }
-      } else if (active === 'progress') {
+      })();
+
+      var progressBody = (function() {
         if (editable && projectInfoEditing === 'progress') {
-          panelHtml = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px 16px;max-width:420px">' +
+          return '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px 16px;max-width:420px">' +
               '<div><div class="form-label">Progress (%)</div><input type="number" id="pfp-progress" value="' + p.progress + '" min="0" max="100"></div>' +
               '<div><div class="form-label">Health</div><select id="pfp-health"><option value=""' + (!p.health?' selected':'') + '>— Not set —</option><option value="green"' + (p.health==='green'?' selected':'') + '>Green</option><option value="amber"' + (p.health==='amber'?' selected':'') + '>Amber</option><option value="red"' + (p.health==='red'?' selected':'') + '>Red</option></select></div>' +
             '</div>' +
             saveCancelRow('saveProjectProgress');
-        } else {
-          panelHtml = editBtnRow('progress') +
+        }
+        return editBtnRow('progress') +
             '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px;max-width:420px">' +
               fieldBox('Progress', '<div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div>') +
               fieldBox('Health', hdot(p.health) + (p.health ? p.health.charAt(0).toUpperCase() + p.health.slice(1) : '<span class="text-muted">Not set</span>')) +
             '</div>';
-        }
-      } else if (active === 'description') {
+      })();
+
+      var descriptionBody = (function() {
         if (editable && projectInfoEditing === 'description') {
-          panelHtml = '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Description</div><textarea id="pfd-desc">' + (p.description||'') + '</textarea></div>' +
+          return '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Description</div><textarea id="pfd-desc">' + (p.description||'') + '</textarea></div>' +
             '<div class="form-group" style="margin-bottom:0"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="pfd-blocker" value="' + (p.blockers||'').replace(/"/g,'&quot;') + '"></div>' +
             saveCancelRow('saveProjectDescription');
-        } else {
-          panelHtml = editBtnRow('description') +
+        }
+        return editBtnRow('description') +
             '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
             (p.blockers ? '<div class="blocker-note" style="margin-bottom:0"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '');
-        }
-      } else if (active === 'financials') {
+      })();
+
+      var financialsBody = canViewFin ? (function() {
         if (canEditFin && projectInfoEditing === 'financials') {
-          panelHtml = '<div class="form-group"><div class="form-label">This is a…</div><select id="pff-type"><option value="">— Not set —</option><option value="Revenue"' + (p.estimatedType==='Revenue'?' selected':'') + '>Revenue opportunity</option><option value="Savings"' + (p.estimatedType==='Savings'?' selected':'') + '>Cost savings opportunity</option></select></div>' +
+          return '<div class="form-group"><div class="form-label">This is a…</div><select id="pff-type"><option value="">— Not set —</option><option value="Revenue"' + (p.estimatedType==='Revenue'?' selected':'') + '>Revenue opportunity</option><option value="Savings"' + (p.estimatedType==='Savings'?' selected':'') + '>Cost savings opportunity</option></select></div>' +
             '<div class="grid-2"><select id="pff-freq"><option' + (p.estimatedFrequency==='Monthly'?' selected':'') + '>Monthly</option><option' + (p.estimatedFrequency==='Annually'?' selected':'') + '>Annually</option></select>' +
             '<input type="text" id="pff-amount" value="' + (p.estimatedAmount!=null?p.estimatedAmount:'') + '" placeholder="$ amount (optional)"></div>' +
             '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="pff-value-confidence">' + confidenceOptsHtml(p.valueConfidence) + '</select></div>' +
@@ -4431,18 +4443,18 @@ function pgProjectDetail(pid, tab) {
             '</div>' +
             '<div id="pff-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter valid numbers (digits only)</div>' +
             saveCancelRow('saveProjectFinancials');
-        } else {
-          var hasFinData = p.estimatedAmount != null || p.costEstimate != null;
-          panelHtml = editBtnRow('financials', canEditFin) +
+        }
+        var hasFinData = p.estimatedAmount != null || p.costEstimate != null;
+        return editBtnRow('financials', canEditFin) +
             (hasFinData
               ? '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px">' +
                   (p.estimatedAmount != null ? fieldBox('Estimated ' + (p.estimatedType||'value'), fmtCost(p.estimatedAmount) + (p.estimatedFrequency ? ' / ' + p.estimatedFrequency.toLowerCase() : '') + (p.valueConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.valueConfidence + '</span>' : '')) : '') +
                   (p.costEstimate != null ? fieldBox('Cost estimate', fmtCost(p.costEstimate) + (p.costConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + p.costConfidence + '</span>' : '')) : '') +
                 '</div>'
               : '<div class="text-muted" style="font-size:13px">No financial detail recorded yet</div>');
-        }
-      } else if (active === 'relationships') {
-        panelHtml = '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Depends on</div><div style="display:flex;flex-direction:column;gap:6px">' +
+      })() : '';
+
+      var relationshipsBody = '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Depends on</div><div style="display:flex;flex-direction:column;gap:6px">' +
             (p.dependencies && p.dependencies.length
               ? p.dependencies.map(function(d){
                   var isPlanned = !!(d.start && d.end);
@@ -4459,15 +4471,23 @@ function pgProjectDetail(pid, tab) {
             var linkedReq = p.requestId ? D.requests.find(function(r){ return r.id === p.requestId; }) : null;
             return linkedReq ? '<button class="btn btn-sm" onclick="reviewRequest(\'' + linkedReq.id + '\')"><i class="ti ti-eye"></i> ' + linkedReq.title + '</button>' : '<span class="text-muted">—</span>';
           })());
-      } else if (active === 'audit') {
-        loadAndRenderMetadata(p.id);
-        panelHtml = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px">' +
+
+      var auditBody = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px">' +
             fieldBox('Created', fmtDate(p.createdAt)) +
             '<div id="pmeta-last-edited"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Last edited</div><span class="text-muted" style="font-size:13px">Loading…</span></div>' +
           '</div>';
-      }
 
-      return ownershipStrip + '<div style="display:flex;gap:24px;align-items:flex-start">' + navHtml + '<div style="flex:1;min-width:0">' + panelHtml + '</div></div>';
+      var changelogBody = '<div id="pinfo-changelog-body"><div class="text-muted" style="font-size:13px">Loading…</div></div>';
+      loadAndRenderChangeLog(p.id);
+
+      var bodiesByKey = {
+        identity: identityBody, schedule: scheduleBody, progress: progressBody, description: descriptionBody,
+        financials: financialsBody, relationships: relationshipsBody, audit: auditBody
+      };
+      var sectionsHtml = sectionDefs.map(function(s){ return section(s.key, s.label, bodiesByKey[s.key]); }).join('') +
+        section('changelog', 'Change Log', changelogBody);
+
+      return ownershipStrip + '<div style="display:flex;gap:24px;align-items:flex-start">' + navHtml + '<div style="flex:1;min-width:0">' + sectionsHtml + '</div></div>';
     }
     if (t === 'team') {
       var addKind = teamAddKind[p.id] || 'individual';
@@ -4899,15 +4919,11 @@ function pgProjectDetail(pid, tab) {
         (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddDoc(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add document</button>' : '') +
         (shown.length ? rows : '<div class="empty-state" style="padding:30px"><i class="ti ti-files"></i><p>No documents in this folder</p></div>');
     }
-    if (t === 'changelog') {
-      loadAndRenderChangeLog(p.id);
-      return '<div class="empty-state" style="padding:40px"><i class="ti ti-loader-2"></i><p>Loading change history…</p></div>';
-    }
     return '';
   }
 
   var tabsHtml = tbs.map(function(t) {
-    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'overview' ? 'Information' : t === 'tasks' ? 'Plan' : t === 'todos' ? 'To-Do' : t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t === 'changelog' ? 'Change Log' : t) + '</div>';
+    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'overview' ? 'Information' : t === 'tasks' ? 'Plan' : t === 'todos' ? 'To-Do' : t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t) + '</div>';
   }).join('');
 
   tb(p.name);
@@ -5062,10 +5078,9 @@ function pgProjectDetail(pid, tab) {
     var h = '#/project/' + pid + '/' + t;
     if (location.hash !== h) location.hash = h;
     };
-  window.setProjectInfoSubTab = function(key) {
-    projectInfoSubTab = key;
-    projectInfoEditing = null;
-    document.getElementById('ptab-content').innerHTML = tabC('overview');
+  window.scrollToProjectInfoSection = function(key) {
+    var el = document.getElementById('pinfo-' + key);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   window.setProjectInfoEditing = function(key) {
     projectInfoEditing = key;
