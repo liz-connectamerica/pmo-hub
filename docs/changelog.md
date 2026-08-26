@@ -16,7 +16,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div class="changelog-entry" id="cl-2026-08-26">
   <h2>Capacity</h2>
-  <p class="changelog-date">August 26, 2026 · 10:45 AM – 4:07 PM</p>
+  <p class="changelog-date">August 26, 2026 · 10:45 AM – 5:05 PM</p>
   <ul>
     <li><strong>Capacity:</strong> The Teams tab now shows two rows per team: the team's own row (projects assigned directly to the team), and a new <strong>Team members (avg)</strong> row showing the average %-load across that team's individual members — collapsed by default, expandable into each member's own full row.</li>
     <li><strong>Team:</strong> Added an (i) icon next to "Team members" on a project's Team tab explaining what each allocation tier assumes and how it feeds into Capacity.</li>
@@ -28,7 +28,8 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li><strong>Roadmap:</strong> The Upcoming milestones table's Status column (always "Upcoming," so it carried no information) is replaced with a sortable, filterable <strong>Owner</strong> column, matching how Project already worked.</li>
     <li><strong>Information:</strong> Replaced the Overview and Metadata tabs with a single new <strong>Information</strong> tab (now first) — Identity & Classification, Schedule/Stage & Lifecycle, Progress & Health, Financials, Relationships, and System & Audit, plus the Change Log tab folded in as its last section. All of it lives on one scrollable page with a sticky left-hand nav that jumps to a section on click.</li>
     <li><strong>Information:</strong> Each section edits in place — an Edit button turns it into a form with Save/Cancel, right there on the page, replacing the old full-project and financials modals for everything reachable from this tab. Description now lives under Project Name in Identity & Classification; Current Blocker lives in Progress & Health, alongside Health (previously only editable through the old modal and never actually shown anywhere).</li>
-    <li><strong>Project detail:</strong> The stage/status/priority badges and the top tab bar (Information, Team, Milestones, Plan, etc.) now stay visible while scrolling through a tab's content, on every tab — previously the whole page scrolled together.</li>
+    <li><strong>Project detail:</strong> The stage/status/priority badges and the top tab bar (Information, People, Milestones, Plan, etc.) now stay visible while scrolling through a tab's content, on every tab — previously the whole page scrolled together.</li>
+    <li><strong>People:</strong> Renamed the project's Team tab to <strong>People</strong>. It now opens with Sponsor, Owner, and a new <strong>Requirements Owner</strong> role — admin-only to reassign, edited in place — above the existing team list and add-member picker. Requirements Owner is also settable when creating a new project. Program moved from the old Information-tab strip into the Relationships section (it's a project-to-program link, not a person), and that strip's Delete button moved to People.</li>
   </ul>
 </div>
 
