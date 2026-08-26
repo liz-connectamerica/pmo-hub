@@ -33,7 +33,7 @@ A month-by-month timeline (Gantt-style) of active and planned projects, grouped 
 - Filter by category tab or by tag
 - Click the eye icon on any row to jump to that project
 
-Below the timeline is an **Upcoming milestones** list, pulling undone milestones from active projects, with its own search and sort.
+Below the timeline is an **Upcoming milestones** list, pulling undone milestones from active projects — Project, Milestone, Due, and Owner (the project's owner), searchable and with Project and Owner both sortable and filterable.
 
 Roadmap is read-only — you can change what you're looking at, but nothing here is editable.
 

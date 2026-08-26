@@ -16,7 +16,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div class="changelog-entry" id="cl-2026-08-26">
   <h2>Capacity</h2>
-  <p class="changelog-date">August 26, 2026 · 10:45 AM – 2:28 PM</p>
+  <p class="changelog-date">August 26, 2026 · 10:45 AM – 2:46 PM</p>
   <ul>
     <li><strong>Capacity:</strong> The Teams tab now shows two rows per team: the team's own row (projects assigned directly to the team), and a new <strong>Team members (avg)</strong> row showing the average %-load across that team's individual members — collapsed by default, expandable into each member's own full row.</li>
     <li><strong>Team:</strong> Added an (i) icon next to "Team members" on a project's Team tab explaining what each allocation tier assumes and how it feeds into Capacity.</li>
@@ -25,6 +25,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li><strong>My Capacity:</strong> New page under My Work — self-report your non-project (BAU) % here (moved off My Tasks), see every project you're on the team for with its allocation tier and computed %, and override that % for yourself if it doesn't match reality. An "Estimated total load" figure combines BAU % with your project allocations for a chosen month (Previous / Current / Next tabs), plus a prorated share of your open work requests — the same math the admin Capacity page uses.</li>
     <li><strong>Capacity:</strong> A team member's allocation tier now also scales by the project's <strong>T-shirt size</strong> — e.g. Owner/Lead on an XL project carries more assumed load than the same role on an XS one — instead of a flat rate regardless of size.</li>
     <li><strong>Administration:</strong> Added a <strong>Capacity Weights</strong> page for admins to tune the tier base %s and T-shirt size %s that drive every capacity calculation in the app, with a live preview of the resulting matrix.</li>
+    <li><strong>Roadmap:</strong> The Upcoming milestones table's Status column (always "Upcoming," so it carried no information) is replaced with a sortable, filterable <strong>Owner</strong> column, matching how Project already worked.</li>
   </ul>
 </div>
 
