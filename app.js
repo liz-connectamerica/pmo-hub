@@ -2077,6 +2077,7 @@ function daysSince(iso) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
 }
 function daysLate(p) { return Math.round((new Date(todayStr()) - new Date(p.end)) / 86400000); }
+function daysPastDue(dateStr) { return Math.round((new Date(todayStr()) - new Date(dateStr)) / 86400000); }
 
 // Issues carry a severity field directly; risks don't, so this derives an
 // equivalent High/Medium/Low from the probability/impact pair already
@@ -9873,7 +9874,7 @@ function renderPortfolioHealth() {
     var rows = projects.filter(function(p){ return p.stage === s.key; });
     return { key:s.key, label:s.label, count:rows.length, color:s.color, rows:rows };
   });
-  var funnelCard = phCard('funnel', 'Portfolio stage funnel', 'Every non-deleted project, by lifecycle stage',
+  var funnelCard = phCard('funnel', 'Portfolio stage funnel', 'Every project, by lifecycle stage',
     phHero(projects.length, 'projects'), funnelBars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
@@ -9925,6 +9926,31 @@ function renderPortfolioHealth() {
       { h:'Days late', cell:function(p){ return daysLate(p) + 'd'; } },
       { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
       { h:'', cell:phViewBtn }
+    ]);
+
+  // 3b. Late plan tasks & to-dos
+  var lateTasksAll = [];
+  projects.forEach(function(p) {
+    p.tasks.forEach(function(t){ if (isTaskLate(t)) lateTasksAll.push({ project:p, kind:'Task', title:t.title, due:t.end }); });
+    p.todos.forEach(function(td){ if (isTodoLate(td)) lateTasksAll.push({ project:p, kind:'To-Do', title:td.title, due:td.due }); });
+  });
+  var LATE_TASK_META = [
+    { key:'Task', label:'Plan tasks' },
+    { key:'To-Do', label:'To-Dos' }
+  ];
+  var lateTaskBars = LATE_TASK_META.map(function(s) {
+    var rows = lateTasksAll.filter(function(e){ return e.kind === s.key; });
+    return { key:s.key, label:s.label, count:rows.length, color:'#E24B4A', rows:rows };
+  });
+  var lateTaskCard = phCard('latetasks', 'Late tasks', 'Plan tasks and to-dos past their date and not yet done',
+    phHero(lateTasksAll.length, 'late right now', '#E24B4A'), lateTaskBars,
+    [
+      { h:'Type', cell:function(e){ return e.kind; } },
+      { h:'Title', cell:function(e){ return e.title || '<span class="text-muted">Untitled</span>'; } },
+      { h:'Project', cell:function(e){ return e.project.name; } },
+      { h:'Project owner', cell:function(e){ return phOwnerCell(e.project.owner); } },
+      { h:'Days late', cell:function(e){ var d = e.due ? daysPastDue(e.due) : null; return d != null ? (d + 'd') : '—'; } },
+      { h:'', cell:function(e){ return phViewBtn(e.project); } }
     ]);
 
   // 4. Open risks & issues, by severity
@@ -10051,7 +10077,7 @@ function renderPortfolioHealth() {
 
   document.getElementById('content').innerHTML =
     '<div class="info-banner info-blue mb-16"><i class="ti ti-info-circle"></i><span>Computed from your live project, RAID, and change-log data. Click any bar to see which projects make it up.</span></div>' +
-    funnelCard + ragCard + lateCard + riskCard + missingCard + loadCard + staleCard + blankCard;
+    funnelCard + ragCard + lateCard + lateTaskCard + riskCard + missingCard + loadCard + staleCard + blankCard;
 
   window.phToggle = function(cardKey, filterKey) {
     phState.expanded[cardKey] = (phState.expanded[cardKey] === filterKey) ? null : filterKey;
