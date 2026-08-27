@@ -16,10 +16,11 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div class="changelog-entry" id="cl-2026-08-27">
   <h2>Portfolio Health</h2>
-  <p class="changelog-date">August 27, 2026 · 12:41 PM – 1:32 PM</p>
+  <p class="changelog-date">August 27, 2026 · 12:41 PM – 6:45 PM</p>
   <ul>
     <li>New <strong>Portfolio Health</strong> page under Overview (admin-only) — a click-to-drill dashboard of eight metrics: portfolio stage funnel, RAG status for active projects, late projects by stage, late tasks (plan tasks + to-dos combined, bucketed by how many per project), open RAID risks &amp; issues by severity, projects missing an Owner or Sponsor, Owner load, stale active projects, and blank fields on active projects. Click any bar to expand exactly which projects make up that number.</li>
     <li><strong>Portfolio Health:</strong> Added monthly snapshots — captured automatically on the 1st of each month, or on demand with a new <strong>Capture snapshot now</strong> button. A month picker lets you view any past snapshot through the same dashboard and drill-downs, and a <strong>Download PDF</strong> button opens a clean print view for sharing. The RAG card now shows a real trend strip across recent snapshots, once more than one exists.</li>
+    <li><strong>All Projects:</strong> Added a column for every field Bulk Edit can set — T-shirt Size, Health, Delivery Methodology, Opportunity Type, and both confidence ratings joined the existing columns, all sortable and filterable. Every filter (Stage excepted, since it can never be blank) now also offers a <strong>Not set</strong> option, to isolate exactly which projects are missing a given field.</li>
   </ul>
 </div>
 
