@@ -2341,10 +2341,25 @@ function globalSearchMatches(query) {
   };
 }
 
+// The dropdown is deliberately wider than the sidebar itself (see style.css),
+// so it's position:fixed and placed by hand here rather than anchored via
+// CSS -- .sidebar has overflow:hidden, which would otherwise clip it back
+// down to the sidebar's own width the instant it tried to extend past it.
+function positionGlobalSearchDropdown() {
+  var box = document.getElementById('global-search-results');
+  var anchor = document.querySelector('.sidebar-search-box');
+  if (!box || !anchor) return;
+  var rect = anchor.getBoundingClientRect();
+  box.style.left = rect.left + 'px';
+  box.style.top = (rect.bottom + 4) + 'px';
+}
+window.addEventListener('resize', positionGlobalSearchDropdown);
+
 function renderGlobalSearchResults() {
   var box = document.getElementById('global-search-results');
   if (!box) return;
   if (!globalSearchState.open || !globalSearchState.query.trim()) { box.hidden = true; box.innerHTML = ''; return; }
+  positionGlobalSearchDropdown();
 
   var m = globalSearchMatches(globalSearchState.query);
   var html;
