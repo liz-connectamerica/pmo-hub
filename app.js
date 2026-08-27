@@ -2309,6 +2309,129 @@ function renderNav() {
   };
 }
 
+// ── Global search (sidebar) ──────────────────────────────────────────────────
+// Available to every role. A Member's work-request results are scoped to
+// their own submitted/assigned requests, same as everywhere else they can
+// already see them -- this doesn't open up any new visibility, just a
+// faster way to reach it. Admins see every work request, matching Admin
+// Work Requests. Projects are unrestricted for everyone already, so no
+// scoping is needed there.
+var globalSearchState = { query: '', open: false };
+var GLOBAL_SEARCH_RESULT_CAP = 8;
+
+function globalSearchMatches(query) {
+  var q = query.trim().toLowerCase();
+  if (!q) return { projects: [], projectsTotal: 0, workRequests: [], workRequestsTotal: 0 };
+
+  var allProjects = D.projects.filter(function(p) {
+    return p.name.toLowerCase().indexOf(q) >= 0 || (p.description || '').toLowerCase().indexOf(q) >= 0;
+  });
+
+  var myId = D.myResourceId;
+  var wrPool = D.role === 'admin'
+    ? (D.workRequests || [])
+    : (D.workRequests || []).filter(function(w) { return w.requesterId === D.currentProfile.id || (myId && w.resourceId === myId); });
+  var allWorkRequests = wrPool.filter(function(w) {
+    return w.title.toLowerCase().indexOf(q) >= 0 || (w.description || '').toLowerCase().indexOf(q) >= 0;
+  });
+
+  return {
+    projects: allProjects.slice(0, GLOBAL_SEARCH_RESULT_CAP), projectsTotal: allProjects.length,
+    workRequests: allWorkRequests.slice(0, GLOBAL_SEARCH_RESULT_CAP), workRequestsTotal: allWorkRequests.length
+  };
+}
+
+function renderGlobalSearchResults() {
+  var box = document.getElementById('global-search-results');
+  if (!box) return;
+  if (!globalSearchState.open || !globalSearchState.query.trim()) { box.hidden = true; box.innerHTML = ''; return; }
+
+  var m = globalSearchMatches(globalSearchState.query);
+  var html;
+  if (!m.projects.length && !m.workRequests.length) {
+    html = '<div class="gsr-empty">No matches for "' + globalSearchState.query.trim() + '"</div>';
+  } else {
+    html = '';
+    if (m.projects.length) {
+      html += '<div class="gsr-group-label">Projects</div>' +
+        m.projects.map(function(p) {
+          return '<div class="gsr-item" onclick="globalSearchGoProject(\'' + p.id + '\')"><span class="gsr-item-name">' + p.name + '</span>' + stagePill(p.stage) + '</div>';
+        }).join('') +
+        (m.projectsTotal > m.projects.length ? '<div class="gsr-more">+' + (m.projectsTotal - m.projects.length) + ' more — refine your search</div>' : '');
+    }
+    if (m.workRequests.length) {
+      html += '<div class="gsr-group-label">Work Requests</div>' +
+        m.workRequests.map(function(w) {
+          return '<div class="gsr-item" onclick="globalSearchGoWorkRequest(\'' + w.id + '\')"><span class="gsr-item-name">' + w.title + '</span>' + bdg(w.status) + '</div>';
+        }).join('') +
+        (m.workRequestsTotal > m.workRequests.length ? '<div class="gsr-more">+' + (m.workRequestsTotal - m.workRequests.length) + ' more — refine your search</div>' : '');
+    }
+  }
+  box.innerHTML = html;
+  box.hidden = false;
+}
+
+function closeGlobalSearch() {
+  globalSearchState.open = false;
+  globalSearchState.query = '';
+  var input = document.getElementById('global-search-input');
+  if (input) input.value = '';
+  var box = document.getElementById('global-search-results');
+  if (box) { box.hidden = true; box.innerHTML = ''; }
+}
+
+window.onGlobalSearch = function(v) {
+  globalSearchState.query = v;
+  globalSearchState.open = true;
+  renderGlobalSearchResults();
+};
+
+window.onGlobalSearchFocus = function() {
+  if (globalSearchState.query.trim()) { globalSearchState.open = true; renderGlobalSearchResults(); }
+};
+
+window.globalSearchGoProject = function(pid) {
+  closeGlobalSearch();
+  goToProject(pid);
+};
+
+// Routes to whichever existing page already shows this work request for the
+// current viewer -- there's no universal "view a work request" screen, so
+// this leans on each page's own search box (set to the exact title) rather
+// than building a new one just for search results to land on.
+window.globalSearchGoWorkRequest = function(wid) {
+  closeGlobalSearch();
+  var w = (D.workRequests || []).find(function(x) { return x.id === wid; });
+  if (!w) return;
+  if (D.role === 'admin') {
+    adminWorkRequestsState.search = w.title;
+    nav('admin-work-requests');
+    return;
+  }
+  var myId = D.myResourceId;
+  if (myId && w.resourceId === myId) {
+    myWorkRequestsState.search = w.title;
+    myWorkRequestsState.tab = (w.status === 'New' || w.status === 'Needs Info') ? 'waiting' : (w.status === 'Accepted' ? 'progress' : 'done');
+    nav('my-work-requests');
+  } else {
+    myRequestsPageState.tab = 'work';
+    myWorkRequestsSubmittedState.search = w.title;
+    nav('my-requests');
+  }
+};
+
+document.addEventListener('click', function(e) {
+  var box = document.getElementById('global-search-results');
+  var wrap = document.querySelector('.sidebar-search');
+  if (!box || box.hidden || !wrap) return;
+  if (!wrap.contains(e.target)) box.hidden = true;
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  var box = document.getElementById('global-search-results');
+  if (box && !box.hidden) box.hidden = true;
+});
+
 var PAGE_RENDERERS = {
   dashboard:pgDashboard, portfolio:pgPortfolio, requests:pgRequests,
   backlog:pgBacklog, planned:pgPlanned, projects:pgProjects,
