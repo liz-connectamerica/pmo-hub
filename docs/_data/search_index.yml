@@ -98,6 +98,12 @@
   guide: Admin Guide
   blurb: Click-to-drill dashboard of stage funnel, RAG status, late items, open RAID risk, ownership gaps, and data hygiene.
 
+- title: Monthly snapshots
+  page: /admin-guide/
+  anchor: monthly-snapshots
+  guide: Admin Guide
+  blurb: Capture, browse, and PDF-export a past month's Portfolio Health dashboard.
+
 - title: Programs
   page: /admin-guide/
   anchor: programs

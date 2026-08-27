@@ -88,7 +88,7 @@ flowchart TD
 A read-only dashboard of portfolio-wide metrics, in the **Overview** section of the sidebar — admin-only. Every card is click-to-drill: click a bar (or **View all projects**) to expand the exact projects behind that number, right there under the card.
 
 - **Portfolio stage funnel** — every project, by lifecycle stage. Hold is called out separately from the Backlog→Planned→Active→Completed progression, since it's a paused state, not further progress.
-- **RAG status — active projects** — the current Green/Amber/Red mix across Active-stage projects. Snapshot only for now; a trend-over-time view needs either a scheduled snapshot job or reconstructing history from the change log, and hasn't been built yet.
+- **RAG status — active projects** — the current Green/Amber/Red mix across Active-stage projects, plus a trend strip showing the mix over recent snapshots (see below) once more than one exists.
 - **Late projects** — projects past their target end date, broken out by the stage they're stuck in.
 - **Late tasks** — projects with plan tasks and/or to-dos past their date and not yet done, bucketed by how many (1–4, 5–9, 10–19, 20+), worst first. Expanding a bucket lists the projects in it with their owner and late-item count, not the individual tasks.
 - **Open risks & issues** — every open RAID risk and issue across the portfolio, by severity. Issues carry their own Severity field; risks don't, so theirs is derived from Probability × Impact to sit on the same High/Medium/Low scale.
@@ -96,6 +96,16 @@ A read-only dashboard of portfolio-wide metrics, in the **Overview** section of 
 - **Owner load** — how many Active/Planned/Hold projects each person owns; anyone at or above 3 is flagged.
 - **Stale active projects** — Active-stage projects by days since their last logged change (30+ counts as stale; 7–29 is shown underneath for context on what's aging toward it).
 - **Blank fields, active projects** — share of Active projects missing each of Description, End date, Start date, Owner, Sponsor, and Health.
+
+### Monthly snapshots
+
+A toolbar above the cards holds three things:
+
+- A **month picker** — pick any past month to see the whole dashboard, drill-downs included, exactly as it looked when that snapshot was captured, with a banner showing who captured it (or that it ran automatically) and a link back to the live view.
+- **Capture snapshot now** — takes an on-demand snapshot for the current month. Since there's one snapshot per calendar month, capturing again for a month that already has one overwrites it — this is also how you'd redo a snapshot that was taken too early in the month.
+- **Download PDF** — opens your browser's print dialog with the page chrome (sidebar, buttons) stripped out; choose "Save as PDF" there for a shareable report-out.
+
+A snapshot is also captured automatically on the 1st of every month. A snapshot can only ever capture what the portfolio looks like *at the moment it's taken* — there's no way to reconstruct what a project's health actually was in some earlier month before its first snapshot, so the RAG trend strip starts sparse and fills in over time.
 
 ## Programs
 
