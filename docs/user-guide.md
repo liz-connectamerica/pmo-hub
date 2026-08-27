@@ -17,6 +17,13 @@ The sidebar is organized into a few sections:
 
 The bar at the top of the page shows the current page's title and any page-specific action buttons (like "New request").
 
+## Search
+
+The search box under the PMO Hub logo works from anywhere in the app and looks across **Projects** and **Work Requests** by name/title and description, showing live results as you type — grouped by type, each with a badge for its stage or status so closed-out matches (Completed projects, Declined/Withdrawn/Complete requests) are still findable but clearly marked. Press Escape, click away, or pick a result to close it.
+
+- **Projects** — every project matches, regardless of stage; picking one opens it directly.
+- **Work Requests** — you'll only find requests you submitted or are assigned to (the same ones you can already reach from My Requests and My Work Requests) — search doesn't expose anyone else's. Admins search every request in the system, same as the Work Requests admin page. Picking a result takes you to wherever that request already lives, with its title pre-filled into that page's own search.
+
 ## Dashboard
 
 The Dashboard opens with four summary tiles — Active projects, On track, At risk, and a fourth tile that's either "Pending requests" (admins) or "In backlog" (everyone else).

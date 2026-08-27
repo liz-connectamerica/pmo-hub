@@ -8,6 +8,12 @@
   guide: User Guide
   blurb: What's in the sidebar and how it's organized.
 
+- title: Search
+  page: /user-guide/
+  anchor: search
+  guide: User Guide
+  blurb: Sidebar search across Projects and Work Requests, scoped to what you can already see.
+
 - title: Dashboard
   page: /user-guide/
   anchor: dashboard
