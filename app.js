@@ -2077,7 +2077,6 @@ function daysSince(iso) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
 }
 function daysLate(p) { return Math.round((new Date(todayStr()) - new Date(p.end)) / 86400000); }
-function daysPastDue(dateStr) { return Math.round((new Date(todayStr()) - new Date(dateStr)) / 86400000); }
 
 // Issues carry a severity field directly; risks don't, so this derives an
 // equivalent High/Medium/Low from the probability/impact pair already
@@ -9928,29 +9927,33 @@ function renderPortfolioHealth() {
       { h:'', cell:phViewBtn }
     ]);
 
-  // 3b. Late plan tasks & to-dos
-  var lateTasksAll = [];
+  // 3b. Late plan tasks & to-dos, projects bucketed by how many they have
+  var lateCountByProject = {};
   projects.forEach(function(p) {
-    p.tasks.forEach(function(t){ if (isTaskLate(t)) lateTasksAll.push({ project:p, kind:'Task', title:t.title, due:t.end }); });
-    p.todos.forEach(function(td){ if (isTodoLate(td)) lateTasksAll.push({ project:p, kind:'To-Do', title:td.title, due:td.due }); });
+    var count = 0;
+    p.tasks.forEach(function(t){ if (isTaskLate(t)) count++; });
+    p.todos.forEach(function(td){ if (isTodoLate(td)) count++; });
+    if (count > 0) lateCountByProject[p.id] = count;
   });
-  var LATE_TASK_META = [
-    { key:'Task', label:'Plan tasks' },
-    { key:'To-Do', label:'To-Dos' }
+  var LATE_TASK_BUCKETS = [
+    { key:'20', label:'20+ late tasks', color:'#E24B4A', test:function(c){ return c >= 20; } },
+    { key:'10', label:'10–19 late tasks', color:'#ec835a', test:function(c){ return c >= 10 && c < 20; } },
+    { key:'5', label:'5–9 late tasks', color:'#EF9F27', test:function(c){ return c >= 5 && c < 10; } },
+    { key:'1', label:'1–4 late tasks', color:'#5598e7', test:function(c){ return c >= 1 && c < 5; } }
   ];
-  var lateTaskBars = LATE_TASK_META.map(function(s) {
-    var rows = lateTasksAll.filter(function(e){ return e.kind === s.key; });
-    return { key:s.key, label:s.label, count:rows.length, color:'#E24B4A', rows:rows };
+  var lateTaskBars = LATE_TASK_BUCKETS.map(function(b) {
+    var rows = projects.filter(function(p){ return lateCountByProject[p.id] != null && b.test(lateCountByProject[p.id]); })
+      .sort(function(a, c){ return lateCountByProject[c.id] - lateCountByProject[a.id]; });
+    return { key:b.key, label:b.label, count:rows.length, color:b.color, rows:rows };
   });
-  var lateTaskCard = phCard('latetasks', 'Late tasks', 'Plan tasks and to-dos past their date and not yet done',
-    phHero(lateTasksAll.length, 'late right now', '#E24B4A'), lateTaskBars,
+  var projectsWithLateTasks = Object.keys(lateCountByProject).length;
+  var lateTaskCard = phCard('latetasks', 'Late tasks', 'Projects with plan tasks or to-dos past their date and not yet done, grouped by how many',
+    phHero(projectsWithLateTasks, 'projects affected', projectsWithLateTasks ? '#E24B4A' : null), lateTaskBars,
     [
-      { h:'Type', cell:function(e){ return e.kind; } },
-      { h:'Title', cell:function(e){ return e.title || '<span class="text-muted">Untitled</span>'; } },
-      { h:'Project', cell:function(e){ return e.project.name; } },
-      { h:'Project owner', cell:function(e){ return phOwnerCell(e.project.owner); } },
-      { h:'Days late', cell:function(e){ var d = e.due ? daysPastDue(e.due) : null; return d != null ? (d + 'd') : '—'; } },
-      { h:'', cell:function(e){ return phViewBtn(e.project); } }
+      { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
+      { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
+      { h:'Late tasks', cell:function(p){ return lateCountByProject[p.id]; } },
+      { h:'', cell:phViewBtn }
     ]);
 
   // 4. Open risks & issues, by severity
