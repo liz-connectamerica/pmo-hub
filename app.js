@@ -804,12 +804,12 @@ async function applyTagDiff(table, idColumn, idValue, oldTags, newTags) {
   return { tags: current, failed: failed };
 }
 
-function openFilterModal(label, choices, getSelected, toggleValue, clearAll, rerenderPage) {
+function openFilterModal(label, choices, getSelected, toggleValue, clearAll, rerenderPage, labelFor) {
   function render() {
     var selected = getSelected();
     var optsHtml = choices.map(function(c){
       var esc = c.replace(/'/g,"\\'");
-      return '<label style="display:block;padding:7px 0;font-size:13px;cursor:pointer"><input type="checkbox" style="margin-right:8px"' + (selected.indexOf(c)>=0?' checked':'') + ' onchange="window.__filterModalToggle(\'' + esc + '\')"> ' + c + '</label>';
+      return '<label style="display:block;padding:7px 0;font-size:13px;cursor:pointer"><input type="checkbox" style="margin-right:8px"' + (selected.indexOf(c)>=0?' checked':'') + ' onchange="window.__filterModalToggle(\'' + esc + '\')"> ' + (labelFor ? labelFor(c) : c) + '</label>';
     }).join('');
     showModal('<div class="modal-title">Filter by ' + label + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
       '<div style="max-height:300px;overflow-y:auto">' + optsHtml + '</div>' +
@@ -1884,7 +1884,8 @@ var futurePlanningSelectedYear = new Date().getFullYear();
 var futurePlanningCategoryFilter = 'All';
 var allProjectsState = {
   search: '', sort: 'name', dir: 'asc', selected: {},
-  filters: { category:[], businessUnit:[], stage:[], status:[], phase:[], priority:[], value:[], sponsor:[], owner:[] },
+  filters: { category:[], businessUnit:[], stage:[], status:[], phase:[], priority:[], value:[], sponsor:[], owner:[],
+    tshirtSize:[], health:[], deliveryMethodology:[], estimatedType:[], valueConfidence:[], costConfidence:[] },
   openFilter: null
 };
 var tagAdminState = { expandedId: null };
@@ -7521,6 +7522,12 @@ function pgAllProjects() {
   if (st.filters.value.length) list = list.filter(function(p){ return st.filters.value.indexOf(p.value) >= 0; });
   if (st.filters.sponsor.length) list = list.filter(function(p){ return st.filters.sponsor.indexOf(p.sponsor) >= 0; });
   if (st.filters.owner.length) list = list.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
+  if (st.filters.tshirtSize.length) list = list.filter(function(p){ return st.filters.tshirtSize.indexOf(p.tshirtSize) >= 0; });
+  if (st.filters.health.length) list = list.filter(function(p){ return st.filters.health.indexOf(p.health) >= 0; });
+  if (st.filters.deliveryMethodology.length) list = list.filter(function(p){ return st.filters.deliveryMethodology.indexOf(p.deliveryMethodology) >= 0; });
+  if (st.filters.estimatedType.length) list = list.filter(function(p){ return st.filters.estimatedType.indexOf(p.estimatedType) >= 0; });
+  if (st.filters.valueConfidence.length) list = list.filter(function(p){ return st.filters.valueConfidence.indexOf(p.valueConfidence) >= 0; });
+  if (st.filters.costConfidence.length) list = list.filter(function(p){ return st.filters.costConfidence.indexOf(p.costConfidence) >= 0; });
 
   list.sort(function(a,b) {
     var av = a[st.sort]; var bv = b[st.sort];
@@ -7551,6 +7558,12 @@ function pgAllProjects() {
       '<td>' + (p.value || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.sponsor || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.tshirtSize || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + hdot(p.health) + (EXPORT_HEALTH_LABELS[p.health] || '<span class="text-muted">Not set</span>') + '</td>' +
+      '<td>' + (p.deliveryMethodology || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.estimatedType ? (p.estimatedType === 'Revenue' ? 'Revenue opportunity' : 'Cost savings opportunity') : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.valueConfidence ? (p.valueConfidence + confidenceDot(p.valueConfidence)) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.costConfidence ? (p.costConfidence + confidenceDot(p.costConfidence)) : '<span class="text-muted">—</span>') + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button></td>' +
       '</tr>';
   }).join('');
@@ -7574,8 +7587,14 @@ function pgAllProjects() {
       '<th class="sortable-th"><span onclick="setAllProjSort(\'value\')">Value Area ' + arrow('value') + '</span>' + filterIcon('value', st.filters.value.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'sponsor\')">Sponsor ' + arrow('sponsor') + '</span>' + filterIcon('sponsor', st.filters.sponsor.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'tshirtSize\')">T-shirt Size ' + arrow('tshirtSize') + '</span>' + filterIcon('tshirtSize', st.filters.tshirtSize.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'health\')">Health ' + arrow('health') + '</span>' + filterIcon('health', st.filters.health.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'deliveryMethodology\')">Delivery Methodology ' + arrow('deliveryMethodology') + '</span>' + filterIcon('deliveryMethodology', st.filters.deliveryMethodology.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'estimatedType\')">Opportunity Type ' + arrow('estimatedType') + '</span>' + filterIcon('estimatedType', st.filters.estimatedType.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'valueConfidence\')">Opportunity Type Confidence ' + arrow('valueConfidence') + '</span>' + filterIcon('valueConfidence', st.filters.valueConfidence.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'costConfidence\')">Cost Estimate Confidence ' + arrow('costConfidence') + '</span>' + filterIcon('costConfidence', st.filters.costConfidence.length>0) + '</th>' +
       '<th></th>' +
-    '</tr></thead><tbody>' + (rows || '<tr><td colspan="12" class="text-muted" style="text-align:center;padding:20px">No projects match these filters</td></tr>') + '</tbody></table></div></div>';
+    '</tr></thead><tbody>' + (rows || '<tr><td colspan="18" class="text-muted" style="text-align:center;padding:20px">No projects match these filters</td></tr>') + '</tbody></table></div></div>';
 
   window.onAllProjSearch = function(v) {
     st.search = v; pgAllProjects();
@@ -7591,13 +7610,20 @@ function pgAllProjects() {
   window.clearAllProjSelection = function() { st.selected = {}; withScrollPreserved(pgAllProjects); };
 
   window.toggleAllProjFilter = function(col) {
-    var labelMap = { category:'Category', businessUnit:'Business Unit', stage:'Stage', status:'Status', phase:'Phase', priority:'Priority', value:'Value Area', sponsor:'Sponsor', owner:'Owner' };
-    var choicesMap = { category:CATEGORIES, businessUnit:BUSINESS_UNITS, stage:stageChoices, status:STATUSES, phase:PHASES, priority:PRIORITIES, value:VALUE_AREAS, sponsor:sponsorChoices, owner:ownerChoices };
+    var labelMap = { category:'Category', businessUnit:'Business Unit', stage:'Stage', status:'Status', phase:'Phase', priority:'Priority', value:'Value Area', sponsor:'Sponsor', owner:'Owner',
+      tshirtSize:'T-shirt Size', health:'Health', deliveryMethodology:'Delivery Methodology', estimatedType:'Opportunity Type', valueConfidence:'Opportunity Type Confidence', costConfidence:'Cost Estimate Confidence' };
+    var choicesMap = { category:CATEGORIES, businessUnit:BUSINESS_UNITS, stage:stageChoices, status:STATUSES, phase:PHASES, priority:PRIORITIES, value:VALUE_AREAS, sponsor:sponsorChoices, owner:ownerChoices,
+      tshirtSize:TSHIRT_SIZES, health:['green','amber','red'], deliveryMethodology:['Agile','Waterfall','Hybrid'], estimatedType:['Revenue','Savings'], valueConfidence:CONFIDENCE_LEVELS, costConfidence:CONFIDENCE_LEVELS };
+    var labelForMap = {
+      health: function(v){ return hdot(v) + (EXPORT_HEALTH_LABELS[v] || v); },
+      estimatedType: function(v){ return v === 'Revenue' ? 'Revenue opportunity' : 'Cost savings opportunity'; }
+    };
     openFilterModal(labelMap[col], choicesMap[col],
       function() { return st.filters[col]; },
       function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
       function() { st.filters[col] = []; },
-      pgAllProjects
+      pgAllProjects,
+      labelForMap[col]
     );
   };
 
