@@ -9769,7 +9769,10 @@ function pgCapacity() {
 // the normal project payload. expanded[cardKey] tracks which bar (or 'all')
 // is currently drilled into, per card, so re-renders stay on the same view.
 
-var phState = { ready:false, lastTouched:{}, expanded:{} };
+// snapshots: [{period_month, captured_at, source}] for the month picker, newest
+// first. trend: last 6 snapshots' RAG counts for the trend card. viewing: the
+// full row (incl. data) of whichever past snapshot is on screen, or null for live.
+var phState = { ready:false, lastTouched:{}, expanded:{}, snapshots:[], trend:[], viewing:null, capturing:false };
 
 async function pgPortfolioHealth() {
   tb('Portfolio Health');
@@ -9780,16 +9783,66 @@ async function pgPortfolioHealth() {
   }
   if (!phState.ready) {
     document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>';
-    var result = await sb.from('project_change_log').select('project_id, changed_at');
-    if (result.error) console.error('Could not load change log for Portfolio Health:', result.error);
+    var results = await Promise.all([
+      sb.from('project_change_log').select('project_id, changed_at'),
+      sb.from('portfolio_health_snapshots').select('period_month, captured_at, source').order('period_month', { ascending:false }),
+      sb.from('portfolio_health_snapshots').select('period_month, data').order('period_month', { ascending:false }).limit(6)
+    ]);
+    if (results[0].error) console.error('Could not load change log for Portfolio Health:', results[0].error);
+    if (results[1].error) console.error('Could not load snapshot list:', results[1].error);
+    if (results[2].error) console.error('Could not load snapshot trend:', results[2].error);
     var lastTouched = {};
-    (result.data || []).forEach(function(r) {
+    (results[0].data || []).forEach(function(r) {
       if (!lastTouched[r.project_id] || r.changed_at > lastTouched[r.project_id]) lastTouched[r.project_id] = r.changed_at;
     });
     phState.lastTouched = lastTouched;
+    phState.snapshots = results[1].data || [];
+    phState.trend = (results[2].data || []).slice().reverse();
     phState.ready = true;
   }
   renderPortfolioHealth();
+}
+
+async function phRefreshSnapshotList() {
+  var results = await Promise.all([
+    sb.from('portfolio_health_snapshots').select('period_month, captured_at, source').order('period_month', { ascending:false }),
+    sb.from('portfolio_health_snapshots').select('period_month, data').order('period_month', { ascending:false }).limit(6)
+  ]);
+  phState.snapshots = results[0].data || [];
+  phState.trend = (results[1].data || []).slice().reverse();
+}
+
+window.phCaptureSnapshot = async function() {
+  if (phState.capturing) return;
+  phState.capturing = true;
+  renderPortfolioHealth();
+  var sessionResult = await sb.auth.getSession();
+  var token = sessionResult.data && sessionResult.data.session ? sessionResult.data.session.access_token : null;
+  if (!token) { showToast('Your session has expired — please log in again'); phState.capturing = false; renderPortfolioHealth(); return; }
+  var res, json;
+  try {
+    res = await fetch('/api/capture-portfolio-snapshot', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ accessToken: token }) });
+    json = await res.json();
+  } catch (e) { showToast('Could not reach the server: ' + e.message); phState.capturing = false; renderPortfolioHealth(); return; }
+  phState.capturing = false;
+  if (!res.ok) { showToast(json.error || 'Capture failed'); renderPortfolioHealth(); return; }
+  await phRefreshSnapshotList();
+  showToast('Snapshot captured for ' + fmtMonthYear(json.periodMonth));
+  renderPortfolioHealth();
+};
+
+window.phViewSnapshot = async function(periodMonth) {
+  if (!periodMonth) { phState.viewing = null; phState.expanded = {}; renderPortfolioHealth(); return; }
+  var result = await sb.from('portfolio_health_snapshots').select('*').eq('period_month', periodMonth).single();
+  if (result.error) { showToast('Could not load that snapshot: ' + result.error.message); return; }
+  phState.viewing = result.data;
+  phState.expanded = {};
+  renderPortfolioHealth();
+};
+
+function fmtMonthYear(dateStr) {
+  if (!dateStr) return '—';
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month:'long', year:'numeric' });
 }
 
 function phHero(value, label, color) {
@@ -9804,7 +9857,7 @@ function phOwnerCell(v) { return v ? v : '<span class="text-muted">Not set</span
 // mutually exclusive by default, so "View all" concatenates them -- unless a
 // card passes its own allRows (a project can miss more than one field, or be
 // short both Owner and Sponsor, so those two cards supply a deduped list).
-function phCard(cardKey, title, subtitle, heroHtml, bars, columns, note, allRows) {
+function phCard(cardKey, title, subtitle, heroHtml, bars, columns, note, allRows, extraHtml) {
   var filterKey = phState.expanded[cardKey];
   var maxCount = Math.max.apply(null, bars.map(function(b){ return b.count; }).concat([1]));
 
@@ -9848,6 +9901,7 @@ function phCard(cardKey, title, subtitle, heroHtml, bars, columns, note, allRows
     '</div>' +
     '<div style="margin:14px 0 2px">' + barsHtml + '</div>' +
     (note ? '<div class="text-muted" style="font-size:12px;margin-top:6px">' + note + '</div>' : '') +
+    (extraHtml || '') +
     '<div style="text-align:right;margin-top:10px">' +
       '<span style="font-size:12px;font-weight:600;color:#534AB7;cursor:pointer" onclick="phToggle(\'' + cardKey + '\',\'all\')">' +
         (filterKey === 'all' ? 'Hide list' : 'View all projects') + ' <i class="ti ti-chevron-' + (filterKey === 'all' ? 'up' : 'down') + '"></i></span>' +
@@ -9856,25 +9910,44 @@ function phCard(cardKey, title, subtitle, heroHtml, bars, columns, note, allRows
   '</div>';
 }
 
-function renderPortfolioHealth() {
-  var projects = D.projects;
-  var lastTouched = phState.lastTouched;
-  var activeProjects = projects.filter(function(p){ return p.stage === 'active'; });
+// FIELD_CHECKS' labels are needed both by the shared lib (to compute which
+// fields are blank) and here (to render the "Missing field(s)" column) --
+// kept in sync manually since the label text is presentation, not data.
+var PH_FIELD_LABELS = { description:'Description', end:'End date', start:'Start date', owner:'Owner', sponsor:'Sponsor', health:'Health' };
 
-  // 1. Stage funnel
-  var STAGE_META = [
-    { key:'backlog', label:'Backlog', color:'#5598e7' },
-    { key:'planned', label:'Planned', color:'#256abf' },
-    { key:'active', label:'Active', color:'#184f95' },
-    { key:'hold', label:'Hold', color:'#EF9F27' },
-    { key:'complete', label:'Completed', color:'#0d366b' }
-  ];
-  var funnelBars = STAGE_META.map(function(s) {
-    var rows = projects.filter(function(p){ return p.stage === s.key; });
-    return { key:s.key, label:s.label, count:rows.length, color:s.color, rows:rows };
-  });
+// Small monthly-mix trend strip for the RAG card, fed by phState.trend
+// (oldest-to-newest, capped at the last 6 snapshots). Live view only -- a
+// past snapshot doesn't get its own trend-within-a-trend.
+function phRagTrendHtml() {
+  if (phState.viewing) return '';
+  if (!phState.trend.length) {
+    return '<div class="text-muted" style="font-size:12px;margin-top:10px">No snapshots captured yet -- a trend will build up here month over month once "Capture snapshot now" (or the monthly automatic capture) has run a few times.</div>';
+  }
+  var months = phState.trend.map(function(s) {
+    var rag = (s.data && s.data.rag && s.data.rag.bars) || [];
+    var by = {}; rag.forEach(function(b){ by[b.key] = b.count; });
+    var green = by.green || 0, amber = by.amber || 0, red = by.red || 0;
+    var total = green + amber + red;
+    var label = fmtMonthYear(s.period_month).split(' ')[0].slice(0, 3);
+    var title = fmtMonthYear(s.period_month) + ': ' + green + ' green, ' + amber + ' amber, ' + red + ' red';
+    function seg(n, color) { return total ? ('<div style="flex:' + n + ';background:' + color + '" title="' + title + '"></div>') : ''; }
+    return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px">' +
+      '<div style="width:100%;max-width:30px;height:56px;border-radius:4px;overflow:hidden;display:flex;flex-direction:column-reverse;gap:2px;background:#f0ede8" title="' + title + '">' +
+        seg(green, '#1D9E75') + seg(amber, '#EF9F27') + seg(red, '#E24B4A') +
+      '</div><div style="font-size:10.5px;color:#999">' + label + '</div>' +
+    '</div>';
+  }).join('');
+  return '<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #e8e8e5">' +
+    '<div class="text-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Mix, last ' + phState.trend.length + ' snapshot' + (phState.trend.length===1?'':'s') + '</div>' +
+    '<div style="display:flex;align-items:flex-end;gap:8px;height:76px">' + months + '</div>' +
+  '</div>';
+}
+
+function renderPortfolioHealth() {
+  var snap = phState.viewing ? phState.viewing.data : PortfolioHealth.computePortfolioHealthSnapshot(D.projects, phState.lastTouched);
+
   var funnelCard = phCard('funnel', 'Portfolio stage funnel', 'Every project, by lifecycle stage',
-    phHero(projects.length, 'projects'), funnelBars,
+    phHero(snap.totalCount, 'projects'), snap.funnel.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Health', cell:function(p){ return hdot(p.health) + (EXPORT_HEALTH_LABELS[p.health] || 'Not set'); } },
@@ -9884,41 +9957,19 @@ function renderPortfolioHealth() {
     ],
     'Hold is a paused state, not further progress along the funnel.');
 
-  // 2. RAG status, active projects
-  var RAG_META = [
-    { key:'green', label:'Green — on track', color:'#1D9E75' },
-    { key:'amber', label:'Amber — at risk', color:'#EF9F27' },
-    { key:'red', label:'Red — critical', color:'#E24B4A' },
-    { key:'unset', label:'Not set', color:'#ccc' }
-  ];
-  var ragBars = RAG_META.map(function(s) {
-    var rows = activeProjects.filter(function(p){ return (p.health || 'unset') === s.key; });
-    return { key:s.key, label:s.label, count:rows.length, color:s.color, dot:s.color, rows:rows };
-  }).filter(function(b){ return b.key !== 'unset' || b.count > 0; });
-  var redCount = (ragBars.filter(function(b){ return b.key === 'red'; })[0] || { count:0 }).count;
-  var ragCard = phCard('rag', 'RAG status — active projects', 'Current health across the ' + activeProjects.length + ' Active-stage projects',
-    phHero(redCount, 'red right now', '#E24B4A'), ragBars,
+  var ragCard = phCard('rag', 'RAG status — active projects', 'Current health across the ' + snap.activeCount + ' Active-stage projects',
+    phHero(snap.rag.redCount, 'red right now', '#E24B4A'), snap.rag.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
       { h:'Sponsor', cell:function(p){ return phOwnerCell(p.sponsor); } },
-      { h:'Last updated', cell:function(p){ var t = lastTouched[p.id] || p.createdAt; var d = daysSince(t); return d != null ? (d + 'd ago') : '—'; } },
+      { h:'Last updated', cell:function(p){ var t = phState.lastTouched[p.id] || p.createdAt; var d = daysSince(t); return d != null ? (d + 'd ago') : '—'; } },
       { h:'', cell:phViewBtn }
     ],
-    'Snapshot only for now — a trend view is a natural next addition.');
+    null, undefined, phRagTrendHtml());
 
-  // 3. Late items, by stage
-  var lateProjects = projects.filter(isProjectLate);
-  var LATE_STAGE_META = [
-    { key:'active', label:'Active' }, { key:'planned', label:'Planned' },
-    { key:'backlog', label:'Backlog' }, { key:'hold', label:'Hold' }
-  ];
-  var lateBars = LATE_STAGE_META.map(function(s) {
-    var rows = lateProjects.filter(function(p){ return p.stage === s.key; });
-    return { key:s.key, label:s.label, count:rows.length, color:'#E24B4A', rows:rows };
-  });
   var lateCard = phCard('late', 'Late projects', 'Projects past their target end date, by the stage they\'re stuck in',
-    phHero(lateProjects.length, 'late right now', '#E24B4A'), lateBars,
+    phHero(snap.late.count, 'late right now', '#E24B4A'), snap.late.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Stage', cell:function(p){ return bdg(EXPORT_STAGE_LABELS[p.stage] || p.stage); } },
@@ -9927,58 +9978,17 @@ function renderPortfolioHealth() {
       { h:'', cell:phViewBtn }
     ]);
 
-  // 3b. Late plan tasks & to-dos, projects bucketed by how many they have
-  var lateCountByProject = {};
-  projects.forEach(function(p) {
-    var count = 0;
-    p.tasks.forEach(function(t){ if (isTaskLate(t)) count++; });
-    p.todos.forEach(function(td){ if (isTodoLate(td)) count++; });
-    if (count > 0) lateCountByProject[p.id] = count;
-  });
-  var LATE_TASK_BUCKETS = [
-    { key:'20', label:'20+ late tasks', color:'#E24B4A', test:function(c){ return c >= 20; } },
-    { key:'10', label:'10–19 late tasks', color:'#ec835a', test:function(c){ return c >= 10 && c < 20; } },
-    { key:'5', label:'5–9 late tasks', color:'#EF9F27', test:function(c){ return c >= 5 && c < 10; } },
-    { key:'1', label:'1–4 late tasks', color:'#5598e7', test:function(c){ return c >= 1 && c < 5; } }
-  ];
-  var lateTaskBars = LATE_TASK_BUCKETS.map(function(b) {
-    var rows = projects.filter(function(p){ return lateCountByProject[p.id] != null && b.test(lateCountByProject[p.id]); })
-      .sort(function(a, c){ return lateCountByProject[c.id] - lateCountByProject[a.id]; });
-    return { key:b.key, label:b.label, count:rows.length, color:b.color, rows:rows };
-  });
-  var projectsWithLateTasks = Object.keys(lateCountByProject).length;
   var lateTaskCard = phCard('latetasks', 'Late tasks', 'Projects with plan tasks or to-dos past their date and not yet done, grouped by how many',
-    phHero(projectsWithLateTasks, 'projects affected', projectsWithLateTasks ? '#E24B4A' : null), lateTaskBars,
+    phHero(snap.lateTasks.projectsAffected, 'projects affected', snap.lateTasks.projectsAffected ? '#E24B4A' : null), snap.lateTasks.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
-      { h:'Late tasks', cell:function(p){ return lateCountByProject[p.id]; } },
+      { h:'Late tasks', cell:function(p){ return p._lateTaskCount; } },
       { h:'', cell:phViewBtn }
     ]);
 
-  // 4. Open risks & issues, by severity
-  var openEntries = [];
-  projects.forEach(function(p) {
-    (p.raid.risks || []).forEach(function(r) {
-      if (r.status !== 'Open') return;
-      openEntries.push({ project:p, kind:'Risk', title:r.desc, severity:riskEffectiveSeverity(r), opened:raidOpenedDate(r) });
-    });
-    (p.raid.issues || []).forEach(function(r) {
-      if (r.status !== 'Open') return;
-      openEntries.push({ project:p, kind:'Issue', title:r.desc, severity:r.severity || 'Medium', opened:raidOpenedDate(r) });
-    });
-  });
-  var SEV_META = [
-    { key:'High', label:'High', color:'#E24B4A' },
-    { key:'Medium', label:'Medium', color:'#EF9F27' },
-    { key:'Low', label:'Low', color:'#5598e7' }
-  ];
-  var riskBars = SEV_META.map(function(s) {
-    var rows = openEntries.filter(function(e){ return e.severity === s.key; });
-    return { key:s.key, label:s.label, count:rows.length, color:s.color, rows:rows };
-  });
   var riskCard = phCard('risk', 'Open risks & issues', 'RAID log entries across every project, by severity',
-    phHero(openEntries.length, 'open entries'), riskBars,
+    phHero(snap.risk.total, 'open entries'), snap.risk.bars,
     [
       { h:'Type', cell:function(e){ return e.kind; } },
       { h:'Title', cell:function(e){ return e.title || '<span class="text-muted">No description</span>'; } },
@@ -9988,15 +9998,8 @@ function renderPortfolioHealth() {
     ],
     'Risks don\'t carry their own severity, so theirs is derived from probability × impact to sit on the same scale as issues.');
 
-  // 5. Missing owner / sponsor
-  var missingScope = projects.filter(function(p){ return p.stage !== 'complete'; });
-  var missingBars = [
-    { key:'owner', label:'No Owner', rows:missingScope.filter(function(p){ return !p.owner; }) },
-    { key:'sponsor', label:'No Sponsor', rows:missingScope.filter(function(p){ return !p.sponsor; }) }
-  ].map(function(b){ return Object.assign(b, { count:b.rows.length, color:'#EF9F27' }); });
-  var missingAll = missingScope.filter(function(p){ return !p.owner || !p.sponsor; });
   var missingCard = phCard('missing', 'Missing owner or sponsor', 'Backlog through Hold — projects that should have both roles filled in',
-    phHero(missingAll.length, 'projects affected', '#EF9F27'), missingBars,
+    phHero(snap.missing.allRows.length, 'projects affected', '#EF9F27'), snap.missing.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Stage', cell:function(p){ return bdg(EXPORT_STAGE_LABELS[p.stage] || p.stage); } },
@@ -10004,46 +10007,19 @@ function renderPortfolioHealth() {
       { h:'Sponsor', cell:function(p){ return phOwnerCell(p.sponsor); } },
       { h:'', cell:phViewBtn }
     ],
-    null, missingAll);
+    null, snap.missing.allRows);
 
-  // 6. Owner load
-  var OWNER_LOAD_THRESHOLD = 3;
-  var loadScope = projects.filter(function(p){ return ['active','planned','hold'].indexOf(p.stage) >= 0 && p.owner; });
-  var byOwner = {};
-  loadScope.forEach(function(p){ (byOwner[p.owner] = byOwner[p.owner] || []).push(p); });
-  var allLoadBars = Object.keys(byOwner).map(function(name) {
-    var rows = byOwner[name];
-    return { key:name, label:name, count:rows.length, color:rows.length >= OWNER_LOAD_THRESHOLD ? '#EF9F27' : '#256abf', rows:rows };
-  }).sort(function(a, b){ return b.count - a.count || a.label.localeCompare(b.label); });
-  var overThreshold = allLoadBars.filter(function(b){ return b.count >= OWNER_LOAD_THRESHOLD; }).length;
   var loadCard = phCard('load', 'Owner load', 'Active + Planned + Hold projects, counted per person as Owner (top 8 shown)',
-    phHero(overThreshold, 'at/over ' + OWNER_LOAD_THRESHOLD + ' projects', overThreshold ? '#EF9F27' : null), allLoadBars.slice(0, 8),
+    phHero(snap.load.overThreshold, 'at/over ' + snap.load.threshold + ' projects', snap.load.overThreshold ? '#EF9F27' : null), snap.load.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Stage', cell:function(p){ return bdg(EXPORT_STAGE_LABELS[p.stage] || p.stage); } },
       { h:'', cell:phViewBtn }
     ],
-    null, loadScope.slice().sort(function(a, b){ return a.owner.localeCompare(b.owner) || a.name.localeCompare(b.name); }));
+    null, snap.load.allRows);
 
-  // 7. Stale active projects
-  var STALE_BUCKETS = [
-    { key:'60', label:'60+ days', color:'#E24B4A', test:function(d){ return d >= 60; } },
-    { key:'45', label:'45–59 days', color:'#ec835a', test:function(d){ return d >= 45 && d < 60; } },
-    { key:'30', label:'30–44 days', color:'#EF9F27', test:function(d){ return d >= 30 && d < 45; } },
-    { key:'14', label:'14–29 days', color:'#5598e7', test:function(d){ return d >= 14 && d < 30; } },
-    { key:'7', label:'7–13 days', color:'#9ec5f4', test:function(d){ return d >= 7 && d < 14; } }
-  ];
-  activeProjects.forEach(function(p) {
-    var touched = lastTouched[p.id] || p.createdAt;
-    p._staleDays = touched ? daysSince(touched) : null;
-  });
-  var trueStaleCount = activeProjects.filter(function(p){ return p._staleDays != null && p._staleDays >= 30; }).length;
-  var staleBars = STALE_BUCKETS.map(function(b) {
-    var rows = activeProjects.filter(function(p){ return p._staleDays != null && b.test(p._staleDays); });
-    return { key:b.key, label:b.label, count:rows.length, color:b.color, rows:rows };
-  });
   var staleCard = phCard('stale', 'Stale active projects', 'Active-stage projects by days since their last logged change — 30+ counts as stale',
-    phHero(trueStaleCount, 'of ' + activeProjects.length + ' active', trueStaleCount ? '#EF9F27' : null), staleBars,
+    phHero(snap.stale.trueStaleCount, 'of ' + snap.activeCount + ' active', snap.stale.trueStaleCount ? '#EF9F27' : null), snap.stale.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Days since update', cell:function(p){ return p._staleDays + 'd'; } },
@@ -10053,33 +10029,34 @@ function renderPortfolioHealth() {
     ],
     '30+ days (amber to red) is the stale threshold; 7–29 days is shown for context on what\'s aging toward it.');
 
-  // 8. Blank fields, active projects
-  var FIELD_CHECKS = [
-    { key:'description', label:'Description', test:function(p){ return !p.description; } },
-    { key:'end', label:'End date', test:function(p){ return !p.end; } },
-    { key:'start', label:'Start date', test:function(p){ return !p.start; } },
-    { key:'owner', label:'Owner', test:function(p){ return !p.owner; } },
-    { key:'sponsor', label:'Sponsor', test:function(p){ return !p.sponsor; } },
-    { key:'health', label:'Health', test:function(p){ return !p.health; } }
-  ];
-  var blankBars = FIELD_CHECKS.map(function(f) {
-    var rows = activeProjects.filter(f.test);
-    var pct = activeProjects.length ? Math.round(rows.length / activeProjects.length * 100) : 0;
-    return { key:f.key, label:f.label, count:rows.length, valueLabel:pct + '%', color:'#256abf', rows:rows };
-  }).sort(function(a, b){ return b.count - a.count; });
-  var blankAll = activeProjects.filter(function(p){ return FIELD_CHECKS.some(function(f){ return f.test(p); }); });
   var blankCard = phCard('blank', 'Blank fields, active projects', 'Share of active projects missing each field',
-    phHero((blankBars[0] ? blankBars[0].valueLabel : '0%'), 'worst field'), blankBars,
+    phHero((snap.blank.bars[0] ? snap.blank.bars[0].valueLabel : '0%'), 'worst field'), snap.blank.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
-      { h:'Missing field(s)', cell:function(p){ return FIELD_CHECKS.filter(function(f){ return f.test(p); }).map(function(f){ return f.label; }).join(', '); } },
+      { h:'Missing field(s)', cell:function(p){ return (p._blankFields||[]).map(function(k){ return PH_FIELD_LABELS[k]; }).join(', '); } },
       { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
       { h:'', cell:phViewBtn }
     ],
-    null, blankAll);
+    null, snap.blank.allRows);
+
+  var monthOptions = '<option value="">Live</option>' + phState.snapshots.map(function(s) {
+    var label = fmtMonthYear(s.period_month) + (s.source === 'manual' ? ' (manual)' : '');
+    var selected = phState.viewing && phState.viewing.period_month === s.period_month ? ' selected' : '';
+    return '<option value="' + s.period_month + '"' + selected + '>' + label + '</option>';
+  }).join('');
+
+  var toolbarHtml = '<div class="ph-toolbar mb-16" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<select onchange="phViewSnapshot(this.value)" style="width:auto;min-width:170px">' + monthOptions + '</select>' +
+    '<button class="btn btn-sm" onclick="phCaptureSnapshot()"' + (phState.capturing ? ' disabled' : '') + '><i class="ti ti-camera"></i> ' + (phState.capturing ? 'Capturing…' : 'Capture snapshot now') + '</button>' +
+    '<button class="btn btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Download PDF</button>' +
+  '</div>';
+
+  var bannerHtml = phState.viewing
+    ? '<div class="info-banner info-blue mb-16"><i class="ti ti-calendar-event"></i><span>Viewing the <strong>' + fmtMonthYear(phState.viewing.period_month) + '</strong> snapshot, captured ' + fmtDate(phState.viewing.captured_at) + (phState.viewing.captured_by_name ? ' by ' + phState.viewing.captured_by_name : ' automatically') + '. <a href="javascript:void(0)" onclick="phViewSnapshot(null)">Back to live</a></span></div>'
+    : '<div class="info-banner info-blue mb-16"><i class="ti ti-info-circle"></i><span>Computed from your live project, RAID, and change-log data. Click any bar to see which projects make it up.</span></div>';
 
   document.getElementById('content').innerHTML =
-    '<div class="info-banner info-blue mb-16"><i class="ti ti-info-circle"></i><span>Computed from your live project, RAID, and change-log data. Click any bar to see which projects make it up.</span></div>' +
+    toolbarHtml + bannerHtml +
     funnelCard + ragCard + lateCard + lateTaskCard + riskCard + missingCard + loadCard + staleCard + blankCard;
 
   window.phToggle = function(cardKey, filterKey) {
