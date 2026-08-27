@@ -14,6 +14,14 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-08-27">
+  <h2>Portfolio Health</h2>
+  <p class="changelog-date">August 27, 2026 · 12:41 PM – 1:02 PM</p>
+  <ul>
+    <li>New <strong>Portfolio Health</strong> page under Overview (admin-only) — a click-to-drill dashboard of eight metrics: portfolio stage funnel, RAG status for active projects, late projects by stage, late tasks (plan tasks + to-dos combined, bucketed by how many per project), open RAID risks &amp; issues by severity, projects missing an Owner or Sponsor, Owner load, stale active projects, and blank fields on active projects. Click any bar to expand exactly which projects make up that number.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-08-26">
   <h2>Capacity</h2>
   <p class="changelog-date">August 26, 2026 · 10:45 AM – 5:05 PM</p>

@@ -92,6 +92,12 @@
   guide: Admin Guide
   blurb: Reviewing, finalizing, approving, or rejecting project requests.
 
+- title: Portfolio Health
+  page: /admin-guide/
+  anchor: portfolio-health
+  guide: Admin Guide
+  blurb: Click-to-drill dashboard of stage funnel, RAG status, late items, open RAID risk, ownership gaps, and data hygiene.
+
 - title: Programs
   page: /admin-guide/
   anchor: programs

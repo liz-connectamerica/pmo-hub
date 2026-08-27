@@ -83,6 +83,20 @@ flowchart TD
     class Deleted deletedNode
 </pre>
 
+## Portfolio Health
+
+A read-only dashboard of portfolio-wide metrics, in the **Overview** section of the sidebar — admin-only. Every card is click-to-drill: click a bar (or **View all projects**) to expand the exact projects behind that number, right there under the card.
+
+- **Portfolio stage funnel** — every project, by lifecycle stage. Hold is called out separately from the Backlog→Planned→Active→Completed progression, since it's a paused state, not further progress.
+- **RAG status — active projects** — the current Green/Amber/Red mix across Active-stage projects. Snapshot only for now; a trend-over-time view needs either a scheduled snapshot job or reconstructing history from the change log, and hasn't been built yet.
+- **Late projects** — projects past their target end date, broken out by the stage they're stuck in.
+- **Late tasks** — projects with plan tasks and/or to-dos past their date and not yet done, bucketed by how many (1–4, 5–9, 10–19, 20+), worst first. Expanding a bucket lists the projects in it with their owner and late-item count, not the individual tasks.
+- **Open risks & issues** — every open RAID risk and issue across the portfolio, by severity. Issues carry their own Severity field; risks don't, so theirs is derived from Probability × Impact to sit on the same High/Medium/Low scale.
+- **Missing owner or sponsor** — Backlog-through-Hold projects missing either role.
+- **Owner load** — how many Active/Planned/Hold projects each person owns; anyone at or above 3 is flagged.
+- **Stale active projects** — Active-stage projects by days since their last logged change (30+ counts as stale; 7–29 is shown underneath for context on what's aging toward it).
+- **Blank fields, active projects** — share of Active projects missing each of Description, End date, Start date, Owner, Sponsor, and Health.
+
 ## Programs
 
 A program is a named collection of projects — each project can belong to at most one program, or none. Every program has a **Program ID** (P1, P2, P3…, assigned automatically), a name, description, and business objective, plus three resource-linked roles: **Program Sponsor**, **Program Manager**, and **Business Owner**.
