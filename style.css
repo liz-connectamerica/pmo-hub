@@ -114,6 +114,15 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
 .ph-chip button { border: none; background: #e8e8e5; color: #555; width: 16px; height: 16px; border-radius: 50%; font-size: 11px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .ph-chip button:hover { background: #d8d8d5; }
 
+/* Portfolio Health -- print / "Download PDF" (window.print()) */
+@media print {
+  .sidebar, .topbar, .ph-toolbar, .ph-chip button { display: none !important; }
+  .content { overflow: visible; padding: 0; }
+  .app, .main { display: block; height: auto; overflow: visible; }
+  .card { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
+  .ph-bar-row { cursor: default; }
+}
+
 /* Avatars */
 .avatar { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
 .av-purple { background: #EEEDFE; color: #3C3489; }

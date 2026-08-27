@@ -6,5 +6,8 @@
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
     }
+  ],
+  "crons": [
+    { "path": "/api/capture-portfolio-snapshot", "schedule": "0 6 1 * *" }
   ]
 }
