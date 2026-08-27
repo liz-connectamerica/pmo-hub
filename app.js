@@ -804,6 +804,11 @@ async function applyTagDiff(table, idColumn, idValue, oldTags, newTags) {
   return { tags: current, failed: failed };
 }
 
+// Sentinel representing "this field has no value," so blank/null can be
+// filtered on the same as any real value. Chosen to never collide with real data.
+var FILTER_UNSET = '__unset__';
+function fv(v) { return v || FILTER_UNSET; }
+
 function openFilterModal(label, choices, getSelected, toggleValue, clearAll, rerenderPage, labelFor) {
   function render() {
     var selected = getSelected();
@@ -7513,21 +7518,21 @@ function pgAllProjects() {
     var q = st.search.toLowerCase();
     list = list.filter(function(p){ return p.name.toLowerCase().indexOf(q) >= 0; });
   }
-  if (st.filters.category.length) list = list.filter(function(p){ return st.filters.category.some(function(c){ return (p.categories||[]).indexOf(c) >= 0; }); });
-  if (st.filters.businessUnit.length) list = list.filter(function(p){ return st.filters.businessUnit.indexOf(p.businessUnit) >= 0; });
+  if (st.filters.category.length) list = list.filter(function(p){ return st.filters.category.some(function(c){ return c === FILTER_UNSET ? !(p.categories && p.categories.length) : (p.categories||[]).indexOf(c) >= 0; }); });
+  if (st.filters.businessUnit.length) list = list.filter(function(p){ return st.filters.businessUnit.indexOf(fv(p.businessUnit)) >= 0; });
   if (st.filters.stage.length) list = list.filter(function(p){ return st.filters.stage.indexOf(p.stage) >= 0; });
-  if (st.filters.status.length) list = list.filter(function(p){ return st.filters.status.indexOf(p.status) >= 0; });
-  if (st.filters.phase.length) list = list.filter(function(p){ return st.filters.phase.indexOf(p.phase) >= 0; });
-  if (st.filters.priority.length) list = list.filter(function(p){ return st.filters.priority.indexOf(p.priority) >= 0; });
-  if (st.filters.value.length) list = list.filter(function(p){ return st.filters.value.indexOf(p.value) >= 0; });
-  if (st.filters.sponsor.length) list = list.filter(function(p){ return st.filters.sponsor.indexOf(p.sponsor) >= 0; });
-  if (st.filters.owner.length) list = list.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
-  if (st.filters.tshirtSize.length) list = list.filter(function(p){ return st.filters.tshirtSize.indexOf(p.tshirtSize) >= 0; });
-  if (st.filters.health.length) list = list.filter(function(p){ return st.filters.health.indexOf(p.health) >= 0; });
-  if (st.filters.deliveryMethodology.length) list = list.filter(function(p){ return st.filters.deliveryMethodology.indexOf(p.deliveryMethodology) >= 0; });
-  if (st.filters.estimatedType.length) list = list.filter(function(p){ return st.filters.estimatedType.indexOf(p.estimatedType) >= 0; });
-  if (st.filters.valueConfidence.length) list = list.filter(function(p){ return st.filters.valueConfidence.indexOf(p.valueConfidence) >= 0; });
-  if (st.filters.costConfidence.length) list = list.filter(function(p){ return st.filters.costConfidence.indexOf(p.costConfidence) >= 0; });
+  if (st.filters.status.length) list = list.filter(function(p){ return st.filters.status.indexOf(fv(p.status)) >= 0; });
+  if (st.filters.phase.length) list = list.filter(function(p){ return st.filters.phase.indexOf(fv(p.phase)) >= 0; });
+  if (st.filters.priority.length) list = list.filter(function(p){ return st.filters.priority.indexOf(fv(p.priority)) >= 0; });
+  if (st.filters.value.length) list = list.filter(function(p){ return st.filters.value.indexOf(fv(p.value)) >= 0; });
+  if (st.filters.sponsor.length) list = list.filter(function(p){ return st.filters.sponsor.indexOf(fv(p.sponsor)) >= 0; });
+  if (st.filters.owner.length) list = list.filter(function(p){ return st.filters.owner.indexOf(fv(p.owner)) >= 0; });
+  if (st.filters.tshirtSize.length) list = list.filter(function(p){ return st.filters.tshirtSize.indexOf(fv(p.tshirtSize)) >= 0; });
+  if (st.filters.health.length) list = list.filter(function(p){ return st.filters.health.indexOf(fv(p.health)) >= 0; });
+  if (st.filters.deliveryMethodology.length) list = list.filter(function(p){ return st.filters.deliveryMethodology.indexOf(fv(p.deliveryMethodology)) >= 0; });
+  if (st.filters.estimatedType.length) list = list.filter(function(p){ return st.filters.estimatedType.indexOf(fv(p.estimatedType)) >= 0; });
+  if (st.filters.valueConfidence.length) list = list.filter(function(p){ return st.filters.valueConfidence.indexOf(fv(p.valueConfidence)) >= 0; });
+  if (st.filters.costConfidence.length) list = list.filter(function(p){ return st.filters.costConfidence.indexOf(fv(p.costConfidence)) >= 0; });
 
   list.sort(function(a,b) {
     var av = a[st.sort]; var bv = b[st.sort];
@@ -7612,18 +7617,26 @@ function pgAllProjects() {
   window.toggleAllProjFilter = function(col) {
     var labelMap = { category:'Category', businessUnit:'Business Unit', stage:'Stage', status:'Status', phase:'Phase', priority:'Priority', value:'Value Area', sponsor:'Sponsor', owner:'Owner',
       tshirtSize:'T-shirt Size', health:'Health', deliveryMethodology:'Delivery Methodology', estimatedType:'Opportunity Type', valueConfidence:'Opportunity Type Confidence', costConfidence:'Cost Estimate Confidence' };
-    var choicesMap = { category:CATEGORIES, businessUnit:BUSINESS_UNITS, stage:stageChoices, status:STATUSES, phase:PHASES, priority:PRIORITIES, value:VALUE_AREAS, sponsor:sponsorChoices, owner:ownerChoices,
+    var baseChoicesMap = { category:CATEGORIES, businessUnit:BUSINESS_UNITS, stage:stageChoices, status:STATUSES, phase:PHASES, priority:PRIORITIES, value:VALUE_AREAS, sponsor:sponsorChoices, owner:ownerChoices,
       tshirtSize:TSHIRT_SIZES, health:['green','amber','red'], deliveryMethodology:['Agile','Waterfall','Hybrid'], estimatedType:['Revenue','Savings'], valueConfidence:CONFIDENCE_LEVELS, costConfidence:CONFIDENCE_LEVELS };
-    var labelForMap = {
+    // Stage can never actually be blank (defaults to Backlog), so it's the
+    // one column that doesn't get a "Not set" option -- every other column
+    // does, since any of them can legitimately be empty on a real project.
+    var choices = col === 'stage' ? baseChoicesMap[col] : baseChoicesMap[col].concat([FILTER_UNSET]);
+    var rawLabelFor = {
       health: function(v){ return hdot(v) + (EXPORT_HEALTH_LABELS[v] || v); },
       estimatedType: function(v){ return v === 'Revenue' ? 'Revenue opportunity' : 'Cost savings opportunity'; }
-    };
-    openFilterModal(labelMap[col], choicesMap[col],
+    }[col];
+    function labelFor(v) {
+      if (v === FILTER_UNSET) return '<span class="text-muted">— Not set —</span>';
+      return rawLabelFor ? rawLabelFor(v) : v;
+    }
+    openFilterModal(labelMap[col], choices,
       function() { return st.filters[col]; },
       function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
       function() { st.filters[col] = []; },
       pgAllProjects,
-      labelForMap[col]
+      labelFor
     );
   };
 
