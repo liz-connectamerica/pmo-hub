@@ -9918,7 +9918,7 @@ function renderPortfolioHealth() {
     var rows = lateProjects.filter(function(p){ return p.stage === s.key; });
     return { key:s.key, label:s.label, count:rows.length, color:'#E24B4A', rows:rows };
   });
-  var lateCard = phCard('late', 'Late items', 'Projects past their target end date, by the stage they\'re stuck in',
+  var lateCard = phCard('late', 'Late projects', 'Projects past their target end date, by the stage they\'re stuck in',
     phHero(lateProjects.length, 'late right now', '#E24B4A'), lateBars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
