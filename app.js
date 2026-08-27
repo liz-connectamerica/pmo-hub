@@ -9843,7 +9843,7 @@ function phCard(cardKey, title, subtitle, heroHtml, bars, columns, note, allRows
 
   return '<div class="card mb-16">' +
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px">' +
-      '<div><div class="section-title" style="margin-bottom:2px">' + title + '</div><div class="text-muted" style="font-size:12.5px;max-width:48ch">' + subtitle + '</div></div>' +
+      '<div><div class="section-title" style="margin-bottom:2px">' + title + '</div><div class="text-muted" style="font-size:12.5px">' + subtitle + '</div></div>' +
       heroHtml +
     '</div>' +
     '<div style="margin:14px 0 2px">' + barsHtml + '</div>' +
