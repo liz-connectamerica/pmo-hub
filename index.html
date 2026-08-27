@@ -42,6 +42,13 @@
 <div class="app" id="app-root" style="display:none">
   <div class="sidebar">
     <div class="sidebar-logo"><i class="ti ti-layout-dashboard"></i> PMO Hub</div>
+    <div class="sidebar-search">
+      <div class="sidebar-search-box">
+        <i class="ti ti-search"></i>
+        <input type="text" id="global-search-input" placeholder="Search projects &amp; work requests…" autocomplete="off" oninput="onGlobalSearch(this.value)" onfocus="onGlobalSearchFocus()">
+      </div>
+      <div id="global-search-results" class="global-search-results" hidden></div>
+    </div>
     <div id="nav-menu"></div>
     <div class="role-switcher">
       <div class="role-label">Signed in as</div>
