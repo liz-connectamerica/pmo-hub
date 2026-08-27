@@ -2072,6 +2072,33 @@ function lateBadgeHtml(isLate, title) {
   return isLate ? '<span class="badge badge-red badge-late" title="' + (title || 'Past its date and not yet closed out') + '"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>Late</span>' : '';
 }
 
+function daysSince(iso) {
+  if (!iso) return null;
+  return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+}
+function daysLate(p) { return Math.round((new Date(todayStr()) - new Date(p.end)) / 86400000); }
+
+// Issues carry a severity field directly; risks don't, so this derives an
+// equivalent High/Medium/Low from the probability/impact pair already
+// captured on every risk, using a simple probability-band x impact-weight
+// score -- good enough to rank risks and issues on one shared scale.
+function riskEffectiveSeverity(risk) {
+  var impactWeight = { Low:1, Medium:2, High:3 }[risk.impact] || 2;
+  var probBand = (risk.probability||0) >= 67 ? 3 : (risk.probability||0) >= 34 ? 2 : 1;
+  var score = impactWeight * probBand;
+  return score >= 6 ? 'High' : score >= 3 ? 'Medium' : 'Low';
+}
+
+// RAID items don't carry their own created_at on the client, so "days open"
+// is read off the item's own log -- the "Created" entry if present, else the
+// earliest logged date.
+function raidOpenedDate(item) {
+  var created = (item.log || []).filter(function(l){ return l.action === 'Created'; })[0];
+  if (created) return created.date;
+  var dates = (item.log || []).map(function(l){ return l.date; }).filter(Boolean).sort();
+  return dates.length ? dates[0] : null;
+}
+
 function fmtDateTime(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
@@ -2169,7 +2196,7 @@ var projectDetailReferrer = null;
 
 var NAV_DEF = {
   admin: [
-    { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
+    { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'portfolio-health',icon:'ti-activity',label:'Portfolio Health'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
       {id:'my-requests',  icon:'ti-clock', label:'My Requests', badge:'my-requests'}
@@ -2285,7 +2312,8 @@ var PAGE_RENDERERS = {
   'import-projects':pgImportProjects, 'import-work-requests':pgImportWorkRequests, 'export-projects':pgExportProjects, 'admin-users':pgAdminUsers, 'admin-tags':pgAdminTags, 'admin-values':pgManageValues, 'future-planning':pgFuturePlanning, hold:pgHold, 'all-projects':pgAllProjects,
   'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems,
   'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests, 'admin-personal-todos':pgAdminPersonalTodos,
-  'my-capacity':pgMyCapacity, 'admin-capacity-weights':pgAdminCapacityWeights
+  'my-capacity':pgMyCapacity, 'admin-capacity-weights':pgAdminCapacityWeights,
+  'portfolio-health':pgPortfolioHealth
 };
 
 function pageAllowedForRole(page, role) {
@@ -9732,6 +9760,302 @@ function pgCapacity() {
     pgCapacity();
     var el = document.getElementById('cap-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+}
+
+// ── Portfolio Health ────────────────────────────────────────────────────────
+// Every metric here computes from data already in D.projects, plus one extra
+// table (project_change_log) fetched once and cached, since it's not part of
+// the normal project payload. expanded[cardKey] tracks which bar (or 'all')
+// is currently drilled into, per card, so re-renders stay on the same view.
+
+var phState = { ready:false, lastTouched:{}, expanded:{} };
+
+async function pgPortfolioHealth() {
+  tb('Portfolio Health');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access Portfolio Health.</p></div>';
+    return;
+  }
+  if (!phState.ready) {
+    document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>';
+    var result = await sb.from('project_change_log').select('project_id, changed_at');
+    if (result.error) console.error('Could not load change log for Portfolio Health:', result.error);
+    var lastTouched = {};
+    (result.data || []).forEach(function(r) {
+      if (!lastTouched[r.project_id] || r.changed_at > lastTouched[r.project_id]) lastTouched[r.project_id] = r.changed_at;
+    });
+    phState.lastTouched = lastTouched;
+    phState.ready = true;
+  }
+  renderPortfolioHealth();
+}
+
+function phHero(value, label, color) {
+  return '<div style="text-align:right;flex-shrink:0"><div style="font-size:24px;font-weight:700' + (color ? ';color:' + color : '') + '">' + value +
+    '</div><div class="text-muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;margin-top:2px">' + label + '</div></div>';
+}
+
+function phViewBtn(p) { return '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>'; }
+function phOwnerCell(v) { return v ? v : '<span class="text-muted">Not set</span>'; }
+
+// bars: [{key,label,count,color,rows,dot?,valueLabel?}]. Each bar's rows are
+// mutually exclusive by default, so "View all" concatenates them -- unless a
+// card passes its own allRows (a project can miss more than one field, or be
+// short both Owner and Sponsor, so those two cards supply a deduped list).
+function phCard(cardKey, title, subtitle, heroHtml, bars, columns, note, allRows) {
+  var filterKey = phState.expanded[cardKey];
+  var maxCount = Math.max.apply(null, bars.map(function(b){ return b.count; }).concat([1]));
+
+  var barsHtml = bars.map(function(b) {
+    var pct = Math.round((b.count / maxCount) * 100);
+    var isActive = filterKey === b.key;
+    var keyEsc = String(b.key).replace(/'/g, "\\'");
+    return '<div class="ph-bar-row' + (isActive ? ' active' : '') + '" onclick="phToggle(\'' + cardKey + '\',\'' + keyEsc + '\')">' +
+      '<div class="ph-bar-label">' + (b.dot ? '<span style="width:8px;height:8px;border-radius:50%;background:' + b.dot + ';display:inline-block;flex-shrink:0;margin-right:6px"></span>' : '') + b.label + '</div>' +
+      '<div class="ph-bar-track"><div class="ph-bar-fill" style="width:' + pct + '%;background:' + b.color + '"></div></div>' +
+      '<div class="ph-bar-value">' + (b.valueLabel != null ? b.valueLabel : b.count) + '</div>' +
+    '</div>';
+  }).join('');
+
+  var drillHtml = '';
+  if (filterKey) {
+    var rows, label;
+    if (filterKey === 'all') {
+      rows = allRows || bars.reduce(function(acc, b){ return acc.concat(b.rows); }, []);
+      label = 'All';
+    } else {
+      var match = bars.filter(function(b){ return b.key === filterKey; })[0];
+      rows = match ? match.rows : [];
+      label = match ? match.label : filterKey;
+    }
+    drillHtml = '<div class="mt-16" style="border-top:1px dashed #e8e8e5;padding-top:14px">' +
+      '<div class="ph-chip">' + label + ' · ' + rows.length + (rows.length === 1 ? ' project' : ' projects') +
+        '<button onclick="event.stopPropagation();phToggle(\'' + cardKey + '\',null)"><i class="ti ti-x" style="font-size:10px"></i></button></div>' +
+      (rows.length
+        ? '<div class="table-wrap"><table><thead><tr>' + columns.map(function(c){ return '<th>' + c.h + '</th>'; }).join('') + '</tr></thead><tbody>' +
+          rows.map(function(r){ return '<tr>' + columns.map(function(c){ return '<td>' + c.cell(r) + '</td>'; }).join('') + '</tr>'; }).join('') +
+          '</tbody></table></div>'
+        : '<div class="empty-state" style="padding:18px"><p>No projects match this filter.</p></div>') +
+    '</div>';
+  }
+
+  return '<div class="card mb-16">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px">' +
+      '<div><div class="section-title" style="margin-bottom:2px">' + title + '</div><div class="text-muted" style="font-size:12.5px;max-width:48ch">' + subtitle + '</div></div>' +
+      heroHtml +
+    '</div>' +
+    '<div style="margin:14px 0 2px">' + barsHtml + '</div>' +
+    (note ? '<div class="text-muted" style="font-size:12px;margin-top:6px">' + note + '</div>' : '') +
+    '<div style="text-align:right;margin-top:10px">' +
+      '<span style="font-size:12px;font-weight:600;color:#534AB7;cursor:pointer" onclick="phToggle(\'' + cardKey + '\',\'all\')">' +
+        (filterKey === 'all' ? 'Hide list' : 'View all projects') + ' <i class="ti ti-chevron-' + (filterKey === 'all' ? 'up' : 'down') + '"></i></span>' +
+    '</div>' +
+    drillHtml +
+  '</div>';
+}
+
+function renderPortfolioHealth() {
+  var projects = D.projects;
+  var lastTouched = phState.lastTouched;
+  var activeProjects = projects.filter(function(p){ return p.stage === 'active'; });
+
+  // 1. Stage funnel
+  var STAGE_META = [
+    { key:'backlog', label:'Backlog', color:'#5598e7' },
+    { key:'planned', label:'Planned', color:'#256abf' },
+    { key:'active', label:'Active', color:'#184f95' },
+    { key:'hold', label:'Hold', color:'#EF9F27' },
+    { key:'complete', label:'Completed', color:'#0d366b' }
+  ];
+  var funnelBars = STAGE_META.map(function(s) {
+    var rows = projects.filter(function(p){ return p.stage === s.key; });
+    return { key:s.key, label:s.label, count:rows.length, color:s.color, rows:rows };
+  });
+  var funnelCard = phCard('funnel', 'Portfolio stage funnel', 'Every non-deleted project, by lifecycle stage',
+    phHero(projects.length, 'projects'), funnelBars,
+    [
+      { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
+      { h:'Health', cell:function(p){ return hdot(p.health) + (EXPORT_HEALTH_LABELS[p.health] || 'Not set'); } },
+      { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
+      { h:'Sponsor', cell:function(p){ return phOwnerCell(p.sponsor); } },
+      { h:'', cell:phViewBtn }
+    ],
+    'Hold is a paused state, not further progress along the funnel.');
+
+  // 2. RAG status, active projects
+  var RAG_META = [
+    { key:'green', label:'Green — on track', color:'#1D9E75' },
+    { key:'amber', label:'Amber — at risk', color:'#EF9F27' },
+    { key:'red', label:'Red — critical', color:'#E24B4A' },
+    { key:'unset', label:'Not set', color:'#ccc' }
+  ];
+  var ragBars = RAG_META.map(function(s) {
+    var rows = activeProjects.filter(function(p){ return (p.health || 'unset') === s.key; });
+    return { key:s.key, label:s.label, count:rows.length, color:s.color, dot:s.color, rows:rows };
+  }).filter(function(b){ return b.key !== 'unset' || b.count > 0; });
+  var redCount = (ragBars.filter(function(b){ return b.key === 'red'; })[0] || { count:0 }).count;
+  var ragCard = phCard('rag', 'RAG status — active projects', 'Current health across the ' + activeProjects.length + ' Active-stage projects',
+    phHero(redCount, 'red right now', '#E24B4A'), ragBars,
+    [
+      { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
+      { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
+      { h:'Sponsor', cell:function(p){ return phOwnerCell(p.sponsor); } },
+      { h:'Last updated', cell:function(p){ var t = lastTouched[p.id] || p.createdAt; var d = daysSince(t); return d != null ? (d + 'd ago') : '—'; } },
+      { h:'', cell:phViewBtn }
+    ],
+    'Snapshot only for now — a trend view is a natural next addition.');
+
+  // 3. Late items, by stage
+  var lateProjects = projects.filter(isProjectLate);
+  var LATE_STAGE_META = [
+    { key:'active', label:'Active' }, { key:'planned', label:'Planned' },
+    { key:'backlog', label:'Backlog' }, { key:'hold', label:'Hold' }
+  ];
+  var lateBars = LATE_STAGE_META.map(function(s) {
+    var rows = lateProjects.filter(function(p){ return p.stage === s.key; });
+    return { key:s.key, label:s.label, count:rows.length, color:'#E24B4A', rows:rows };
+  });
+  var lateCard = phCard('late', 'Late items', 'Projects past their target end date, by the stage they\'re stuck in',
+    phHero(lateProjects.length, 'late right now', '#E24B4A'), lateBars,
+    [
+      { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
+      { h:'Stage', cell:function(p){ return bdg(EXPORT_STAGE_LABELS[p.stage] || p.stage); } },
+      { h:'Days late', cell:function(p){ return daysLate(p) + 'd'; } },
+      { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
+      { h:'', cell:phViewBtn }
+    ]);
+
+  // 4. Open risks & issues, by severity
+  var openEntries = [];
+  projects.forEach(function(p) {
+    (p.raid.risks || []).forEach(function(r) {
+      if (r.status !== 'Open') return;
+      openEntries.push({ project:p, kind:'Risk', title:r.desc, severity:riskEffectiveSeverity(r), opened:raidOpenedDate(r) });
+    });
+    (p.raid.issues || []).forEach(function(r) {
+      if (r.status !== 'Open') return;
+      openEntries.push({ project:p, kind:'Issue', title:r.desc, severity:r.severity || 'Medium', opened:raidOpenedDate(r) });
+    });
+  });
+  var SEV_META = [
+    { key:'High', label:'High', color:'#E24B4A' },
+    { key:'Medium', label:'Medium', color:'#EF9F27' },
+    { key:'Low', label:'Low', color:'#5598e7' }
+  ];
+  var riskBars = SEV_META.map(function(s) {
+    var rows = openEntries.filter(function(e){ return e.severity === s.key; });
+    return { key:s.key, label:s.label, count:rows.length, color:s.color, rows:rows };
+  });
+  var riskCard = phCard('risk', 'Open risks & issues', 'RAID log entries across every project, by severity',
+    phHero(openEntries.length, 'open entries'), riskBars,
+    [
+      { h:'Type', cell:function(e){ return e.kind; } },
+      { h:'Title', cell:function(e){ return e.title || '<span class="text-muted">No description</span>'; } },
+      { h:'Project', cell:function(e){ return e.project.name; } },
+      { h:'Days open', cell:function(e){ var d = daysSince(e.opened); return d != null ? (d + 'd') : '—'; } },
+      { h:'', cell:function(e){ return phViewBtn(e.project); } }
+    ],
+    'Risks don\'t carry their own severity, so theirs is derived from probability × impact to sit on the same scale as issues.');
+
+  // 5. Missing owner / sponsor
+  var missingScope = projects.filter(function(p){ return p.stage !== 'complete'; });
+  var missingBars = [
+    { key:'owner', label:'No Owner', rows:missingScope.filter(function(p){ return !p.owner; }) },
+    { key:'sponsor', label:'No Sponsor', rows:missingScope.filter(function(p){ return !p.sponsor; }) }
+  ].map(function(b){ return Object.assign(b, { count:b.rows.length, color:'#EF9F27' }); });
+  var missingAll = missingScope.filter(function(p){ return !p.owner || !p.sponsor; });
+  var missingCard = phCard('missing', 'Missing owner or sponsor', 'Backlog through Hold — projects that should have both roles filled in',
+    phHero(missingAll.length, 'projects affected', '#EF9F27'), missingBars,
+    [
+      { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
+      { h:'Stage', cell:function(p){ return bdg(EXPORT_STAGE_LABELS[p.stage] || p.stage); } },
+      { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
+      { h:'Sponsor', cell:function(p){ return phOwnerCell(p.sponsor); } },
+      { h:'', cell:phViewBtn }
+    ],
+    null, missingAll);
+
+  // 6. Owner load
+  var OWNER_LOAD_THRESHOLD = 3;
+  var loadScope = projects.filter(function(p){ return ['active','planned','hold'].indexOf(p.stage) >= 0 && p.owner; });
+  var byOwner = {};
+  loadScope.forEach(function(p){ (byOwner[p.owner] = byOwner[p.owner] || []).push(p); });
+  var allLoadBars = Object.keys(byOwner).map(function(name) {
+    var rows = byOwner[name];
+    return { key:name, label:name, count:rows.length, color:rows.length >= OWNER_LOAD_THRESHOLD ? '#EF9F27' : '#256abf', rows:rows };
+  }).sort(function(a, b){ return b.count - a.count || a.label.localeCompare(b.label); });
+  var overThreshold = allLoadBars.filter(function(b){ return b.count >= OWNER_LOAD_THRESHOLD; }).length;
+  var loadCard = phCard('load', 'Owner load', 'Active + Planned + Hold projects, counted per person as Owner (top 8 shown)',
+    phHero(overThreshold, 'at/over ' + OWNER_LOAD_THRESHOLD + ' projects', overThreshold ? '#EF9F27' : null), allLoadBars.slice(0, 8),
+    [
+      { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
+      { h:'Stage', cell:function(p){ return bdg(EXPORT_STAGE_LABELS[p.stage] || p.stage); } },
+      { h:'', cell:phViewBtn }
+    ],
+    null, loadScope.slice().sort(function(a, b){ return a.owner.localeCompare(b.owner) || a.name.localeCompare(b.name); }));
+
+  // 7. Stale active projects
+  var STALE_BUCKETS = [
+    { key:'60', label:'60+ days', color:'#E24B4A', test:function(d){ return d >= 60; } },
+    { key:'45', label:'45–59 days', color:'#ec835a', test:function(d){ return d >= 45 && d < 60; } },
+    { key:'30', label:'30–44 days', color:'#EF9F27', test:function(d){ return d >= 30 && d < 45; } },
+    { key:'14', label:'14–29 days', color:'#5598e7', test:function(d){ return d >= 14 && d < 30; } },
+    { key:'7', label:'7–13 days', color:'#9ec5f4', test:function(d){ return d >= 7 && d < 14; } }
+  ];
+  activeProjects.forEach(function(p) {
+    var touched = lastTouched[p.id] || p.createdAt;
+    p._staleDays = touched ? daysSince(touched) : null;
+  });
+  var trueStaleCount = activeProjects.filter(function(p){ return p._staleDays != null && p._staleDays >= 30; }).length;
+  var staleBars = STALE_BUCKETS.map(function(b) {
+    var rows = activeProjects.filter(function(p){ return p._staleDays != null && b.test(p._staleDays); });
+    return { key:b.key, label:b.label, count:rows.length, color:b.color, rows:rows };
+  });
+  var staleCard = phCard('stale', 'Stale active projects', 'Active-stage projects by days since their last logged change — 30+ counts as stale',
+    phHero(trueStaleCount, 'of ' + activeProjects.length + ' active', trueStaleCount ? '#EF9F27' : null), staleBars,
+    [
+      { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
+      { h:'Days since update', cell:function(p){ return p._staleDays + 'd'; } },
+      { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
+      { h:'Health', cell:function(p){ return hdot(p.health) + (EXPORT_HEALTH_LABELS[p.health] || 'Not set'); } },
+      { h:'', cell:phViewBtn }
+    ],
+    '30+ days (amber to red) is the stale threshold; 7–29 days is shown for context on what\'s aging toward it.');
+
+  // 8. Blank fields, active projects
+  var FIELD_CHECKS = [
+    { key:'description', label:'Description', test:function(p){ return !p.description; } },
+    { key:'end', label:'End date', test:function(p){ return !p.end; } },
+    { key:'start', label:'Start date', test:function(p){ return !p.start; } },
+    { key:'owner', label:'Owner', test:function(p){ return !p.owner; } },
+    { key:'sponsor', label:'Sponsor', test:function(p){ return !p.sponsor; } },
+    { key:'health', label:'Health', test:function(p){ return !p.health; } }
+  ];
+  var blankBars = FIELD_CHECKS.map(function(f) {
+    var rows = activeProjects.filter(f.test);
+    var pct = activeProjects.length ? Math.round(rows.length / activeProjects.length * 100) : 0;
+    return { key:f.key, label:f.label, count:rows.length, valueLabel:pct + '%', color:'#256abf', rows:rows };
+  }).sort(function(a, b){ return b.count - a.count; });
+  var blankAll = activeProjects.filter(function(p){ return FIELD_CHECKS.some(function(f){ return f.test(p); }); });
+  var blankCard = phCard('blank', 'Blank fields, active projects', 'Share of active projects missing each field',
+    phHero((blankBars[0] ? blankBars[0].valueLabel : '0%'), 'worst field'), blankBars,
+    [
+      { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
+      { h:'Missing field(s)', cell:function(p){ return FIELD_CHECKS.filter(function(f){ return f.test(p); }).map(function(f){ return f.label; }).join(', '); } },
+      { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
+      { h:'', cell:phViewBtn }
+    ],
+    null, blankAll);
+
+  document.getElementById('content').innerHTML =
+    '<div class="info-banner info-blue mb-16"><i class="ti ti-info-circle"></i><span>Computed from your live project, RAID, and change-log data. Click any bar to see which projects make it up.</span></div>' +
+    funnelCard + ragCard + lateCard + riskCard + missingCard + loadCard + staleCard + blankCard;
+
+  window.phToggle = function(cardKey, filterKey) {
+    phState.expanded[cardKey] = (phState.expanded[cardKey] === filterKey) ? null : filterKey;
+    renderPortfolioHealth();
   };
 }
 
