@@ -243,7 +243,7 @@ This only protects deletes that happen going forward — anything deleted before
 
 ## View As
 
-Lets you preview the app as a generic Member, or as a specific person (even someone with no login yet). This is a **read-only simulation** — the real session backing it is still yours, so every write is intercepted and blocked while simulating, to prevent anything from being saved under the wrong identity. Use it to sanity-check what a specific user will see, not to act on their behalf.
+Lets you preview the app as **Myself, as a Member** (your own account, but at Member permission level — resolves to your own linked resource, so it shows your actual projects/tasks/work requests rather than an empty simulation, unless your account isn't linked to a resource, in which case it falls back to a generic empty preview), or as a specific person (even someone with no login yet). This is a **read-only simulation** — the real session backing it is still yours, so every write is intercepted and blocked while simulating, to prevent anything from being saved under the wrong identity. Use it to sanity-check what a specific user will see, not to act on their behalf.
 
 ## Known quirks worth knowing about
 

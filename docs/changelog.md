@@ -14,6 +14,14 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-08-28">
+  <h2>View As</h2>
+  <p class="changelog-date">August 28, 2026 · 10:16 AM</p>
+  <ul>
+    <li><strong>View As:</strong> The "Member" preview (now labeled <strong>Myself, as a Member</strong>) resolves to your own linked resource, showing your actual My Projects/My Tasks/My Work Requests instead of an empty generic simulation — useful for sanity-checking your own account at Member permission level. Falls back to the old generic preview only if your account isn't linked to a resource. "My View" is unchanged.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-08-27">
   <h2>Portfolio Health</h2>
   <p class="changelog-date">August 27, 2026 · 12:41 PM – 7:05 PM</p>
