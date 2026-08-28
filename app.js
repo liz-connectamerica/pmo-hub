@@ -1835,7 +1835,7 @@ function setTaskViewMode(pid, mode) {
 
 var todoViewState = {};
 function getTodoState(pid) {
-  if (!todoViewState[pid]) todoViewState[pid] = { search:'', fAssignee:[], fStatus:[], openFilter:null };
+  if (!todoViewState[pid]) todoViewState[pid] = { search:'', fAssignee:[], fStatus:[], openFilter:null, sort:null, dir:'asc' };
   return todoViewState[pid];
 }
 
@@ -4970,6 +4970,7 @@ function pgProjectDetail(pid, tab) {
       function todoFilterIcon(col, active) {
         return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleTodoFilterPanel(\'' + p.id + '\',\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>';
       }
+      function todoSortArrow(col) { if (tst.sort !== col) return ''; return '<span class="sort-arrow">' + (tst.dir==='asc'?'▲':'▼') + '</span>'; }
 
       var todoSearchBar = '<div class="task-filter-bar">' +
         '<input type="text" id="todo-search" placeholder="Search to-dos…" value="' + tst.search.replace(/"/g,'&quot;') + '" oninput="onTodoSearch(\'' + p.id + '\',this.value)">' +
@@ -4979,10 +4980,22 @@ function pgProjectDetail(pid, tab) {
       if (tst.search) { var tq = tst.search.toLowerCase(); todoList = todoList.filter(function(td){ return td.title.toLowerCase().indexOf(tq) >= 0; }); }
       if (tst.fAssignee.length) todoList = todoList.filter(function(td){ return tst.fAssignee.indexOf(td.assignee || 'Unassigned') >= 0; });
       if (tst.fStatus.length) todoList = todoList.filter(function(td){ return tst.fStatus.indexOf(td.status) >= 0; });
-      todoList.sort(function(a, b) {
-        if ((a.status==='Done') !== (b.status==='Done')) return a.status==='Done' ? 1 : -1;
-        return (a.due || '9999-99-99').localeCompare(b.due || '9999-99-99');
-      });
+      if (tst.sort) {
+        todoList.sort(function(a, b) {
+          var av, bv;
+          if (tst.sort === 'title') { av = a.title.toLowerCase(); bv = b.title.toLowerCase(); }
+          else if (tst.sort === 'assignee') { av = (a.assignee||'').toLowerCase(); bv = (b.assignee||'').toLowerCase(); }
+          else if (tst.sort === 'status') { av = a.status || ''; bv = b.status || ''; }
+          else { av = a.due || ''; bv = b.due || ''; }
+          var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+          return tst.dir === 'asc' ? cmp : -cmp;
+        });
+      } else {
+        todoList.sort(function(a, b) {
+          if ((a.status==='Done') !== (b.status==='Done')) return a.status==='Done' ? 1 : -1;
+          return (a.due || '9999-99-99').localeCompare(b.due || '9999-99-99');
+        });
+      }
 
       var todoRows = todoList.map(function(td) {
         var idx = p.todos.indexOf(td);
@@ -5036,8 +5049,11 @@ function pgProjectDetail(pid, tab) {
           '</div></td></tr>' + descRow + commentsRow + logRow;
       }).join('');
 
-      var todoHeader = '<tr><th>To-Do</th><th><span>Assignee</span>' + todoFilterIcon('assignee', tst.fAssignee.length>0) + '</th>' +
-        '<th><span>Status</span>' + todoFilterIcon('status', tst.fStatus.length>0) + '</th><th>Due</th><th></th></tr>';
+      var todoHeader = '<tr>' +
+        '<th class="sortable-th" onclick="setTodoSort(\'' + p.id + '\',\'title\')">To-Do ' + todoSortArrow('title') + '</th>' +
+        '<th class="sortable-th"><span onclick="setTodoSort(\'' + p.id + '\',\'assignee\')">Assignee ' + todoSortArrow('assignee') + '</span>' + todoFilterIcon('assignee', tst.fAssignee.length>0) + '</th>' +
+        '<th class="sortable-th"><span onclick="setTodoSort(\'' + p.id + '\',\'status\')">Status ' + todoSortArrow('status') + '</span>' + todoFilterIcon('status', tst.fStatus.length>0) + '</th>' +
+        '<th class="sortable-th" onclick="setTodoSort(\'' + p.id + '\',\'due\')">Due ' + todoSortArrow('due') + '</th><th></th></tr>';
 
       return '<div class="text-muted" style="font-size:12px;margin-bottom:12px">Quick action items, follow-ups, access requests, and reminders -- lightweight work with an owner, an optional due date, and a simple Open/Done status. For scheduled work with dates and dependencies, use <strong>Plan</strong> instead.</div>' +
         (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddTodo(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add to-do</button>' : '') +
@@ -5415,6 +5431,11 @@ function pgProjectDetail(pid, tab) {
     refreshTaskView();
     var el = document.getElementById('todo-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.setTodoSort = function(pid2, col) {
+    var s = getTodoState(pid2);
+    if (s.sort === col) s.dir = s.dir === 'asc' ? 'desc' : 'asc'; else { s.sort = col; s.dir = 'asc'; }
+    refreshTaskView();
   };
   window.toggleTodoFilterPanel = function(pid2, col) {
     var s = getTodoState(pid2);
