@@ -4656,28 +4656,44 @@ function pgProjectDetail(pid, tab) {
         return '<div><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">' + label + '</div><div style="font-size:13px">' + valueHtml + '</div></div>';
       }
       var peopleRolesHtml;
-      if (D.role === 'admin' && peopleEditing) {
-        var ownerPoolEdit = p.owner && individualResourceNames().indexOf(p.owner) < 0 ? individualResourceNames().concat([p.owner]) : individualResourceNames();
-        var ownerOpts = '<option value="">— None —</option>' + ownerPoolEdit.map(function(n){
-          var isInactiveCurrent = p.owner===n && individualResourceNames().indexOf(n) < 0;
-          return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
-        }).join('');
-        var sponsorPoolEdit = p.sponsor && individualResourceNames().indexOf(p.sponsor) < 0 ? individualResourceNames().concat([p.sponsor]) : individualResourceNames();
-        var sponsorOpts = '<option value="">— None —</option>' + sponsorPoolEdit.map(function(n){
-          var isUnlinkedCurrent = p.sponsor===n && individualResourceNames().indexOf(n) < 0;
-          return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.sponsor===n?' selected':'') + '>' + n + (isUnlinkedCurrent ? ' (not linked to a resource)' : '') + '</option>';
-        }).join('');
+      var isAdminPeople = D.role === 'admin';
+      // A project's own owner can set their Requirements Owner (the person who
+      // clarifies scope/requirements day-to-day) without being able to change
+      // who the Owner or Sponsor is -- those stay admin-only.
+      var canEditReqOwnerOnly = !isAdminPeople && isMyOwnedProject(p);
+      if ((isAdminPeople || canEditReqOwnerOnly) && peopleEditing) {
         var reqOwnerPoolEdit = p.requirementsOwner && individualResourceNames().indexOf(p.requirementsOwner) < 0 ? individualResourceNames().concat([p.requirementsOwner]) : individualResourceNames();
         var reqOwnerOpts = '<option value="">— None —</option>' + reqOwnerPoolEdit.map(function(n){
           var isUnlinkedCurrent = p.requirementsOwner===n && individualResourceNames().indexOf(n) < 0;
           return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.requirementsOwner===n?' selected':'') + '>' + n + (isUnlinkedCurrent ? ' (not linked to a resource)' : '') + '</option>';
         }).join('');
+        var reqOwnerField = '<div><div class="form-label">Requirements owner</div><select id="pp-reqowner">' + reqOwnerOpts + '</select></div>';
+        var peopleEditFields;
+        if (isAdminPeople) {
+          var ownerPoolEdit = p.owner && individualResourceNames().indexOf(p.owner) < 0 ? individualResourceNames().concat([p.owner]) : individualResourceNames();
+          var ownerOpts = '<option value="">— None —</option>' + ownerPoolEdit.map(function(n){
+            var isInactiveCurrent = p.owner===n && individualResourceNames().indexOf(n) < 0;
+            return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.owner===n?' selected':'') + '>' + n + (isInactiveCurrent ? ' (no longer a resource)' : '') + '</option>';
+          }).join('');
+          var sponsorPoolEdit = p.sponsor && individualResourceNames().indexOf(p.sponsor) < 0 ? individualResourceNames().concat([p.sponsor]) : individualResourceNames();
+          var sponsorOpts = '<option value="">— None —</option>' + sponsorPoolEdit.map(function(n){
+            var isUnlinkedCurrent = p.sponsor===n && individualResourceNames().indexOf(n) < 0;
+            return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (p.sponsor===n?' selected':'') + '>' + n + (isUnlinkedCurrent ? ' (not linked to a resource)' : '') + '</option>';
+          }).join('');
+          peopleEditFields = '<div class="grid-3">' +
+              '<div><div class="form-label">Sponsor</div><select id="pp-sponsor">' + sponsorOpts + '</select></div>' +
+              '<div><div class="form-label">Owner</div><select id="pp-owner">' + ownerOpts + '</select></div>' +
+              reqOwnerField +
+            '</div>';
+        } else {
+          peopleEditFields = '<div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-end">' +
+              peopleFieldBox('Sponsor', p.sponsor||'—') +
+              peopleFieldBox('Owner', p.owner||'—') +
+              '<div style="min-width:200px">' + reqOwnerField + '</div>' +
+            '</div>';
+        }
         peopleRolesHtml = '<div class="card mb-16">' +
-          '<div class="grid-3">' +
-            '<div><div class="form-label">Sponsor</div><select id="pp-sponsor">' + sponsorOpts + '</select></div>' +
-            '<div><div class="form-label">Owner</div><select id="pp-owner">' + ownerOpts + '</select></div>' +
-            '<div><div class="form-label">Requirements owner</div><select id="pp-reqowner">' + reqOwnerOpts + '</select></div>' +
-          '</div>' +
+          peopleEditFields +
           '<div style="display:flex;gap:8px;margin-top:14px">' +
             '<button class="btn btn-primary btn-sm" id="pp-save" onclick="savePeopleRoles(\'' + p.id + '\')"><i class="ti ti-check"></i> Save</button>' +
             '<button class="btn btn-sm" onclick="setPeopleEditing(false)">Cancel</button>' +
@@ -4691,10 +4707,10 @@ function pgProjectDetail(pid, tab) {
               peopleFieldBox('Owner', p.owner||'—') +
               peopleFieldBox('Requirements owner', p.requirementsOwner||'—') +
             '</div>' +
-            (D.role === 'admin' ? '<div style="display:flex;gap:8px">' +
-              '<button class="btn btn-sm" onclick="setPeopleEditing(true)"><i class="ti ti-edit"></i> Edit</button>' +
-              '<button class="btn btn-sm btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' +
-            '</div>' : '') +
+            '<div style="display:flex;gap:8px">' +
+              ((isAdminPeople || canEditReqOwnerOnly) ? '<button class="btn btn-sm" onclick="setPeopleEditing(true)"><i class="ti ti-edit"></i> Edit</button>' : '') +
+              (isAdminPeople ? '<button class="btn btn-sm btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
+            '</div>' +
           '</div>' +
         '</div>';
       }
@@ -6313,9 +6329,17 @@ function openMoveDocModal(pid, idx) {
 window.savePeopleRoles = async function(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   var beforeSnapshot = { sponsor: p.sponsor, owner: p.owner, ownerId: p.ownerId, requirementsOwner: p.requirementsOwner };
-  var sponsorName = document.getElementById('pp-sponsor').value;
+  // Sponsor/Owner are admin-only -- a project's own owner only ever gets a
+  // Requirements Owner select rendered (see the "team" tab above), so those
+  // fields simply won't be in the DOM for them. Guard here too, since this is
+  // the actual write path: a non-admin can never change sponsor/owner even if
+  // the fields were somehow present.
+  var isAdminSave = D.role === 'admin';
+  var sponsorEl = document.getElementById('pp-sponsor');
+  var ownerEl = document.getElementById('pp-owner');
+  var sponsorName = (isAdminSave && sponsorEl) ? sponsorEl.value : (p.sponsor || '');
   var sponsorResource = resolveResource(sponsorName);
-  var ownerName = document.getElementById('pp-owner').value;
+  var ownerName = (isAdminSave && ownerEl) ? ownerEl.value : (p.owner || '');
   var ownerResource = resolveResource(ownerName);
   var reqOwnerName = document.getElementById('pp-reqowner').value;
   var reqOwnerResource = resolveResource(reqOwnerName);
