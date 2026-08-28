@@ -2547,7 +2547,7 @@ async function bootAppForUser(skipReload) {
     var specificResource = D.viewingAsMode === 'resource' && D.viewingAsResourceId
       ? D.resources.find(function(r){ return r.id === D.viewingAsResourceId; }) : null;
     var opts = '<option value=""' + (!D.viewingAsMode ? ' selected' : '') + '>My View</option>' +
-      '<option value="member"' + (D.viewingAsMode === 'member' ? ' selected' : '') + '>Member</option>';
+      '<option value="member"' + (D.viewingAsMode === 'member' ? ' selected' : '') + '>Myself, as a Member</option>';
     if (specificResource) opts += '<option value="resource" selected>' + specificResource.name + '</option>';
     opts += '<option value="specific">Specific User…</option>';
     document.getElementById('preview-role-select').innerHTML = opts;
@@ -2556,6 +2556,7 @@ async function bootAppForUser(skipReload) {
   // Apply the "view as" override last, so a fresh data reload can never stomp it.
   var viewingResource = (D.viewingAsMode === 'resource' && D.viewingAsResourceId)
     ? D.resources.find(function(r){ return r.id === D.viewingAsResourceId; }) : null;
+  var ownResource = D.resources.find(function(r){ return r.userId === D.currentProfile.id; });
   if (viewingResource) {
     banner.style.display = 'flex';
     bannerText.textContent = 'Viewing as ' + viewingResource.name + ' (Member)' + (viewingResource.userId ? '' : ' — no account yet, this previews what they\'d see once granted access');
@@ -2563,14 +2564,20 @@ async function bootAppForUser(skipReload) {
     D.myResourceId = viewingResource.id;
   } else if (D.viewingAsMode === 'member') {
     banner.style.display = 'flex';
-    bannerText.textContent = 'Viewing as a Member (generic — no specific person or assignments)';
     D.role = 'member';
-    D.myResourceId = null;
+    if (ownResource) {
+      // Your own real projects/tasks/work requests, just under Member-level
+      // permissions -- not a hollow simulation with nothing behind it.
+      bannerText.textContent = 'Viewing your own account as a Member';
+      D.myResourceId = ownResource.id;
+    } else {
+      bannerText.textContent = 'Viewing as a Member (generic — your account isn\'t linked to a resource, so there\'s nothing real to preview)';
+      D.myResourceId = null;
+    }
   } else {
     banner.style.display = 'none';
     D.role = realRole;
-    var myResource = D.resources.find(function(r){ return r.userId === D.currentProfile.id; });
-    D.myResourceId = myResource ? myResource.id : null;
+    D.myResourceId = ownResource ? ownResource.id : null;
   }
   renderNav();
 
