@@ -1869,7 +1869,6 @@ var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fOwner:[],
 var roadmapCategoryFilter = 'All';
 var PHASE_COLORS = { 'Not Started':'var(--text-faint)', 'Discovery':'var(--blue-tx)', 'Design':'var(--accent)', 'Build':'var(--good)', 'Testing':'var(--warn)', 'Deployment':'#D85A30', 'Monitor':'#993556' };
 var TASK_STATUS_COLORS = { 'To Do':'var(--text-faint)', 'In Progress':'var(--accent)', 'On Hold':'#C98A2C', 'Done':'var(--good)' };
-var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null, tagFilter:[] };
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null, expandedMembersId:null };
 var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null, expandedAvgId:null };
 var portfolioTagFilter = [];
@@ -2202,7 +2201,7 @@ var projectDetailReferrer = null;
 
 var NAV_DEF = {
   admin: [
-    { s:'Overview', items:[{id:'home',icon:'ti-home',label:'Home'},{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'portfolio-health',icon:'ti-activity',label:'Portfolio Health'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
+    { s:'Overview', items:[{id:'home',icon:'ti-home',label:'Home'},{id:'portfolio-health',icon:'ti-activity',label:'Portfolio Health'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
       {id:'my-requests',  icon:'ti-clock', label:'My Requests', badge:'my-requests'}
@@ -2238,7 +2237,6 @@ var NAV_DEF = {
   member: [
     { s:'Overview', items:[
       {id:'home',      icon:'ti-home',              label:'Home'},
-      {id:'dashboard', icon:'ti-layout-dashboard', label:'Dashboard'},
       {id:'roadmap',   icon:'ti-road',             label:'Roadmap'},
       {id:'portfolio', icon:'ti-folder-open',      label:'Portfolio'},
       {id:'programs',  icon:'ti-folders',           label:'Programs'}
@@ -2449,7 +2447,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 var PAGE_RENDERERS = {
-  home:pgHome, dashboard:pgDashboard, portfolio:pgPortfolio, requests:pgRequests,
+  home:pgHome, portfolio:pgPortfolio, requests:pgRequests,
   backlog:pgBacklog, planned:pgPlanned, projects:pgProjects,
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
@@ -2475,7 +2473,7 @@ function pageAllowedForRole(page, role) {
 }
 
 function renderPage(page) {
-  if (!PAGE_RENDERERS[page]) page = 'dashboard';
+  if (!PAGE_RENDERERS[page]) page = 'home';
   currentPage = page;
   renderNav();
   if (!pageAllowedForRole(page, D.role)) {
@@ -2507,7 +2505,7 @@ function handleRoute() {
   if (mProg) { pgProgramDetail(mProg[1]); return; }
   var m2 = hash.match(/^#\/([a-zA-Z0-9_-]+)/);
   if (m2) { renderPage(m2[1]); return; }
-  renderPage('dashboard');
+  renderPage('home');
 }
 window.addEventListener('hashchange', handleRoute);
 
@@ -2585,7 +2583,7 @@ async function bootAppForUser(skipReload) {
   if (location.hash && location.hash.length > 1) {
     handleRoute();
   } else {
-    nav('dashboard');
+    nav('home');
   }
 }
 
@@ -2651,10 +2649,10 @@ async function refreshPrograms() {
 }
 
 // ── Home ────────────────────────────────────────────────────────────────────
-// A personalized "what needs you" landing page, meant to eventually replace
-// Dashboard's portfolio-wide table as the default first screen. Kept
-// alongside Dashboard for now rather than swapped in -- see the Home Tab
-// Sketch this was built from.
+// A personalized "what needs you" landing page -- the default first screen,
+// replacing the old portfolio-wide Dashboard table (whose Rejected proposals
+// and sponsor-financials sections live here now too, at the bottom, since
+// they had no other home). See the Home Tab Sketch this was built from.
 
 function homeGreeting() {
   var h = new Date().getHours();
@@ -2761,100 +2759,6 @@ function pgHome() {
       '</div></div>';
   }
 
-  document.getElementById('content').innerHTML =
-    '<div class="home-greet-row"><h1>' + homeGreeting() + ', ' + firstName + '</h1><div class="home-date">' + today + '</div></div>' +
-    '<div class="home-sub">Here\'s what\'s waiting on you today.</div>' +
-    '<div class="home-section"><div class="home-h2">Needs your attention' + (attnShown.length ? ' <span class="home-count-pill">' + attn.length + '</span>' : '') + '</div>' + attnHtml + '</div>' +
-    (myProjectsForStrip.length ? '<div class="home-section"><div class="home-h2">Your projects</div><div class="home-proj-strip">' + projStripHtml + '</div></div>' : '') +
-    (pulseHtml ? '<div class="home-section"><div class="home-h2">Portfolio pulse</div>' + pulseHtml + '</div>' : '') +
-    '<div class="home-section"><div class="home-h2">Quick links</div><div class="home-quicklinks">' +
-      (hasAssignedWork() ? '<button class="btn" onclick="nav(\'my-tasks\')"><i class="ti ti-list-check"></i> My Tasks</button>' : '') +
-      (hasAssignedWork() ? '<button class="btn" onclick="nav(\'my-projects\')"><i class="ti ti-briefcase"></i> My Projects</button>' : '') +
-      (hasAssignedWork() ? '<button class="btn" onclick="nav(\'my-work-requests\')"><i class="ti ti-clipboard-list"></i> My Work Requests</button>' : '') +
-      '<button class="btn" onclick="nav(\'submit\')"><i class="ti ti-send"></i> Submit a Request</button>' +
-    '</div></div>';
-}
-
-// ── Dashboard ───────────────────────────────────────────────────────────────
-
-function pgDashboard() {
-  tb('Dashboard');
-  var ps = myProjects();
-  var active = ps.filter(function(p){ return p.stage === 'active'; });
-  var onT = active.filter(function(p){ return p.status === 'On Track'; }).length;
-  var atR = active.filter(function(p){ return p.status === 'At Risk';  }).length;
-
-  var dst = dashProjState;
-  var statusChoicesD = []; active.forEach(function(p){ if (p.status && statusChoicesD.indexOf(p.status) < 0) statusChoicesD.push(p.status); });
-  var phaseChoicesD = []; active.forEach(function(p){ if (p.phase && phaseChoicesD.indexOf(p.phase) < 0) phaseChoicesD.push(p.phase); });
-
-  var displayed = active.slice();
-  if (dst.search) { var dq = dst.search.toLowerCase(); displayed = displayed.filter(function(p){ return p.name.toLowerCase().indexOf(dq) >= 0; }); }
-  if (dst.fStatus.length) displayed = displayed.filter(function(p){ return dst.fStatus.indexOf(p.status) >= 0; });
-  if (dst.fPhase.length) displayed = displayed.filter(function(p){ return dst.fPhase.indexOf(p.phase) >= 0; });
-  if (dst.tagFilter.length) displayed = displayed.filter(function(p){ return dst.tagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
-  if (dst.sort) {
-    displayed.sort(function(a, b) {
-      var av, bv;
-      if (dst.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
-      else if (dst.sort === 'progress') { av = a.progress||0; bv = b.progress||0; }
-      else { av = (a[dst.sort]||'').toString().toLowerCase(); bv = (b[dst.sort]||'').toString().toLowerCase(); }
-      if (av < bv) return dst.dir === 'asc' ? -1 : 1;
-      if (av > bv) return dst.dir === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }
-
-  function dArrow(col) { if (dst.sort !== col) return ''; return '<span class="sort-arrow">' + (dst.dir === 'asc' ? '▲' : '▼') + '</span>'; }
-  function dFilterIcon(col, choices) {
-    if (!choices.length) return '';
-    var active2 = (dst[col]||[]).length > 0;
-    return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleDashFilterPanel(\'' + col + '\')"><i class="ti ti-filter' + (active2 ? ' th-filter-active' : '') + '"></i></button>';
-  }
-
-  var projRows = displayed.map(function(p) {
-    var tagsLine = (p.tags && p.tags.length)
-      ? '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;font-weight:400">' + p.tags.map(function(tg){ return tagBadge(tg); }).join('') + '</div>'
-      : '';
-    return '<tr>' +
-      '<td class="bold"><div>' + hdot(p.health) + p.name + '</div>' + tagsLine + '</td><td>' + bdg(p.status) + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td><td>' + bdg(p.priority) + '</td>' +
-      '<td>' + badgeIf('badge-gray', p.phase) + '</td>' +
-      '<td><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></td>' +
-      '<td class="text-muted">' + (p.owner || '—') + '</td>' +
-      '<td>' + (p.blockers ? '<span style="color:var(--coral-strong-tx);font-size:12px"><i class="ti ti-alert-triangle"></i> Yes</span>' : '<span class="text-muted">—</span>') + '</td>' +
-      '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
-  }).join('');
-
-  var dashSearchBar = '<div class="task-filter-bar"><input type="text" id="dash-proj-search" placeholder="Search projects by name…" value="' + dst.search.replace(/"/g,'&quot;') + '" oninput="onDashProjSearch(this.value)"></div>';
-
-  var pendRows = '';
-  if (D.role === 'admin') {
-    D.requests.filter(function(r){ return r.status === 'Pending'; }).forEach(function(r) {
-      pendRows += '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + r.dept + '</td>' +
-        '<td>' + bdg(r.priority) + '</td><td><span class="badge badge-purple">' + r.value + '</span></td>' +
-        '<td><button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> Review</button></td></tr>';
-    });
-  }
-
-  var rejectedRows = '';
-  var rejectedAll = D.requests.filter(function(r){ return r.status === 'Rejected'; });
-  var rejRange = rejectedFilterState.range;
-  var rejectedList = rejectedAll.filter(function(r){
-    if (rejRange === 'all') return true;
-    var rd = r.rejectedDate || r.date;
-    if (!rd) return true;
-    var days = (Date.now() - new Date(rd).getTime()) / 86400000;
-    return days <= parseInt(rejRange);
-  });
-  if (true) { // rejected proposals visible to everyone
-    rejectedList.forEach(function(r) {
-      rejectedRows += '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + r.dept + '</td>' +
-        '<td>' + bdg(r.priority) + '</td><td><span class="badge badge-purple">' + r.value + '</span></td>' +
-        '<td class="text-muted">' + (r.rejectedDate || r.date || '—') + '</td>' +
-        '<td><button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
-    });
-  }
-
   var sponsoredProjects = D.myResourceId ? D.projects.filter(function(p){ return p.sponsorResourceId === D.myResourceId; }) : [];
   var sponsoredRows = sponsoredProjects.map(function(p) {
     return '<tr>' +
@@ -2866,81 +2770,57 @@ function pgDashboard() {
         '<button class="btn btn-sm" onclick="openEditProjectFinancialsModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit financials</button></td></tr>';
   }).join('');
 
+  var rejectedRows = '';
+  var rejectedAll = D.requests.filter(function(r){ return r.status === 'Rejected'; });
+  var rejRange = rejectedFilterState.range;
+  var rejectedList = rejectedAll.filter(function(r){
+    if (rejRange === 'all') return true;
+    var rd = r.rejectedDate || r.date;
+    if (!rd) return true;
+    var days = (Date.now() - new Date(rd).getTime()) / 86400000;
+    return days <= parseInt(rejRange);
+  });
+  rejectedList.forEach(function(r) {
+    rejectedRows += '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + r.dept + '</td>' +
+      '<td>' + bdg(r.priority) + '</td><td><span class="badge badge-purple">' + r.value + '</span></td>' +
+      '<td class="text-muted">' + (r.rejectedDate || r.date || '—') + '</td>' +
+      '<td><button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
+  });
+
   document.getElementById('content').innerHTML =
-    '<div class="grid-4 mb-16">' +
-      '<div class="metric"><div class="metric-label">Active projects</div><div class="metric-value">' + active.length + '</div></div>' +
-      '<div class="metric"><div class="metric-label">On track</div><div class="metric-value" style="color:var(--good)">' + onT + '</div></div>' +
-      '<div class="metric"><div class="metric-label">At risk</div><div class="metric-value" style="color:var(--warn)">' + atR + '</div></div>' +
-      (D.role === 'admin'
-        ? '<div class="metric"><div class="metric-label">Pending requests</div><div class="metric-value" style="color:var(--accent)">' + pendingCount() + '</div></div>'
-        : '<div class="metric"><div class="metric-label">In backlog</div><div class="metric-value">' + backlogCount() + '</div></div>') +
-    '</div>' +
-    '<div class="card mb-16"><div class="section-title">Active projects</div>' + tagFilterBarHtml(dst.tagFilter, 'openDashTagFilter') + dashSearchBar +
-      (displayed.length ? '<div class="table-wrap"><table>' +
-      '<thead><tr>' +
-        '<th class="sortable-th" onclick="setDashProjSort(\'name\')">Project ' + dArrow('name') + '</th>' +
-        '<th class="sortable-th"><span onclick="setDashProjSort(\'status\')">Status ' + dArrow('status') + '</span>' + dFilterIcon('fStatus', statusChoicesD) + '</th>' +
-        '<th class="sortable-th" onclick="setDashProjSort(\'priority\')">Priority ' + dArrow('priority') + '</th>' +
-        '<th class="sortable-th"><span onclick="setDashProjSort(\'phase\')">Phase ' + dArrow('phase') + '</span>' + dFilterIcon('fPhase', phaseChoicesD) + '</th>' +
-        '<th class="sortable-th" style="min-width:160px" onclick="setDashProjSort(\'progress\')">Progress ' + dArrow('progress') + '</th>' +
-        '<th>Owner</th><th>Blockers</th><th></th></tr></thead>' +
-      '<tbody>' + projRows + '</tbody></table></div>'
-      : (active.length ? '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No projects match your search/filters</p></div>' : '<div class="empty-state" style="padding:24px"><i class="ti ti-briefcase"></i><p>No active projects</p></div>')) +
-    '</div>' +
+    '<div class="home-greet-row"><h1>' + homeGreeting() + ', ' + firstName + '</h1><div class="home-date">' + today + '</div></div>' +
+    '<div class="home-sub">Here\'s what\'s waiting on you today.</div>' +
+    '<div class="home-section"><div class="home-h2">Needs your attention' + (attnShown.length ? ' <span class="home-count-pill">' + attn.length + '</span>' : '') + '</div>' + attnHtml + '</div>' +
+    (myProjectsForStrip.length ? '<div class="home-section"><div class="home-h2">Your projects</div><div class="home-proj-strip">' + projStripHtml + '</div></div>' : '') +
+    (pulseHtml ? '<div class="home-section"><div class="home-h2">Portfolio pulse</div>' + pulseHtml + '</div>' : '') +
+    '<div class="home-section"><div class="home-h2">Quick links</div><div class="home-quicklinks">' +
+      (hasAssignedWork() ? '<button class="btn" onclick="nav(\'my-tasks\')"><i class="ti ti-list-check"></i> My Tasks</button>' : '') +
+      (hasAssignedWork() ? '<button class="btn" onclick="nav(\'my-projects\')"><i class="ti ti-briefcase"></i> My Projects</button>' : '') +
+      (hasAssignedWork() ? '<button class="btn" onclick="nav(\'my-work-requests\')"><i class="ti ti-clipboard-list"></i> My Work Requests</button>' : '') +
+      '<button class="btn" onclick="nav(\'submit\')"><i class="ti ti-send"></i> Submit a Request</button>' +
+    '</div></div>' +
     (sponsoredProjects.length
-      ? '<div class="card mb-16"><div class="section-title">Projects you sponsor <span class="badge badge-purple" style="margin-left:6px">' + sponsoredProjects.length + '</span></div>' +
+      ? '<div class="home-section card"><div class="section-title">Projects you sponsor <span class="badge badge-purple" style="margin-left:6px">' + sponsoredProjects.length + '</span></div>' +
         '<div class="form-sub" style="margin-bottom:12px">You can see and edit financial detail for these, even though they\'re not otherwise admin-only.</div>' +
         '<div class="table-wrap"><table><thead><tr><th>Project</th><th>Stage</th><th>Estimated value</th><th>Cost estimate</th><th></th></tr></thead>' +
         '<tbody>' + sponsoredRows + '</tbody></table></div></div>' : '') +
-    (D.role === 'admin' && pendingCount() > 0
-      ? '<div class="card mb-16"><div class="section-title">Pending approval <span class="badge badge-amber" style="margin-left:6px">' + pendingCount() + '</span></div>' +
-        '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th></th></tr></thead>' +
-        '<tbody>' + pendRows + '</tbody></table></div></div>' : '') +
-    (true // rejected proposals visible to everyone
-      ? '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
-        '<div class="section-title" style="margin-bottom:0">Rejected proposals <span class="badge badge-gray" style="margin-left:6px">' + rejectedList.length + '</span></div>' +
-        '<select id="rej-range" onchange="setRejectedRange(this.value)" style="width:auto;max-width:170px">' +
-          '<option value="30"' + (rejRange==='30'?' selected':'') + '>Last 30 days</option>' +
-          '<option value="90"' + (rejRange==='90'?' selected':'') + '>Last 90 days</option>' +
-          '<option value="365"' + (rejRange==='365'?' selected':'') + '>Last year</option>' +
-          '<option value="all"' + (rejRange==='all'?' selected':'') + '>All time</option>' +
-        '</select></div>' +
-        (rejectedList.length
-          ? '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th>Rejected</th><th></th></tr></thead>' +
-            '<tbody>' + rejectedRows + '</tbody></table></div>'
-          : '<div class="empty-state" style="padding:24px"><i class="ti ti-mood-empty"></i><p>No rejected proposals in this range</p></div>') +
-        '</div>' : '');
+    '<div class="home-section card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
+      '<div class="section-title" style="margin-bottom:0">Rejected proposals <span class="badge badge-gray" style="margin-left:6px">' + rejectedList.length + '</span></div>' +
+      '<select id="rej-range" onchange="setRejectedRange(this.value)" style="width:auto;max-width:170px">' +
+        '<option value="30"' + (rejRange==='30'?' selected':'') + '>Last 30 days</option>' +
+        '<option value="90"' + (rejRange==='90'?' selected':'') + '>Last 90 days</option>' +
+        '<option value="365"' + (rejRange==='365'?' selected':'') + '>Last year</option>' +
+        '<option value="all"' + (rejRange==='all'?' selected':'') + '>All time</option>' +
+      '</select></div>' +
+      (rejectedList.length
+        ? '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th>Rejected</th><th></th></tr></thead>' +
+          '<tbody>' + rejectedRows + '</tbody></table></div>'
+        : '<div class="empty-state" style="padding:24px"><i class="ti ti-mood-empty"></i><p>No rejected proposals in this range</p></div>') +
+    '</div>';
 
-  window.setRejectedRange = function(val) { rejectedFilterState.range = val; pgDashboard(); };
-  window.setDashProjSort = function(col) {
-    if (dst.sort === col) dst.dir = dst.dir === 'asc' ? 'desc' : 'asc'; else { dst.sort = col; dst.dir = 'asc'; }
-    pgDashboard();
-  };
-  window.onDashProjSearch = function(val) {
-    dst.search = val;
-    pgDashboard();
-    var el = document.getElementById('dash-proj-search');
-    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
-  };
-  window.toggleDashFilterPanel = function(col) {
-    var label = col === 'fStatus' ? 'Status' : 'Phase';
-    var choices = col === 'fStatus' ? statusChoicesD : phaseChoicesD;
-    openFilterModal(label, choices,
-      function() { return dst[col] || []; },
-      function(val) { var arr = dst[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
-      function() { dst[col] = []; },
-      pgDashboard
-    );
-  };
-  window.openDashTagFilter = function() {
-    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
-      function() { return dst.tagFilter; },
-      function(val) { var i = dst.tagFilter.indexOf(val); if (i>=0) dst.tagFilter.splice(i,1); else dst.tagFilter.push(val); },
-      function() { dst.tagFilter = []; },
-      pgDashboard
-    );
-  };
+  window.setRejectedRange = function(val) { rejectedFilterState.range = val; pgHome(); };
 }
+
 
 // ── Portfolio ───────────────────────────────────────────────────────────────
 
@@ -3692,7 +3572,7 @@ async function decideReq(id, decision) {
   renderNav();
   if (currentPage === 'requests') pgRequests();
   else if (currentPage === 'planned') pgPlanned();
-  else pgDashboard();
+  else pgHome();
 }
 
 // ── Backlog ──────────────────────────────────────────────────────────────────
@@ -4287,7 +4167,7 @@ async function autoActivatePlannedProjects() {
     renderNav();
     if (currentPage === 'planned') pgPlanned();
     else if (currentPage === 'projects') pgProjects();
-    else if (currentPage === 'dashboard') pgDashboard();
+    else if (currentPage === 'home') pgHome();
   }
 }
 
@@ -5650,7 +5530,7 @@ async function putOnHold(pid) {
   await logProjectChanges(pid, beforeSnapshot, { stage: 'hold', holdReason: reason }, 'hold');
   p.preHoldStage = p.stage; p.stage = 'hold'; p.holdReason = reason; p.heldAt = heldAt;
   closeModal(); showToast('"' + p.name + '" is now on hold'); renderNav();
-  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else if (currentPage === 'hold') pgHold(); else pgDashboard();
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else if (currentPage === 'hold') pgHold(); else pgHome();
 }
 
 async function resumeFromHold(pid) {
@@ -5662,7 +5542,7 @@ async function resumeFromHold(pid) {
   await logProjectChanges(pid, beforeSnapshot, { stage: resumeStage, holdReason: null }, 'resume');
   p.stage = resumeStage; p.holdReason = null; p.preHoldStage = null; p.heldAt = null;
   closeModal(); showToast('"' + p.name + '" resumed'); renderNav();
-  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else if (currentPage === 'hold') pgHold(); else pgDashboard();
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'portfolio') pgPortfolio(); else if (currentPage === 'hold') pgHold(); else pgHome();
 }
 
 async function markComplete(pid) {
@@ -5676,7 +5556,7 @@ async function markComplete(pid) {
   var r = D.requests.find(function(x){ return x.id === p.requestId; });
   if (r) await syncRequestStatus(r.id, { status: 'Active' });
   closeModal(); showToast('"' + p.name + '" marked as complete'); renderNav();
-  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'projects') pgProjects(); else pgDashboard();
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage === 'projects') pgProjects(); else pgHome();
 }
 
 // ── Milestone / Task / RAID modals ─────────────────────────────────────────────
@@ -6785,7 +6665,7 @@ async function saveProject(pid) {
   if (newCats) p.categories = newCats;
 
   closeModal(); showToast('Project saved');
-  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage==='projects') pgProjects(); else if (currentPage === 'requests') pgRequests(); else pgDashboard();
+  if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview'); else if (currentPage==='projects') pgProjects(); else if (currentPage === 'requests') pgRequests(); else pgHome();
 
   try {
     var afterSnapshot = {
@@ -6819,7 +6699,7 @@ async function deleteProject(pid) {
   if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
   D.projects = D.projects.filter(function(x){ return x.id !== pid; });
   closeModal(); showToast('Project deleted'); renderNav();
-  var returnTo = (projectDetailReferrer && projectDetailReferrer !== 'projectDetail') ? projectDetailReferrer : 'dashboard';
+  var returnTo = (projectDetailReferrer && projectDetailReferrer !== 'projectDetail') ? projectDetailReferrer : 'home';
   nav(returnTo);
 }
 
