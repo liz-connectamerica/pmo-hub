@@ -10,12 +10,12 @@ This guide covers what any PMO Hub user can see and do. If you're a PMO Admin, t
 
 The sidebar is organized into a few sections:
 
-- **Overview** — Dashboard, Roadmap, Portfolio
+- **Overview** — Home, Roadmap, Portfolio
 - **Projects** — Active, Planned, Backlog, Hold, Completed
 - **My Requests** — Submit a Request, My Requests
 - **My Work** — My Projects, My Tasks, My Work Requests, My Capacity (this section appears once your account is linked to a resource, since My Tasks always has a personal use — adding a to-do for yourself — even before you're connected to any project or work request)
 
-The bar at the top of the page shows the current page's title and any page-specific action buttons (like "New request").
+The bar at the top of the page shows the current page's title and any page-specific action buttons (like "New request"). A **Light / System / Dark** theme toggle sits in the sidebar below the nav — your choice is remembered on that browser.
 
 ## Search
 
@@ -24,13 +24,13 @@ The search box under the PMO Hub logo works from anywhere in the app and looks a
 - **Projects** — every project matches, regardless of stage; picking one opens it directly.
 - **Work Requests** — you'll only find requests you submitted or are assigned to (the same ones you can already reach from My Requests and My Work Requests) — search doesn't expose anyone else's. Admins search every request in the system, same as the Work Requests admin page. Picking a result takes you to wherever that request already lives, with its title pre-filled into that page's own search.
 
-## Dashboard
+## Home
 
-The Dashboard opens with four summary tiles — Active projects, On track, At risk, and a fourth tile that's either "Pending requests" (admins) or "In backlog" (everyone else).
+Home is what you land on after logging in — a personalized view of what needs you, not a portfolio-wide browse.
 
-Below that is an **Active projects** table. This is portfolio-wide, not just your own projects — you can search by name, sort any column, and filter by Status or Phase, plus a tag filter above the table. A project's tags show as chips under its name, if it has any. Click **View** on any row to open that project.
+**Needs your attention** leads the page: any project you own that's past its target end date, tasks and to-dos assigned to you due within 3 days (or overdue), high-severity open RAID items on projects you own, and your work request status — a request sent back to you needing more detail (or, for admins, counts of project/work requests awaiting review). Click any item to jump straight to it. Below that, **Your projects** is a compact strip of the active projects you own or sponsor, and admins get a **Portfolio pulse** strip (active count, RAG split, projects missing an owner or sponsor) linking to the full [Portfolio Health](../admin-guide/#portfolio-health) page.
 
-At the bottom, everyone sees a **Rejected proposals** list — every rejected request across the whole org, not just yours, with a date-range filter (last 30/90 days, last year, all time). This is intentionally visible to everyone, not just the person who submitted it.
+At the bottom of the page — since it doesn't fit "needs your attention" but still needed a home — everyone sees a **Rejected proposals** list (every rejected request across the whole org, not just yours, with a date-range filter) and, if you're a project sponsor, a **Projects you sponsor** table with an inline **Edit financials** shortcut.
 
 ## Roadmap
 
@@ -157,7 +157,7 @@ You'll see it wherever that item normally shows up — the project/task/mileston
 
 These look similar but work differently:
 
-- **Tags** are a flexible, multi-select label you can filter by on almost every list page (Dashboard, Portfolio, Roadmap, and the project list pages all have a tag filter). A project, a resource, or a request can carry any number of tags.
+- **Tags** are a flexible, multi-select label you can filter by on almost every list page (Portfolio, Roadmap, and the project list pages all have a tag filter). A project, a resource, or a request can carry any number of tags.
 - **Categories** act more like tabs — a project can belong to multiple categories, and it'll show up under each corresponding tab on pages like Active, Backlog, Planned, Completed, and Roadmap. You can't set a project's categories yourself unless you're its owner or an admin; otherwise they're set when a request is approved.
 
 ## Permissions at a glance

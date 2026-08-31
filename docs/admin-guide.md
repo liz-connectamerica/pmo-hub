@@ -29,7 +29,7 @@ Then **Approve** or **Reject**.
 
 A full project record is created immediately — not a placeholder — carrying over the description, proposed team, tags, and any financial estimates. The request itself updates to **Backlog**, **Planned**, or **Active** to match. There is no lasting "Approved" status — don't expect to see that word stick around; it's replaced right away by wherever the project landed.
 
-**On Reject**, the request becomes **Rejected** with your feedback attached and a rejected-date stamp (this is what powers the Dashboard's rejected-proposals age filter, which everyone can see).
+**On Reject**, the request becomes **Rejected** with your feedback attached and a rejected-date stamp (this is what powers Home's rejected-proposals age filter, which everyone can see).
 
 You also have a **Delete** button on any request — it does not touch the project itself even if one is linked; the request is just hidden (see **Deleted Items** below) until restored, at which point the link, if there was one, is exactly as it was.
 

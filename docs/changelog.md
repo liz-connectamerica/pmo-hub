@@ -14,6 +14,15 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-08-31">
+  <h2>Home &amp; Dark Mode</h2>
+  <p class="changelog-date">August 31, 2026 · 2:45 PM – 4:50 PM</p>
+  <ul>
+    <li>New <strong>Home</strong> page replaces Dashboard as the default landing page. Leads with <strong>Needs your attention</strong> — your late owned projects, tasks/to-dos due within 3 days, high-severity open RAID items on projects you own, and work request status (sent-back-to-you for members, review-queue counts for admins) — followed by a compact strip of your own projects, an admin-only Portfolio pulse (active count, RAG split, missing owner/sponsor), and quick links. <strong>Rejected proposals</strong> and the <strong>Projects you sponsor</strong> financials table — Dashboard's only content with no other home in the app — moved to the bottom of Home; the old portfolio-wide Active-projects table wasn't carried over since that same data is already browsable on the Active page.</li>
+    <li>Added <strong>dark mode</strong> — a Light/System/Dark toggle in the sidebar, persisted per-browser and applied before first paint. Every page, badge, health dot, and chart color now has a dark-mode equivalent.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-08-28">
   <h2>View As</h2>
   <p class="changelog-date">August 28, 2026 · 10:16 AM – 12:37 PM</p>

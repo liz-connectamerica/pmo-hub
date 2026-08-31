@@ -14,11 +14,11 @@
   guide: User Guide
   blurb: Sidebar search across Projects and Work Requests, scoped to what you can already see.
 
-- title: Dashboard
+- title: Home
   page: /user-guide/
-  anchor: dashboard
+  anchor: home
   guide: User Guide
-  blurb: Summary tiles, active projects table, rejected proposals list.
+  blurb: Your default landing page -- needs your attention, your projects, rejected proposals.
 
 - title: Roadmap
   page: /user-guide/
