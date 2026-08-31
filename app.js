@@ -738,7 +738,7 @@ function openTagPicker(currentTagNames, onSave, allowCreate) {
       var dotClass = tagColorClass(t.name);
       return '<label style="display:flex;align-items:center;padding:6px 0;cursor:pointer;font-size:13px"><input type="checkbox" style="margin-right:8px"' + (checked?' checked':'') + ' onchange="window.__tagToggle(\'' + esc + '\')"> <span class="badge ' + dotClass + '" style="padding:2px 8px">' + t.name + '</span></label>';
     }).join('');
-    var createRow = (allowCreate && q && !exactMatch) ? '<div style="padding:8px 0 0;border-top:1px solid #eee;margin-top:6px"><button class="btn btn-sm btn-primary" onclick="window.__tagCreate()"><i class="ti ti-plus"></i> Create "' + query.trim().replace(/"/g,'&quot;') + '"</button></div>' : '';
+    var createRow = (allowCreate && q && !exactMatch) ? '<div style="padding:8px 0 0;border-top:1px solid var(--border-soft);margin-top:6px"><button class="btn btn-sm btn-primary" onclick="window.__tagCreate()"><i class="ti ti-plus"></i> Create "' + query.trim().replace(/"/g,'&quot;') + '"</button></div>' : '';
     var selectedChips = selected.length
       ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' + selected.map(function(n){
           var esc = n.replace(/'/g,"\\'");
@@ -1253,11 +1253,11 @@ function taskTimelineBlock(pid2, outlineRows) {
   var rangeControl = '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">' + rangeTabs + baselinePicker + '</div>' + rangeCustom;
 
   var legend = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin:14px 0">' + Object.keys(TASK_STATUS_COLORS).map(function(s){
-    return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#666"><span style="width:10px;height:10px;border-radius:3px;background:' + TASK_STATUS_COLORS[s] + ';display:inline-block"></span>' + s + '</div>';
+    return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-2)"><span style="width:10px;height:10px;border-radius:3px;background:' + TASK_STATUS_COLORS[s] + ';display:inline-block"></span>' + s + '</div>';
   }).join('') + '</div>';
 
   if (!outlineRows.length) {
-    return toggleBtn + '<div class="card mb-16" style="background:#faf9f7">' + rangeControl + legend +
+    return toggleBtn + '<div class="card mb-16" style="background:var(--surface-3)">' + rangeControl + legend +
       '<div class="text-muted" style="font-size:12px">No tasks to show</div></div>';
   }
 
@@ -1272,7 +1272,7 @@ function taskTimelineBlock(pid2, outlineRows) {
     var td = new Date(winStart.getTime() + ti * 7 * 86400000);
     tickLabels.push(td.toLocaleString('en-US', { month: 'short', day: 'numeric' }));
   }
-  var headerRow = '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + tickLabels.map(function(lbl){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + lbl + '</div>'; }).join('') + '</div>';
+  var headerRow = '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + tickLabels.map(function(lbl){ return '<div style="flex:1;font-size:11px;color:var(--text-faint);text-align:center">' + lbl + '</div>'; }).join('') + '</div>';
 
   var rows = outlineRows.map(function(row) {
     var t = row.task;
@@ -1304,9 +1304,9 @@ function taskTimelineBlock(pid2, outlineRows) {
         var endOffset = Math.min(totalDays, dayOffset(t.end) + 1);
         var widthPct = Math.max(1, endOffset - startOffset) / totalDays * 100;
         var leftPct = startOffset / totalDays * 100;
-        var barColor = TASK_STATUS_COLORS[t.status] || '#534AB7';
+        var barColor = TASK_STATUS_COLORS[t.status] || 'var(--accent)';
         var lateNow = isTaskLate(t);
-        barHtml = '<div class="tl-wrap">' + ghostHtml + '<div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + (lateNow ? ';box-shadow:inset 0 0 0 2px #B23A3A' : '') + '" title="' + (lateNow ? 'Late — ' : '') + t.status + '">' + (lateNow ? '<i class="ti ti-alert-triangle"></i> ' : '') + t.status + '</div></div>';
+        barHtml = '<div class="tl-wrap">' + ghostHtml + '<div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + (lateNow ? ';box-shadow:inset 0 0 0 2px var(--bad)' : '') + '" title="' + (lateNow ? 'Late — ' : '') + t.status + '">' + (lateNow ? '<i class="ti ti-alert-triangle"></i> ' : '') + t.status + '</div></div>';
       } else {
         barHtml = '<div class="tl-wrap">' + ghostHtml + '<span class="text-muted" style="font-size:12px">Outside this range</span></div>';
       }
@@ -1317,8 +1317,8 @@ function taskTimelineBlock(pid2, outlineRows) {
   }).join('');
 
   return toggleBtn +
-    '<div class="card mb-16" style="background:#faf9f7">' + rangeControl + legend +
-    (selectedBaseline ? '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#666;margin:-8px 0 14px"><span style="width:14px;height:6px;border:1px dashed #8a8a82;border-radius:3px;display:inline-block"></span> Baseline (' + (selectedBaseline.label || 'plan') + ')</div>' : '') +
+    '<div class="card mb-16" style="background:var(--surface-3)">' + rangeControl + legend +
+    (selectedBaseline ? '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-2);margin:-8px 0 14px"><span style="width:14px;height:6px;border:1px dashed var(--text-faint);border-radius:3px;display:inline-block"></span> Baseline (' + (selectedBaseline.label || 'plan') + ')</div>' : '') +
     headerRow + rows + '</div>';
 }
 
@@ -1867,8 +1867,8 @@ var raidSearchState = {};
 var docFolderState = {};
 var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fOwner:[], openFilter:null };
 var roadmapCategoryFilter = 'All';
-var PHASE_COLORS = { 'Not Started':'#9B9B93', 'Discovery':'#185FA5', 'Design':'#534AB7', 'Build':'#1D9E75', 'Testing':'#EF9F27', 'Deployment':'#D85A30', 'Monitor':'#993556' };
-var TASK_STATUS_COLORS = { 'To Do':'#9B9B93', 'In Progress':'#534AB7', 'On Hold':'#C98A2C', 'Done':'#1D9E75' };
+var PHASE_COLORS = { 'Not Started':'var(--text-faint)', 'Discovery':'var(--blue-tx)', 'Design':'var(--accent)', 'Build':'var(--good)', 'Testing':'var(--warn)', 'Deployment':'#D85A30', 'Monitor':'#993556' };
+var TASK_STATUS_COLORS = { 'To Do':'var(--text-faint)', 'In Progress':'var(--accent)', 'On Hold':'#C98A2C', 'Done':'var(--good)' };
 var dashProjState = { sort:'priority', dir:'asc', search:'', fStatus:[], fPhase:[], openFilter:null, tagFilter:[] };
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null, expandedMembersId:null };
 var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null, expandedAvgId:null };
@@ -2127,7 +2127,7 @@ function badgeIf(cls, s) {
 }
 
 function hdot(h) {
-  var c = { green:'#1D9E75', amber:'#EF9F27', red:'#E24B4A' }[h] || '#ccc';
+  var c = { green:'var(--good)', amber:'var(--warn)', red:'var(--bad)' }[h] || 'var(--text-disabled)';
   return '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + c + ';margin-right:6px;vertical-align:middle"' + (h ? '' : ' title="Health not set"') + '></span>';
 }
 
@@ -2135,7 +2135,7 @@ function hdot(h) {
 // hdot(). Rough guess/Somewhat confident/High confidence map red/amber/green.
 function confidenceDot(level) {
   if (!level) return '';
-  var c = { 'Rough guess':'#E24B4A', 'Somewhat confident':'#EF9F27', 'High confidence':'#1D9E75' }[level] || '#ccc';
+  var c = { 'Rough guess':'var(--bad)', 'Somewhat confident':'var(--warn)', 'High confidence':'var(--good)' }[level] || 'var(--text-disabled)';
   return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + c + ';margin-left:5px;vertical-align:middle" title="Value confidence: ' + level + '"></span>';
 }
 
@@ -2144,7 +2144,7 @@ function freqAbbr(freq) {
 }
 
 function stagePill(s) {
-  var m = { backlog:{bg:'#FAEEDA',c:'#633806',l:'Backlog'}, planned:{bg:'#E6F1FB',c:'#0C447C',l:'Planned'}, active:{bg:'#E1F5EE',c:'#085041',l:'Active'}, complete:{bg:'#f0ede8',c:'#444',l:'Completed'}, hold:{bg:'#FBE7E3',c:'#993C1D',l:'Hold'} };
+  var m = { backlog:{bg:'var(--warn-soft)',c:'var(--warn-tx)',l:'Backlog'}, planned:{bg:'var(--blue-soft)',c:'var(--blue-tx)',l:'Planned'}, active:{bg:'var(--good-soft)',c:'var(--good-tx)',l:'Active'}, complete:{bg:'var(--border-soft)',c:'var(--text-2)',l:'Completed'}, hold:{bg:'var(--coral-soft)',c:'var(--coral-strong-tx)',l:'Hold'} };
   var x = m[s] || m.backlog;
   return '<span class="stage-pill" style="background:' + x.bg + ';color:' + x.c + '">' + x.l + '</span>';
 }
@@ -2173,7 +2173,7 @@ function withScrollPreserved(fn) {
 function showToast(msg, type) {
   var t = document.getElementById('toast');
   t.textContent = msg;
-  t.style.background = type === 'error' ? '#A32D2D' : '#1a1a1a';
+  t.style.background = type === 'error' ? 'var(--danger)' : 'var(--text)';
   t.classList.add('show');
   setTimeout(function(){ t.classList.remove('show'); }, 3000);
 }
@@ -2202,7 +2202,7 @@ var projectDetailReferrer = null;
 
 var NAV_DEF = {
   admin: [
-    { s:'Overview', items:[{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'portfolio-health',icon:'ti-activity',label:'Portfolio Health'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
+    { s:'Overview', items:[{id:'home',icon:'ti-home',label:'Home'},{id:'dashboard',icon:'ti-layout-dashboard',label:'Dashboard'},{id:'portfolio-health',icon:'ti-activity',label:'Portfolio Health'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
       {id:'my-requests',  icon:'ti-clock', label:'My Requests', badge:'my-requests'}
@@ -2237,6 +2237,7 @@ var NAV_DEF = {
   ],
   member: [
     { s:'Overview', items:[
+      {id:'home',      icon:'ti-home',              label:'Home'},
       {id:'dashboard', icon:'ti-layout-dashboard', label:'Dashboard'},
       {id:'roadmap',   icon:'ti-road',             label:'Roadmap'},
       {id:'portfolio', icon:'ti-folder-open',      label:'Portfolio'},
@@ -2448,7 +2449,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 var PAGE_RENDERERS = {
-  dashboard:pgDashboard, portfolio:pgPortfolio, requests:pgRequests,
+  home:pgHome, dashboard:pgDashboard, portfolio:pgPortfolio, requests:pgRequests,
   backlog:pgBacklog, planned:pgPlanned, projects:pgProjects,
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
@@ -2614,7 +2615,7 @@ function openViewAsUserSearchModal() {
     var listHtml = matches.map(function(r) {
       return '<div class="member-check" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:6px 4px" onclick="setViewAsMode(\'resource\',\'' + r.id + '\')">' +
         '<span>' + r.name + (r.userId ? '' : ' <span class="text-muted" style="font-size:11px">(no account yet)</span>') + '</span>' +
-        '<i class="ti ti-chevron-right" style="color:#ccc"></i></div>';
+        '<i class="ti ti-chevron-right" style="color:var(--text-disabled)"></i></div>';
     }).join('');
     showModal('<div class="modal-title">View as specific user <button class="btn btn-sm" onclick="closeModal();bootAppForUser(true)"><i class="ti ti-x"></i></button></div>' +
       '<input type="text" id="vau-search" placeholder="Search people…" value="' + query.replace(/"/g,'&quot;') + '" oninput="window.__vauSearch(this.value)">' +
@@ -2647,6 +2648,131 @@ async function refreshTags() {
 
 async function refreshPrograms() {
   D.programs = await loadPrograms();
+}
+
+// ── Home ────────────────────────────────────────────────────────────────────
+// A personalized "what needs you" landing page, meant to eventually replace
+// Dashboard's portfolio-wide table as the default first screen. Kept
+// alongside Dashboard for now rather than swapped in -- see the Home Tab
+// Sketch this was built from.
+
+function homeGreeting() {
+  var h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
+
+function pgHome() {
+  tb('Home');
+  var firstName = (D.currentProfile.display_name || '').split(' ')[0] || 'there';
+  var today = new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+
+  var attn = [];
+  function addAttn(sev, icon, title, sub, onclick) { attn.push({ sev:sev, icon:icon, title:title, sub:sub, onclick:onclick }); }
+
+  var myOwned = D.projects.filter(isMyOwnedProject);
+  myOwned.forEach(function(p) {
+    if (isProjectLate(p)) {
+      addAttn('bad', 'ti-alert-triangle', p.name + ' — ' + daysLate(p) + ' day' + (daysLate(p)===1?'':'s') + ' past target end', 'You\'re the owner', 'goToProject(\'' + p.id + '\')');
+    }
+  });
+
+  var soon = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  var myId = D.myResourceId;
+  if (myId) {
+    D.projects.forEach(function(p) {
+      p.tasks.forEach(function(t) {
+        if (t.assigneeId === myId && t.status !== 'Done' && t.end && t.end <= soon) {
+          addAttn(t.end < todayStr() ? 'bad' : 'warn', 'ti-clock', 'Task "' + t.title + '" ' + (t.end < todayStr() ? 'is overdue' : 'is due ' + fmtDate(t.end)), p.name, 'goToProject(\'' + p.id + '\',\'tasks\')');
+        }
+      });
+      p.todos.forEach(function(td) {
+        if (td.assigneeId === myId && td.status !== 'Done' && td.due && td.due <= soon) {
+          addAttn(td.due < todayStr() ? 'bad' : 'warn', 'ti-clock', 'To-do "' + td.title + '" ' + (td.due < todayStr() ? 'is overdue' : 'is due ' + fmtDate(td.due)), p.name, 'goToProject(\'' + p.id + '\',\'todos\')');
+        }
+      });
+    });
+  }
+
+  myOwned.forEach(function(p) {
+    p.raid.risks.filter(function(r){ return r.status === 'Open' && riskEffectiveSeverity(r) === 'High'; }).forEach(function(r) {
+      var opened = raidOpenedDate(r);
+      addAttn('bad', 'ti-alert-circle', 'Open risk: "' + r.desc + '"', p.name + (opened ? ' · logged ' + daysSince(opened) + 'd ago' : ''), 'goToProject(\'' + p.id + '\',\'raid\')');
+    });
+    p.raid.issues.filter(function(i){ return i.status === 'Open' && i.severity === 'High'; }).forEach(function(i) {
+      var opened = raidOpenedDate(i);
+      addAttn('bad', 'ti-alert-circle', 'Open issue: "' + i.desc + '"', p.name + (opened ? ' · logged ' + daysSince(opened) + 'd ago' : ''), 'goToProject(\'' + p.id + '\',\'raid\')');
+    });
+  });
+
+  if (D.role === 'admin') {
+    var pend = pendingCount();
+    if (pend > 0) addAttn('blue', 'ti-inbox', pend + ' project request' + (pend===1?'':'s') + ' awaiting review', 'Oldest first', 'nav(\'requests\')');
+    var newWr = (D.workRequests || []).filter(function(w){ return w.status === 'New'; }).length;
+    if (newWr > 0) addAttn('blue', 'ti-clipboard-list', newWr + ' work request' + (newWr===1?'':'s') + ' awaiting review', '', 'nav(\'admin-work-requests\')');
+  } else {
+    (D.workRequests || []).filter(function(w){ return w.requesterId === D.currentProfile.id && w.status === 'Needs Info'; }).forEach(function(w) {
+      addAttn('blue', 'ti-arrow-back-up', 'Work request "' + w.title + '" was sent back to you', 'Needs more detail before it can be reviewed', 'globalSearchGoWorkRequest(\'' + w.id + '\')');
+    });
+    if (myId) {
+      (D.workRequests || []).filter(function(w){ return w.resourceId === myId && w.status === 'New'; }).forEach(function(w) {
+        addAttn('blue', 'ti-inbox-down', 'New work request assigned to you: "' + w.title + '"', 'Not yet triaged', 'globalSearchGoWorkRequest(\'' + w.id + '\')');
+      });
+    }
+  }
+
+  var sevRank = { bad:0, warn:1, blue:2 };
+  attn.sort(function(a, b){ return sevRank[a.sev] - sevRank[b.sev]; });
+  var attnShown = attn.slice(0, 8);
+
+  var attnHtml = attnShown.length
+    ? '<div class="home-attn-list">' + attnShown.map(function(a) {
+        return '<div class="home-attn-item" onclick="' + a.onclick + '">' +
+          '<div class="home-attn-icon ' + a.sev + '"><i class="ti ' + a.icon + '"></i></div>' +
+          '<div class="home-attn-body"><div class="home-attn-title">' + a.title + '</div>' + (a.sub ? '<div class="home-attn-sub">' + a.sub + '</div>' : '') + '</div>' +
+        '</div>';
+      }).join('') + '</div>'
+    : '<div class="empty-state" style="padding:30px"><i class="ti ti-check"></i><p>Nothing needs your attention right now</p></div>';
+
+  var myProjectsForStrip = D.projects.filter(function(p){ return (isMyOwnedProject(p) || isProjectSponsor(p)) && p.stage === 'active'; })
+    .sort(function(a, b){ var rank = { 'Blocked':0, 'At Risk':0 }; return (rank[a.status]!=null?0:1) - (rank[b.status]!=null?0:1); })
+    .slice(0, 8);
+  var projStripHtml = myProjectsForStrip.map(function(p) {
+    return '<div class="home-proj-card" onclick="goToProject(\'' + p.id + '\')">' +
+      '<div class="home-proj-name">' + hdot(p.health) + p.name + '</div>' +
+      '<div class="home-proj-meta"><span>' + (p.status || 'Not set') + '</span><span>' + p.progress + '%</span></div>' +
+      '<div class="progress-bar"><div class="progress-fill" style="width:' + p.progress + '%"></div></div>' +
+    '</div>';
+  }).join('');
+
+  var pulseHtml = '';
+  if (D.role === 'admin') {
+    var activeProjects = D.projects.filter(function(p){ return p.stage === 'active'; });
+    var onTrackN = activeProjects.filter(function(p){ return p.status === 'On Track'; }).length;
+    var atRiskN = activeProjects.filter(function(p){ return p.status === 'At Risk' || p.status === 'Blocked'; }).length;
+    var otherN = activeProjects.length - onTrackN - atRiskN;
+    var missingN = activeProjects.filter(function(p){ return !p.owner || !p.sponsor; }).length;
+    var pct = function(n){ return activeProjects.length ? (n / activeProjects.length * 100) : 0; };
+    pulseHtml = '<div class="card">' +
+      '<div class="home-pulse-row">' +
+        '<div><div class="home-pulse-num">' + activeProjects.length + '</div><div class="home-pulse-label">Active projects</div></div>' +
+        '<div><div class="home-rag-bar"><div style="width:' + pct(onTrackN) + '%;background:var(--good)"></div><div style="width:' + pct(atRiskN) + '%;background:var(--bad)"></div><div style="width:' + pct(otherN) + '%;background:var(--border-soft)"></div></div><div class="home-pulse-label">RAG split</div></div>' +
+        '<div><div class="home-pulse-num">' + missingN + '</div><div class="home-pulse-label">Missing owner/sponsor</div></div>' +
+        '<a class="home-pulse-label" style="color:var(--accent);font-weight:600;margin-left:auto;cursor:pointer" onclick="nav(\'portfolio-health\')">View full Portfolio Health →</a>' +
+      '</div></div>';
+  }
+
+  document.getElementById('content').innerHTML =
+    '<div class="home-greet-row"><h1>' + homeGreeting() + ', ' + firstName + '</h1><div class="home-date">' + today + '</div></div>' +
+    '<div class="home-sub">Here\'s what\'s waiting on you today.</div>' +
+    '<div class="home-section"><div class="home-h2">Needs your attention' + (attnShown.length ? ' <span class="home-count-pill">' + attn.length + '</span>' : '') + '</div>' + attnHtml + '</div>' +
+    (myProjectsForStrip.length ? '<div class="home-section"><div class="home-h2">Your projects</div><div class="home-proj-strip">' + projStripHtml + '</div></div>' : '') +
+    (pulseHtml ? '<div class="home-section"><div class="home-h2">Portfolio pulse</div>' + pulseHtml + '</div>' : '') +
+    '<div class="home-section"><div class="home-h2">Quick links</div><div class="home-quicklinks">' +
+      (hasAssignedWork() ? '<button class="btn" onclick="nav(\'my-tasks\')"><i class="ti ti-list-check"></i> My Tasks</button>' : '') +
+      (hasAssignedWork() ? '<button class="btn" onclick="nav(\'my-projects\')"><i class="ti ti-briefcase"></i> My Projects</button>' : '') +
+      (hasAssignedWork() ? '<button class="btn" onclick="nav(\'my-work-requests\')"><i class="ti ti-clipboard-list"></i> My Work Requests</button>' : '') +
+      '<button class="btn" onclick="nav(\'submit\')"><i class="ti ti-send"></i> Submit a Request</button>' +
+    '</div></div>';
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
@@ -2695,7 +2821,7 @@ function pgDashboard() {
       '<td>' + badgeIf('badge-gray', p.phase) + '</td>' +
       '<td><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div></td>' +
       '<td class="text-muted">' + (p.owner || '—') + '</td>' +
-      '<td>' + (p.blockers ? '<span style="color:#993C1D;font-size:12px"><i class="ti ti-alert-triangle"></i> Yes</span>' : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.blockers ? '<span style="color:var(--coral-strong-tx);font-size:12px"><i class="ti ti-alert-triangle"></i> Yes</span>' : '<span class="text-muted">—</span>') + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
   }).join('');
 
@@ -2743,10 +2869,10 @@ function pgDashboard() {
   document.getElementById('content').innerHTML =
     '<div class="grid-4 mb-16">' +
       '<div class="metric"><div class="metric-label">Active projects</div><div class="metric-value">' + active.length + '</div></div>' +
-      '<div class="metric"><div class="metric-label">On track</div><div class="metric-value" style="color:#1D9E75">' + onT + '</div></div>' +
-      '<div class="metric"><div class="metric-label">At risk</div><div class="metric-value" style="color:#EF9F27">' + atR + '</div></div>' +
+      '<div class="metric"><div class="metric-label">On track</div><div class="metric-value" style="color:var(--good)">' + onT + '</div></div>' +
+      '<div class="metric"><div class="metric-label">At risk</div><div class="metric-value" style="color:var(--warn)">' + atR + '</div></div>' +
       (D.role === 'admin'
-        ? '<div class="metric"><div class="metric-label">Pending requests</div><div class="metric-value" style="color:#534AB7">' + pendingCount() + '</div></div>'
+        ? '<div class="metric"><div class="metric-label">Pending requests</div><div class="metric-value" style="color:var(--accent)">' + pendingCount() + '</div></div>'
         : '<div class="metric"><div class="metric-label">In backlog</div><div class="metric-value">' + backlogCount() + '</div></div>') +
     '</div>' +
     '<div class="card mb-16"><div class="section-title">Active projects</div>' + tagFilterBarHtml(dst.tagFilter, 'openDashTagFilter') + dashSearchBar +
@@ -2838,7 +2964,7 @@ function pgPortfolio() {
     var cl = cols[i++ % cols.length];
     var cards = byVal[v].map(function(p) {
       var req = p.requestId ? D.requests.find(function(r){ return r.id === p.requestId; }) : null;
-      return '<div class="card card-sm" style="cursor:pointer;border:1px solid #e8e8e5;border-radius:10px" onclick="goToProject(\'' + p.id + '\')">' +
+      return '<div class="card card-sm" style="cursor:pointer;border:1px solid var(--border);border-radius:10px" onclick="goToProject(\'' + p.id + '\')">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px"><span class="bold" style="font-size:13px">' + p.name + '</span>' +
         '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0">' + stagePill(p.stage) + '<button class="btn btn-sm" onclick="event.stopPropagation();goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></div></div>' +
         (p.stage === 'hold' && p.holdReason ? '<div class="text-muted mb-12" style="font-size:12px"><i class="ti ti-player-pause"></i> ' + p.holdReason + '</div>' : '') +
@@ -3000,22 +3126,22 @@ function reviewRequest(id) {
       '<div><div class="form-label">Business Unit</div>' + (r.businessUnit || '—') + '</div>' +
       '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '—') + '</div>' +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Description</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + (r.description||'') + '</div></div>' +
+    '<div class="form-group"><div class="form-label">Description</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + (r.description||'') + '</div></div>' +
     '<div class="grid-2 mb-16">' +
       '<div><div class="form-label">Value type</div>' + opportunityDisplay + '</div>' +
       (r.value ? '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + r.value + '</span></div>' : '') +
       estimateDisplay +
     '</div>' +
-    (r.valueJustification && canFinancials ? '<div class="form-group"><div class="form-label">Value justification</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + r.valueJustification + '</div></div>' : '') +
+    (r.valueJustification && canFinancials ? '<div class="form-group"><div class="form-label">Value justification</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + r.valueJustification + '</div></div>' : '') +
     (costDisplay ? '<div class="mb-16">' + costDisplay + '</div>' : '') +
     (r.tags && r.tags.length ? '<div class="form-group"><div class="form-label">Tags</div>' + r.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
     (r.team && r.team.length ? '<div class="form-group"><div class="form-label">Proposed team</div>' + r.team.join(', ') + '</div>' : '') +
-    (r.feedback ? '<div class="form-group"><div class="form-label">PMO feedback</div><div style="background:#f5f5f3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid #534AB7">' + r.feedback + '</div></div>' : '');
+    (r.feedback ? '<div class="form-group"><div class="form-label">PMO feedback</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--accent)">' + r.feedback + '</div></div>' : '');
 
   if (linkedP) {
     html += '<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="form-label" style="margin-bottom:0">Linked project</div>' +
       (D.role === 'admin' ? '<button class="btn btn-sm" onclick="closeModal();editProject(\'' + linkedP.id + '\')"><i class="ti ti-edit"></i> Edit project</button>' : '') + '</div>' +
-      '<div style="background:#f5f5f3;padding:12px 16px;border-radius:8px;font-size:13px">' +
+      '<div style="background:var(--surface-2);padding:12px 16px;border-radius:8px;font-size:13px">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="bold">' + linkedP.name + '</span>' + stagePill(linkedP.stage) + '</div>' +
         '<div class="grid-2" style="gap:8px 16px;font-size:12px">' +
           '<div><span class="text-muted">Status: </span>' + bdg(linkedP.status) + '</div>' +
@@ -3023,7 +3149,7 @@ function reviewRequest(id) {
           '<div><span class="text-muted">Owner: </span>' + (linkedP.owner || '—') + '</div>' +
           '<div><span class="text-muted">Due: </span>' + (linkedP.end || 'TBD') + '</div>' +
         '</div>' +
-        '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:11px;color:#777;margin-bottom:3px"><span>Progress</span><span>' + linkedP.progress + '%</span></div>' +
+        '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:3px"><span>Progress</span><span>' + linkedP.progress + '%</span></div>' +
         '<div class="progress-bar"><div class="progress-fill" style="width:' + linkedP.progress + '%"></div></div></div>' +
         (linkedP.blockers ? '<div class="blocker-note" style="margin-top:8px"><i class="ti ti-alert-triangle"></i> ' + linkedP.blockers + '</div>' : '') +
       '</div>';
@@ -3293,17 +3419,17 @@ function openEditResubmitModal(id, overrides) {
         '<div class="grid-2"><select id="erq-est-freq"><option' + (curEstFreq==='Monthly'?' selected':'') + '>Monthly</option><option' + (curEstFreq==='Annually'?' selected':'') + '>Annually</option></select>' +
         '<input type="text" id="erq-est-amount" value="' + (curEstAmount!=null?curEstAmount:'') + '" placeholder="$ amount (optional)"></div>' +
         '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="erq-value-confidence">' + confidenceOptsHtml(curValueConfidence) + '</select></div>' +
-        '<div id="erq-est-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
+        '<div id="erq-est-err" style="color:var(--danger);font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
       '</div>' +
       '<div class="form-group"><div class="form-label">Value justification</div><div class="form-sub">How did you arrive at the estimated value?</div><textarea id="erq-justification" rows="3">' + curJustification.replace(/</g,'&lt;') + '</textarea></div>' +
       '<div class="form-group"><div class="form-label">Cost estimate</div>' +
         '<div class="grid-2"><input type="text" id="erq-cost-amount" value="' + (curCostAmount!=null?curCostAmount:'') + '" placeholder="$ amount (optional)"><select id="erq-cost-confidence">' + confidenceOptsHtml(curCostConfidence) + '</select></div>' +
-        '<div id="erq-cost-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
+        '<div id="erq-cost-err" style="color:var(--danger);font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
       '</div>'
     : '<div class="form-group"><div class="form-label">What\'s the expected value? *</div><textarea id="erq-value-desc" rows="3">' + curOppOther.replace(/</g,'&lt;') + '</textarea></div>';
 
   showModal('<div class="modal-title">Edit &amp; resubmit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    (r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:#FBE7E3;padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid #993C1D">' + r.feedback + '</div></div>' : '') +
+    (r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:var(--coral-soft);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--coral-strong-tx)">' + r.feedback + '</div></div>' : '') +
     '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="erq-title" value="' + curTitle.replace(/"/g,'&quot;') + '"></div>' +
     '<div class="form-group"><div class="form-label">Business Unit *</div><select id="erq-bu">' + buOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="erq-sponsor" value="' + curSponsor.replace(/"/g,'&quot;') + '" placeholder="Optional"></div>' +
@@ -3618,7 +3744,7 @@ function pgBacklog() {
   }).join('');
 
   document.getElementById('content').innerHTML =
-    '<div class="info-banner info-amber"><i class="ti ti-stack-2" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
+    '<div class="info-banner info-amber"><i class="ti ti-stack-2" style="font-size:20px;flex-shrink:0;color:var(--hatch-border)"></i>' +
     '<span>Projects here are <strong>approved</strong> and waiting to be scheduled. Assign a start date to move them to Planned — an Owner can be assigned later.</span></div>' +
     searchBoxHtml(st.search, 'Search projects by name…', 'backlog-search', 'onBacklogSearch') +
     cat.html +
@@ -3671,20 +3797,20 @@ function pbEffortBucket(p) {
 function pbShowMatrixHelp() {
   showModal('<div class="modal-title">How the Value / Effort Matrix works <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-sub" style="margin-bottom:14px">Only sized projects (an estimated value <strong>and</strong> a T-shirt size) show up here — everything else is listed under Needs sizing instead.</div>' +
-    '<div class="form-group"><div class="form-label">Value axis (High vs. Low)</div><div style="font-size:13px;color:#444">A project is "High" if its estimated value is at or above the <strong>median</strong> estimated value among the sized projects in this tab, otherwise "Low." That\'s a relative split, not a fixed dollar line — it recalculates per tab and shifts as projects are added, resolved, or resized.</div></div>' +
-    '<div class="form-group"><div class="form-label">Effort axis (High vs. Low)</div><div style="font-size:13px;color:#444">Comes straight from T-shirt size: XS/S = Low effort, M/L/XL = High effort.</div></div>' +
-    '<div class="form-group"><div class="form-label">The four quadrants</div><div style="font-size:13px;color:#444">Quick Wins = High value, Low effort. Major Projects = High value, High effort. Fill-ins = Low value, Low effort. Reconsider = Low value, High effort.</div></div>' +
+    '<div class="form-group"><div class="form-label">Value axis (High vs. Low)</div><div style="font-size:13px;color:var(--text-2)">A project is "High" if its estimated value is at or above the <strong>median</strong> estimated value among the sized projects in this tab, otherwise "Low." That\'s a relative split, not a fixed dollar line — it recalculates per tab and shifts as projects are added, resolved, or resized.</div></div>' +
+    '<div class="form-group"><div class="form-label">Effort axis (High vs. Low)</div><div style="font-size:13px;color:var(--text-2)">Comes straight from T-shirt size: XS/S = Low effort, M/L/XL = High effort.</div></div>' +
+    '<div class="form-group"><div class="form-label">The four quadrants</div><div style="font-size:13px;color:var(--text-2)">Quick Wins = High value, Low effort. Major Projects = High value, High effort. Fill-ins = Low value, Low effort. Reconsider = Low value, High effort.</div></div>' +
     '<div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>');
 }
 
 function pbShowPriorityHelp() {
   showModal('<div class="modal-title">How Priority Order is calculated <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div class="form-group"><div class="form-label">One shared ranking</div><div style="font-size:13px;color:#444">There is a single priority order across every non-complete project (Backlog, Planned, Active, Hold) — category tabs are a filtered view of that same order, not a ranking of their own. Dragging a row in any tab updates the real, shared order, so a move can shift where a project lands in another tab it also belongs to, if the move crosses a project that shares that category.</div></div>' +
-    '<div class="form-group"><div class="form-label">Every sized project has a saved rank</div><div style="font-size:13px;color:#444">As soon as a project has both an estimated value and a T-shirt size, its position is calculated by <strong>estimated value ÷ effort</strong> (highest first) and saved right away — effort comes from T-shirt size (XS=1, S=2, M=3, L=4, XL=5; missing size counts as 3). You don\'t have to touch it for that rank to be real.</div></div>' +
-    '<div class="form-group"><div class="form-label">Dragging creates an override</div><div style="font-size:13px;color:#444">Moving a row by hand saves its new position and marks it <span class="badge badge-amber" style="font-size:10px"><i class="ti ti-pin"></i> Manual</span> — that project won\'t be swept back into place by the automatic calculation. Everything else keeps its own override status even when its rank number shifts to make room.</div></div>' +
-    '<div class="form-group"><div class="form-label">Undo</div><div style="font-size:13px;color:#444">Right after a drag, an Undo button appears next to Reset to default — it puts that one project back exactly where it was, including removing its Manual badge if this was the first time it had ever been moved by hand. It only covers the most recent move.</div></div>' +
-    '<div class="form-group"><div class="form-label">Resetting</div><div style="font-size:13px;color:#444">"Reset to default" clears every manual override and re-sorts the whole list by the automatic calculation — it shows you exactly what would move before anything is saved.</div></div>' +
-    '<div class="form-group"><div class="form-label">Only sized projects rank</div><div style="font-size:13px;color:#444">A project needs both an estimated value and a T-shirt size to appear here — otherwise it shows under Needs sizing instead.</div></div>' +
+    '<div class="form-group"><div class="form-label">One shared ranking</div><div style="font-size:13px;color:var(--text-2)">There is a single priority order across every non-complete project (Backlog, Planned, Active, Hold) — category tabs are a filtered view of that same order, not a ranking of their own. Dragging a row in any tab updates the real, shared order, so a move can shift where a project lands in another tab it also belongs to, if the move crosses a project that shares that category.</div></div>' +
+    '<div class="form-group"><div class="form-label">Every sized project has a saved rank</div><div style="font-size:13px;color:var(--text-2)">As soon as a project has both an estimated value and a T-shirt size, its position is calculated by <strong>estimated value ÷ effort</strong> (highest first) and saved right away — effort comes from T-shirt size (XS=1, S=2, M=3, L=4, XL=5; missing size counts as 3). You don\'t have to touch it for that rank to be real.</div></div>' +
+    '<div class="form-group"><div class="form-label">Dragging creates an override</div><div style="font-size:13px;color:var(--text-2)">Moving a row by hand saves its new position and marks it <span class="badge badge-amber" style="font-size:10px"><i class="ti ti-pin"></i> Manual</span> — that project won\'t be swept back into place by the automatic calculation. Everything else keeps its own override status even when its rank number shifts to make room.</div></div>' +
+    '<div class="form-group"><div class="form-label">Undo</div><div style="font-size:13px;color:var(--text-2)">Right after a drag, an Undo button appears next to Reset to default — it puts that one project back exactly where it was, including removing its Manual badge if this was the first time it had ever been moved by hand. It only covers the most recent move.</div></div>' +
+    '<div class="form-group"><div class="form-label">Resetting</div><div style="font-size:13px;color:var(--text-2)">"Reset to default" clears every manual override and re-sorts the whole list by the automatic calculation — it shows you exactly what would move before anything is saved.</div></div>' +
+    '<div class="form-group"><div class="form-label">Only sized projects rank</div><div style="font-size:13px;color:var(--text-2)">A project needs both an estimated value and a T-shirt size to appear here — otherwise it shows under Needs sizing instead.</div></div>' +
     '<div class="modal-footer"><button class="btn btn-primary" onclick="closeModal()">Got it</button></div>');
 }
 
@@ -3851,7 +3977,7 @@ function pgPrioritizeBacklog() {
   }).join('');
 
   document.getElementById('content').innerHTML =
-    '<div class="info-banner info-amber"><i class="ti ti-arrows-sort" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
+    '<div class="info-banner info-amber"><i class="ti ti-arrows-sort" style="font-size:20px;flex-shrink:0;color:var(--hatch-border)"></i>' +
     '<span>Drag rows in the list to set priority order for <strong>' + scope + '</strong>. There is one overall ranking across all categories — this tab shows just the projects in it, in that same order. Reordering here only changes what you see elsewhere if it moves a project past another one that shares a category with it.</span></div>' +
     searchBoxHtml(st.search, 'Search projects by name…', 'prioritize-search', 'onPrioritizeSearch') +
     cat.html +
@@ -3982,13 +4108,13 @@ function openScheduleModal(pid) {
 
   var unplannedDeps = (p.dependencies||[]).filter(function(d){ return !(d.start && d.end); });
   var depWarning = unplannedDeps.length
-    ? '<div class="info-banner info-amber" style="margin-bottom:16px"><i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
+    ? '<div class="info-banner info-amber" style="margin-bottom:16px"><i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;color:var(--hatch-border)"></i>' +
       '<span>This project depends on ' + (unplannedDeps.length===1 ? 'a project' : unplannedDeps.length + ' projects') + ' that ' + (unplannedDeps.length===1?'hasn\'t':'haven\'t') + ' been planned yet: <strong>' + unplannedDeps.map(function(d){ return d.name; }).join(', ') + '</strong>. You can still schedule this project, but worth planning ' + (unplannedDeps.length===1?'that one':'those') + ' too.</span></div>'
     : '';
   showModal(
     '<div class="modal-title">Schedule project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     depWarning +
-    '<div style="font-weight:600;margin-bottom:16px;color:#534AB7">' + p.name + '</div>' +
+    '<div style="font-weight:600;margin-bottom:16px;color:var(--accent)">' + p.name + '</div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Planned start *</div><input type="date" id="sch-start" value="' + (p.plannedStart||'') + '"></div>' +
     '<div class="form-group"><div class="form-label">Target end *</div><input type="date" id="sch-end" value="' + (p.end||'') + '"></div></div>' +
     '<div class="form-group"><div class="form-label">Owner</div><select id="sch-owner">' + ownerOpts + '</select></div>' +
@@ -4098,7 +4224,7 @@ function pgPlanned() {
       '<td class="bold">' + p.name + '</td>' +
       '<td>' + ((p.tags && p.tags.length) ? p.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (p.owner || '<span class="text-muted">—</span>') + (soonNoOwner ? ' <i class="ti ti-alert-triangle" style="color:#BA7517" title="Starts within 30 days, no Owner assigned yet"></i>' : '') + '</td>' +
+      '<td>' + (p.owner || '<span class="text-muted">—</span>') + (soonNoOwner ? ' <i class="ti ti-alert-triangle" style="color:var(--hatch-border)" title="Starts within 30 days, no Owner assigned yet"></i>' : '') + '</td>' +
       '<td>' + (p.plannedStart || '<span class="text-muted">TBD</span>') + '</td>' +
       '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td style="white-space:nowrap">' + actionBtns + '</td>' +
@@ -4108,7 +4234,7 @@ function pgPlanned() {
   var bannerText = 'These projects are <strong>scheduled</strong> with a start date. Activate them when work begins.';
 
   document.getElementById('content').innerHTML =
-    '<div class="info-banner info-blue"><i class="ti ti-calendar-event" style="font-size:20px;flex-shrink:0;color:#185FA5"></i><span>' + bannerText + '</span></div>' +
+    '<div class="info-banner info-blue"><i class="ti ti-calendar-event" style="font-size:20px;flex-shrink:0;color:var(--blue-tx)"></i><span>' + bannerText + '</span></div>' +
     searchBoxHtml(st.search, 'Search projects by name…', 'planned-search', 'onPlannedSearch') +
     cat.html +
     '<div class="card"><div class="table-wrap"><table><thead><tr>' +
@@ -4222,7 +4348,7 @@ function pgProjects() {
       '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.phase || '<span class="text-muted">—</span>') + '</td>' +
-      '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:#f0ede8;border-radius:3px;overflow:hidden"><div style="height:100%;width:' + p.progress + '%;background:#534AB7"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
+      '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:var(--border-soft);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + p.progress + '%;background:var(--accent)"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td>' +
@@ -4349,7 +4475,7 @@ function openEditProjectFinancialsModal(pid) {
     '<div class="form-group"><div class="form-label">Cost estimate</div>' +
       '<div class="grid-2"><input type="text" id="epf-cost-amount" value="' + (p.costEstimate!=null?p.costEstimate:'') + '" placeholder="$ amount (optional)"><select id="epf-cost-confidence">' + confidenceOptsHtml(p.costConfidence) + '</select></div>' +
     '</div>' +
-    '<div id="epf-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter valid numbers (digits only)</div>' +
+    '<div id="epf-err" style="color:var(--danger);font-size:12px;margin-top:4px;display:none">Please enter valid numbers (digits only)</div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="epf-save">Save changes</button></div>');
 
   ['epf-amount','epf-cost-amount'].forEach(function(id) {
@@ -4416,14 +4542,14 @@ async function loadAndRenderChangeLog(pid) {
   if (logEl) {
     logEl.innerHTML = entries.length
       ? entries.map(function(e) {
-          var oldDisp = e.old_value == null ? '<em style="color:#999">empty</em>' : e.old_value;
-          var newDisp = e.new_value == null ? '<em style="color:#999">empty</em>' : e.new_value;
-          return '<div style="padding:10px 0;border-bottom:1px solid #f0ede8">' +
+          var oldDisp = e.old_value == null ? '<em style="color:var(--text-faint)">empty</em>' : e.old_value;
+          var newDisp = e.new_value == null ? '<em style="color:var(--text-faint)">empty</em>' : e.new_value;
+          return '<div style="padding:10px 0;border-bottom:1px solid var(--border-soft)">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
               '<span class="bold" style="font-size:13px">' + e.field_label + '</span>' +
               '<span class="badge badge-gray" style="font-size:10px">' + (SOURCE_LABELS[e.source] || e.source) + '</span>' +
             '</div>' +
-            '<div style="font-size:13px;color:#444">' + oldDisp + ' <i class="ti ti-arrow-right" style="color:#999"></i> ' + newDisp + '</div>' +
+            '<div style="font-size:13px;color:var(--text-2)">' + oldDisp + ' <i class="ti ti-arrow-right" style="color:var(--text-faint)"></i> ' + newDisp + '</div>' +
             '<div class="text-muted" style="font-size:11px;margin-top:2px">' + e.changed_by_name + ' · ' + fmtDate(e.changed_at) + '</div>' +
           '</div>';
         }).join('')
@@ -4458,7 +4584,7 @@ function pgProjectDetail(pid, tab) {
   function tabC(t) {
     if (t === 'overview') {
       function fieldBox(label, valueHtml) {
-        return '<div><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">' + label + '</div><div style="font-size:13px">' + valueHtml + '</div></div>';
+        return '<div><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">' + label + '</div><div style="font-size:13px">' + valueHtml + '</div></div>';
       }
       function editBtnRow(key, allowed) {
         if (allowed === undefined) allowed = editable;
@@ -4476,7 +4602,7 @@ function pgProjectDetail(pid, tab) {
       var sectionDefs = PROJECT_INFO_SUBTABS.filter(function(s){ return s.key !== 'financials' || canViewFin; });
 
       function section(key, label, bodyHtml) {
-        return '<div id="pinfo-' + key + '" style="scroll-margin-top:16px;padding-bottom:24px;margin-bottom:24px;border-bottom:1px solid #f0ede8">' +
+        return '<div id="pinfo-' + key + '" style="scroll-margin-top:16px;padding-bottom:24px;margin-bottom:24px;border-bottom:1px solid var(--border-soft)">' +
           '<div class="section-title">' + label + '</div>' + bodyHtml + '</div>';
       }
 
@@ -4514,7 +4640,7 @@ function pgProjectDetail(pid, tab) {
         }
         return editBtnRow('identity') +
             fieldBox('Project name', p.name) +
-            '<div class="form-group" style="margin:12px 0"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
+            '<div class="form-group" style="margin:12px 0"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin:12px 0 16px">' +
               fieldBox('Priority', bdg(p.priority)) +
               fieldBox('Value area', badgeIf('badge-purple', p.value)) +
@@ -4523,10 +4649,10 @@ function pgProjectDetail(pid, tab) {
               fieldBox('Delivery methodology', p.deliveryMethodology ? '<span class="badge badge-gray">' + p.deliveryMethodology + '</span>' : '<span class="text-muted">Not selected</span>') +
               fieldBox('Project ID', '<span class="text-muted">#' + (p.projectNumber || '—') + '</span>') +
             '</div>' +
-            '<div class="form-group" style="margin-bottom:12px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Category</div>' +
+            '<div class="form-group" style="margin-bottom:12px"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Category</div>' +
               (p.categories && p.categories.length ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted" style="font-size:13px">—</span>') +
             '</div>' +
-            '<div class="form-group" style="margin-bottom:0"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+            '<div class="form-group" style="margin-bottom:0"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
               (p.tags && p.tags.length ? p.tags.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted" style="font-size:13px">No tags yet</span>') +
               (editable ? '<button class="btn btn-sm" onclick="openProjectTagPicker(\'' + p.id + '\')"><i class="ti ti-tag"></i> Edit tags</button>' : '') +
             '</div></div>';
@@ -4553,10 +4679,10 @@ function pgProjectDetail(pid, tab) {
               fieldBox('Start', p.start||'—') +
               fieldBox('Target end', p.end||'—') +
             '</div>' +
-            (p.stage === 'hold' ? '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D;margin-bottom:14px"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
-            '<div class="form-group" style="margin-bottom:0"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Timeline</div>' + timelineHtml() +
+            (p.stage === 'hold' ? '<div class="blocker-note" style="background:var(--coral-soft);border-left-color:var(--coral-strong-tx);margin-bottom:14px"><i class="ti ti-player-pause"></i> <strong>On hold:</strong> ' + (p.holdReason||'') + '</div>' : '') +
+            '<div class="form-group" style="margin-bottom:0"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Timeline</div>' + timelineHtml() +
             '<button class="btn btn-sm mt-12" onclick="window.switchPTab(\'milestones\')"><i class="ti ti-list"></i> View milestones</button></div>' +
-            (editable && !isComplete ? '<div style="margin-top:16px;padding-top:14px;border-top:1px solid #e8e8e5;display:flex;gap:8px">' +
+            (editable && !isComplete ? '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);display:flex;gap:8px">' +
               (p.stage === 'hold'
                 ? '<button class="btn btn-success btn-sm" onclick="resumeFromHold(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Resume</button>'
                 : ((p.stage === 'active' || p.stage === 'planned' || p.stage === 'backlog') ? '<button class="btn btn-sm" onclick="putOnHold(\'' + p.id + '\')"><i class="ti ti-player-pause"></i> Put on hold</button>' : '') +
@@ -4591,7 +4717,7 @@ function pgProjectDetail(pid, tab) {
             '<div class="form-group"><div class="form-label">Cost estimate</div>' +
               '<div class="grid-2"><input type="text" id="pff-cost-amount" value="' + (p.costEstimate!=null?p.costEstimate:'') + '" placeholder="$ amount (optional)"><select id="pff-cost-confidence">' + confidenceOptsHtml(p.costConfidence) + '</select></div>' +
             '</div>' +
-            '<div id="pff-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter valid numbers (digits only)</div>' +
+            '<div id="pff-err" style="color:var(--danger);font-size:12px;margin-top:4px;display:none">Please enter valid numbers (digits only)</div>' +
             saveCancelRow('saveProjectFinancials');
         }
         var hasFinData = p.estimatedAmount != null || p.costEstimate != null;
@@ -4604,11 +4730,11 @@ function pgProjectDetail(pid, tab) {
               : '<div class="text-muted" style="font-size:13px">No financial detail recorded yet</div>');
       })() : '';
 
-      var relationshipsBody = '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Depends on</div><div style="display:flex;flex-direction:column;gap:6px">' +
+      var relationshipsBody = '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Depends on</div><div style="display:flex;flex-direction:column;gap:6px">' +
             (p.dependencies && p.dependencies.length
               ? p.dependencies.map(function(d){
                   var isPlanned = !!(d.start && d.end);
-                  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:#faf9f7;border-radius:6px">' +
+                  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:var(--surface-3);border-radius:6px">' +
                     '<span style="font-size:13px"><i class="ti ti-eye" style="cursor:pointer;margin-right:6px" onclick="goToProject(\'' + d.id + '\')"></i>' + d.name + '</span>' +
                     (isPlanned ? '<span class="badge badge-teal" style="font-size:11px">Planned: ' + d.start + ' – ' + d.end + '</span>' : '<span class="badge badge-amber" style="font-size:11px"><i class="ti ti-alert-triangle"></i> Not yet planned</span>') +
                     (editable ? '<button class="btn btn-sm btn-danger" onclick="removeProjectDependency(\'' + p.id + '\',\'' + d.id + '\')"><i class="ti ti-x"></i></button>' : '') +
@@ -4617,7 +4743,7 @@ function pgProjectDetail(pid, tab) {
               : '<span class="text-muted" style="font-size:13px">No dependencies</span>') +
             (editable ? '<button class="btn btn-sm" style="align-self:flex-start" onclick="openDependencyPicker(\'' + p.id + '\')"><i class="ti ti-link"></i> Add dependency</button>' : '') +
           '</div></div>' +
-          '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Program</div><div style="display:flex;align-items:center;gap:8px;font-size:13px">' +
+          '<div class="form-group" style="margin-bottom:14px"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Program</div><div style="display:flex;align-items:center;gap:8px;font-size:13px">' +
             (p.programId
               ? (function(){
                   var prog = D.programs.find(function(x){ return x.id === p.programId; });
@@ -4636,7 +4762,7 @@ function pgProjectDetail(pid, tab) {
 
       var auditBody = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px">' +
             fieldBox('Created', fmtDate(p.createdAt)) +
-            '<div id="pmeta-last-edited"><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">Last edited</div><span class="text-muted" style="font-size:13px">Loading…</span></div>' +
+            '<div id="pmeta-last-edited"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Last edited</div><span class="text-muted" style="font-size:13px">Loading…</span></div>' +
           '</div>';
 
       var changelogBody = '<div id="pinfo-changelog-body"><div class="text-muted" style="font-size:13px">Loading…</div></div>';
@@ -4653,7 +4779,7 @@ function pgProjectDetail(pid, tab) {
     }
     if (t === 'team') {
       function peopleFieldBox(label, valueHtml) {
-        return '<div><div class="form-label" style="font-size:11px;color:#888;margin-bottom:3px">' + label + '</div><div style="font-size:13px">' + valueHtml + '</div></div>';
+        return '<div><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">' + label + '</div><div style="font-size:13px">' + valueHtml + '</div></div>';
       }
       var peopleRolesHtml;
       var isAdminPeople = D.role === 'admin';
@@ -4749,8 +4875,8 @@ function pgProjectDetail(pid, tab) {
             var effPctHint = curTier
               ? '<span class="text-muted" style="font-size:11px;white-space:nowrap" title="' + (isOverridden ? 'This person has overridden this from their My Capacity page' : 'Based on tier + this project\'s T-shirt size') + '">≈' + effectiveAllocationPct(p, resId) + '%' + (isOverridden ? ' (self-set)' : '') + '</span>'
               : '';
-            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0ede8">' +
-              '<div style="display:flex;align-items:center;gap:10px">' + (isTeam ? '<i class="ti ti-users" style="color:#185FA5"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:13px">' + m + '</span>' + (isTeam ? teamManagerSuffix(m) : '') + '</div>' +
+            return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-soft)">' +
+              '<div style="display:flex;align-items:center;gap:10px">' + (isTeam ? '<i class="ti ti-users" style="color:var(--blue-tx)"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:13px">' + m + '</span>' + (isTeam ? teamManagerSuffix(m) : '') + '</div>' +
               '<div style="display:flex;align-items:center;gap:10px">' + tierSelect + effPctHint +
               (editable ? '<button class="btn btn-sm btn-danger" onclick="removeTeamMemberDirect(\'' + p.id + '\',\'' + m.replace(/'/g,"\\'") + '\')"><i class="ti ti-x"></i></button>' : '') +
               '</div></div>';
@@ -4764,7 +4890,7 @@ function pgProjectDetail(pid, tab) {
       var tierInfoOpenNow = !!teamTierInfoOpen[p.id];
       var sizeMultText = TSHIRT_SIZES.map(function(sz){ return sz + ' ' + Math.round(TSHIRT_SIZE_LOAD_MULTIPLIER[sz] * 100) + '%'; }).join(' &nbsp;·&nbsp; ');
       var tierInfoBlock = tierInfoOpenNow
-        ? '<div class="text-muted" style="font-size:12px;margin-bottom:10px;padding:10px;background:#faf9f7;border-radius:8px;line-height:1.6">' +
+        ? '<div class="text-muted" style="font-size:12px;margin-bottom:10px;padding:10px;background:var(--surface-3);border-radius:8px;line-height:1.6">' +
           'Each person\'s <strong>allocation tier</strong> is an assumed % of their time this project takes, and feeds directly into their total load on the Capacity page (alongside their self-reported BAU % and any open work requests). Base rate at a typical (M) size:<br>' +
           ALLOCATION_TIERS.map(function(tier){ return '<strong>' + tier + '</strong> ≈ ' + ALLOCATION_TIER_PERCENT[tier] + '%'; }).join(' &nbsp;·&nbsp; ') +
           '<br>That base rate is then scaled by this project\'s <strong>T-shirt size</strong> — being Owner/Lead on an XL project is assumed to take more time than the same role on an XS one:<br>' +
@@ -4800,11 +4926,11 @@ function pgProjectDetail(pid, tab) {
           }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
           logBlock = '<div class="raid-log">' + entries + '</div>';
         }
-        return '<div style="padding:12px 0;border-bottom:1px solid #f0ede8">' +
+        return '<div style="padding:12px 0;border-bottom:1px solid var(--border-soft)">' +
           '<div style="display:flex;align-items:center;gap:12px">' +
-          '<i class="ti ' + (m.done ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:22px;color:' + (m.done ? '#1D9E75' : '#ccc') + ';' + (editable ? 'cursor:pointer' : '') + '"' +
+          '<i class="ti ' + (m.done ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:22px;color:' + (m.done ? 'var(--good)' : 'var(--text-disabled)') + ';' + (editable ? 'cursor:pointer' : '') + '"' +
           (editable ? ' onclick="toggleMS(\'' + p.id + '\',' + idx + ')"' : '') + '></i>' +
-          '<div style="flex:1"><div style="font-size:13px' + (m.done ? ';text-decoration:line-through;color:#999' : '') + '">' + m.name + '</div></div>' +
+          '<div style="flex:1"><div style="font-size:13px' + (m.done ? ';text-decoration:line-through;color:var(--text-faint)' : '') + '">' + m.name + '</div></div>' +
           '<div class="text-muted" style="white-space:nowrap">' + dateLine + '</div>' +
           '<button class="btn btn-sm" title="Change log" onclick="toggleMSLog(\'' + p.id + '\',' + idx + ')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
           (editable ? '<button class="btn btn-sm" onclick="openEditMilestone(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteMS(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
@@ -4885,7 +5011,7 @@ function pgProjectDetail(pid, tab) {
           var itemsHtml = checklist.length ? checklist.map(function(c) {
             return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px' + (canCheck ? ';cursor:pointer' : '') + '">' +
               '<input type="checkbox"' + (c.done ? ' checked' : '') + (canCheck ? ' onchange="toggleChecklistItem(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')"' : ' disabled') + '>' +
-              '<span style="flex:1' + (c.done ? ';text-decoration:line-through;color:#999' : '') + '">' + c.text + '</span>' +
+              '<span style="flex:1' + (c.done ? ';text-decoration:line-through;color:var(--text-faint)' : '') + '">' + c.text + '</span>' +
               (editable ? '<button class="btn btn-sm btn-danger" onclick="deleteChecklistItem(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')"><i class="ti ti-x"></i></button>' : '') +
               '</label>';
           }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No checklist items yet</div>';
@@ -4897,13 +5023,13 @@ function pgProjectDetail(pid, tab) {
         var taskTags = task.tags || [];
         var collapsedNow = !!taskOutlineCollapsed[task.id];
         var indentPx = row.depth * 22;
-        var doneIconHtml = '<i class="ti ' + (task.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;color:' + (task.status==='Done' ? '#1D9E75' : '#ccc') + (canCheck ? ';cursor:pointer' : '') + '"' +
+        var doneIconHtml = '<i class="ti ' + (task.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;color:' + (task.status==='Done' ? 'var(--good)' : 'var(--text-disabled)') + (canCheck ? ';cursor:pointer' : '') + '"' +
           (canCheck ? ' title="' + (task.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTaskDoneIcon(\'' + p.id + '\',' + idx + ')"' : '') + '></i>';
         var titleCell = '<div style="white-space:normal;word-break:break-word;padding-left:' + indentPx + 'px">' +
           '<div style="display:flex;align-items:baseline;gap:6px">' +
           doneIconHtml +
           (row.hasChildren ? '<button class="btn btn-sm" style="padding:1px 4px" onclick="toggleTaskOutlineCollapse(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (collapsedNow?'ti-chevron-right':'ti-chevron-down') + '"></i></button>' : '<span style="display:inline-block;width:22px"></span>') +
-          '<span style="font-size:13px' + (task.status==='Done' ? ';color:#999' : '') + '">' + task.title + '</span>' +
+          '<span style="font-size:13px' + (task.status==='Done' ? ';color:var(--text-faint)' : '') + '">' + task.title + '</span>' +
           '</div>' +
           ((editable || taskTags.length) ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;padding-left:22px">' +
             taskTags.map(function(tg){ return tagBadge(tg); }).join('') +
@@ -4917,7 +5043,7 @@ function pgProjectDetail(pid, tab) {
           '<button onclick="addTaskBefore(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-plus"></i> Add task before</button>' +
           '<button onclick="addTaskAfter(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-plus"></i> Add task after</button>' +
           '<button onclick="openEditTask(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i> Edit</button>' +
-          '<button onclick="deleteTask(\'' + p.id + '\',' + idx + ')" style="color:#A32D2D"><i class="ti ti-trash"></i> Delete</button>';
+          '<button onclick="deleteTask(\'' + p.id + '\',' + idx + ')" style="color:var(--danger)"><i class="ti ti-trash"></i> Delete</button>';
         var actionMenu = editable ? (
           '<div style="position:relative;display:inline-block">' +
           '<button class="btn btn-sm task-action-menu-btn" title="More actions" onclick="toggleTaskActionMenu(event,\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-dots-vertical"></i></button>' +
@@ -5036,9 +5162,9 @@ function pgProjectDetail(pid, tab) {
             '<div class="comment-add-row"><textarea id="todo-cmt-input-' + td.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addTodoComment(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
             '</div></td></tr>';
         }
-        var doneIconHtml = '<i class="ti ' + (td.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;color:' + (td.status==='Done' ? '#1D9E75' : '#ccc') + (canCheck ? ';cursor:pointer' : '') + '"' +
+        var doneIconHtml = '<i class="ti ' + (td.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;color:' + (td.status==='Done' ? 'var(--good)' : 'var(--text-disabled)') + (canCheck ? ';cursor:pointer' : '') + '"' +
           (canCheck ? ' title="' + (td.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTodoDoneIcon(\'' + p.id + '\',' + idx + ')"' : '') + '></i>';
-        var titleCell = '<div style="display:flex;align-items:center;gap:8px">' + doneIconHtml + '<span style="font-size:13px' + (td.status==='Done' ? ';color:#999' : '') + '">' + td.title + '</span></div>';
+        var titleCell = '<div style="display:flex;align-items:center;gap:8px">' + doneIconHtml + '<span style="font-size:13px' + (td.status==='Done' ? ';color:var(--text-faint)' : '') + '">' + td.title + '</span></div>';
         return '<tr><td>' + titleCell + '</td><td' + (td.assignee ? '' : ' class="text-muted"') + '>' + (td.assignee || 'Unassigned') + '</td><td>' + bdg(td.status) + '</td>' +
           '<td class="text-muted">' + (td.due || '—') + ' ' + lateBadgeHtml(isTodoLate(td)) + '</td>' +
           '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
@@ -5100,8 +5226,8 @@ function pgProjectDetail(pid, tab) {
                 '<div style="font-size:13px">' + (item.probability != null ? item.probability + '%' : '—') + '</div>' +
                 '<div>' + (item.impact ? bdg(item.impact) : '—') + '</div>' +
                 '<div><div style="font-size:13px;word-break:break-word;white-space:normal;margin-bottom:4px">' + item.desc + '</div>' +
-                '<div style="font-size:12px;color:#555;word-break:break-word;white-space:normal;background:#f5f5f3;padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.mitigation||'—') + '</div></div>' +
-                '<div style="font-size:12px;color:#777;word-break:break-word">' + item.owner + '</div>' +
+                '<div style="font-size:12px;color:var(--text-2);word-break:break-word;white-space:normal;background:var(--surface-2);padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.mitigation||'—') + '</div></div>' +
+                '<div style="font-size:12px;color:var(--text-muted);word-break:break-word">' + item.owner + '</div>' +
                 '<div>' + (item.status ? bdg(item.status) : '—') + '</div>' +
                 '<div>' + actionBtns(type, idx, item) + '</div></div>' +
                 logBlock(type, idx, item);
@@ -5113,8 +5239,8 @@ function pgProjectDetail(pid, tab) {
               return '<div class="raid-grid-issues raid-grid-row">' +
                 '<div>' + bdg(item.severity) + '</div>' +
                 '<div><div style="font-size:13px;word-break:break-word;white-space:normal;margin-bottom:4px">' + item.desc + '</div>' +
-                '<div style="font-size:12px;color:#555;word-break:break-word;white-space:normal;background:#f5f5f3;padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.solution||'—') + '</div></div>' +
-                '<div style="font-size:12px;color:#777">' + item.owner + '</div>' +
+                '<div style="font-size:12px;color:var(--text-2);word-break:break-word;white-space:normal;background:var(--surface-2);padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.solution||'—') + '</div></div>' +
+                '<div style="font-size:12px;color:var(--text-muted)">' + item.owner + '</div>' +
                 '<div>' + bdg(item.status) + '</div>' +
                 '<div>' + actionBtns(type, idx, item) + '</div></div>' +
                 logBlock(type, idx, item);
@@ -5122,7 +5248,7 @@ function pgProjectDetail(pid, tab) {
         } else {
           body = items.map(function(item) {
             var idx = idxOf(item);
-            return '<div style="font-size:13px;padding:10px 0;border-bottom:1px solid #f0ede8;display:flex;justify-content:space-between;align-items:center;gap:8px;word-break:break-word">' +
+            return '<div style="font-size:13px;padding:10px 0;border-bottom:1px solid var(--border-soft);display:flex;justify-content:space-between;align-items:center;gap:8px;word-break:break-word">' +
               '<div style="flex:1">' + item.desc + (item.owner ? ' <span class="text-muted">— ' + item.owner + '</span>' : '') + (item.status ? ' ' + bdg(item.status) : '') + '</div>' +
               actionBtns(type, idx, item) + '</div>' +
               logBlock(type, idx, item);
@@ -5653,11 +5779,11 @@ function openTaskModal(pid, idx, opts) {
       var isTeam = teamNames().indexOf(n) >= 0;
       var isInactiveCurrent = task && task.assignee === n && individualResourceNames().indexOf(n) < 0 && teamNames().indexOf(n) < 0;
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">' +
-        '<span style="font-size:13px"><i class="ti ' + (isTeam ? 'ti-users' : 'ti-user') + '" style="margin-right:6px;color:#888"></i>' + n + (isInactiveCurrent ? ' <span class="text-muted">(no longer a resource)</span>' : '') + '</span>' +
+        '<span style="font-size:13px"><i class="ti ' + (isTeam ? 'ti-users' : 'ti-user') + '" style="margin-right:6px;color:var(--text-muted)"></i>' + n + (isInactiveCurrent ? ' <span class="text-muted">(no longer a resource)</span>' : '') + '</span>' +
         '<button type="button" class="btn btn-sm" onclick="window.__taskAssigneePick(\'' + n.replace(/'/g,"\\'") + '\')">Select</button>' +
         '</div>';
     }).join('');
-    return '<div style="border:1px solid #e8e8e5;border-radius:8px;padding:10px;margin-top:8px">' +
+    return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:8px">' +
       '<button type="button" class="btn btn-sm" style="margin-bottom:8px" onclick="window.__taskAssigneePick(\'\')"><i class="ti ti-user-off"></i> Unassigned</button>' +
       '<input type="text" id="tm-assignee-search" placeholder="Search people or teams…" value="' + assigneeQuery.replace(/"/g,'&quot;') + '" oninput="window.__taskAssigneeSearch(this.value)">' +
       '<div style="max-height:180px;overflow-y:auto;margin-top:8px">' + (rows || '<span class="text-muted" style="font-size:13px">No matches</span>') + '</div>' +
@@ -5666,7 +5792,7 @@ function openTaskModal(pid, idx, opts) {
 
   function assigneeFieldInner() {
     return '<div style="display:flex;align-items:center;gap:8px">' +
-      '<span style="font-size:13px' + (selectedAssignee ? '' : ';color:#999') + '">' + (selectedAssignee || 'Unassigned') + '</span>' +
+      '<span style="font-size:13px' + (selectedAssignee ? '' : ';color:var(--text-faint)') + '">' + (selectedAssignee || 'Unassigned') + '</span>' +
       '<button type="button" class="btn btn-sm" onclick="window.__taskAssigneeToggle()">' + (selectedAssignee ? 'Change' : 'Assign') + '</button>' +
       '</div>' +
       (assigneePickerOpen ? assigneePanelHtml() : '');
@@ -5711,7 +5837,7 @@ function openTaskModal(pid, idx, opts) {
         '<button type="button" class="btn btn-sm" onclick="window.__taskDependsOnPick(\'' + x.id + '\')">Select</button>' +
         '</div>';
     }).join('');
-    return '<div style="border:1px solid #e8e8e5;border-radius:8px;padding:10px;margin-top:8px">' +
+    return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:8px">' +
       '<button type="button" class="btn btn-sm" style="margin-bottom:8px" onclick="window.__taskDependsOnPick(\'\')"><i class="ti ti-circle-off"></i> None</button>' +
       '<input type="text" id="tm-dependson-search" placeholder="Search tasks…" value="' + dependsOnQuery.replace(/"/g,'&quot;') + '" oninput="window.__taskDependsOnSearch(this.value)">' +
       '<div style="max-height:180px;overflow-y:auto;margin-top:8px">' + (rows || '<span class="text-muted" style="font-size:13px">No matches</span>') + '</div>' +
@@ -5722,7 +5848,7 @@ function openTaskModal(pid, idx, opts) {
     var sel = predecessorLookup[selectedDependsOn];
     return '<input type="hidden" id="tm-dependson" value="' + (selectedDependsOn||'') + '">' +
       '<div style="display:flex;align-items:center;gap:8px">' +
-      '<span style="font-size:13px' + (sel ? '' : ';color:#999') + '">' + (sel ? sel.title : 'None') + '</span>' +
+      '<span style="font-size:13px' + (sel ? '' : ';color:var(--text-faint)') + '">' + (sel ? sel.title : 'None') + '</span>' +
       '<button type="button" class="btn btn-sm" onclick="window.__taskDependsOnToggle()">' + (sel ? 'Change' : 'Set') + '</button>' +
       '</div>' +
       (dependsOnPickerOpen ? dependsOnPanelHtml() : '');
@@ -5883,11 +6009,11 @@ function openTodoModal(pid, idx) {
     var rows = matches.map(function(n){
       var isInactiveCurrent = todo && todo.assignee === n && individualResourceNames().indexOf(n) < 0;
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">' +
-        '<span style="font-size:13px"><i class="ti ti-user" style="margin-right:6px;color:#888"></i>' + n + (isInactiveCurrent ? ' <span class="text-muted">(no longer a resource)</span>' : '') + '</span>' +
+        '<span style="font-size:13px"><i class="ti ti-user" style="margin-right:6px;color:var(--text-muted)"></i>' + n + (isInactiveCurrent ? ' <span class="text-muted">(no longer a resource)</span>' : '') + '</span>' +
         '<button type="button" class="btn btn-sm" onclick="window.__todoAssigneePick(\'' + n.replace(/'/g,"\\'") + '\')">Select</button>' +
         '</div>';
     }).join('');
-    return '<div style="border:1px solid #e8e8e5;border-radius:8px;padding:10px;margin-top:8px">' +
+    return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:8px">' +
       '<button type="button" class="btn btn-sm" style="margin-bottom:8px" onclick="window.__todoAssigneePick(\'\')"><i class="ti ti-user-off"></i> Unassigned</button>' +
       '<input type="text" id="tdm-assignee-search" placeholder="Search people…" value="' + assigneeQuery.replace(/"/g,'&quot;') + '" oninput="window.__todoAssigneeSearch(this.value)">' +
       '<div style="max-height:180px;overflow-y:auto;margin-top:8px">' + (rows || '<span class="text-muted" style="font-size:13px">No matches</span>') + '</div>' +
@@ -5896,7 +6022,7 @@ function openTodoModal(pid, idx) {
 
   function assigneeFieldInner() {
     return '<div style="display:flex;align-items:center;gap:8px">' +
-      '<span style="font-size:13px' + (selectedAssignee ? '' : ';color:#999') + '">' + (selectedAssignee || 'Unassigned') + '</span>' +
+      '<span style="font-size:13px' + (selectedAssignee ? '' : ';color:var(--text-faint)') + '">' + (selectedAssignee || 'Unassigned') + '</span>' +
       '<button type="button" class="btn btn-sm" onclick="window.__todoAssigneeToggle()">' + (selectedAssignee ? 'Change' : 'Assign') + '</button>' +
       '</div>' +
       (assigneePickerOpen ? assigneePanelHtml() : '');
@@ -6112,7 +6238,7 @@ function openRaidModal(pid, type, idx) {
         }).join('')
       : '<span class="text-muted" style="font-size:13px">Everyone is already on the project team</span>';
 
-    var panelHtml = '<div class="card" id="rd-add-member-panel" style="margin-top:8px;background:#fafaf8">' +
+    var panelHtml = '<div class="card" id="rd-add-member-panel" style="margin-top:8px;background:var(--surface-3)">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">' +
         '<div class="form-label" style="margin-bottom:0">Add someone to the project</div>' +
         '<button class="btn btn-sm" onclick="cancelRaidAddMember()"><i class="ti ti-x"></i></button>' +
@@ -6548,7 +6674,7 @@ function editProject(pid) {
   var programOptsEdit = '<option value="">— None —</option>' + D.programs.slice().sort(function(a,b){ return a.programNumber - b.programNumber; }).map(function(pr){ return '<option value="' + pr.id + '"' + (p.programId===pr.id?' selected':'') + '>' + programLabel(pr) + ' — ' + pr.name + '</option>'; }).join('');
   var unplannedDepsEdit = (p.dependencies||[]).filter(function(d){ return !(d.start && d.end); });
   var depWarningEdit = unplannedDepsEdit.length
-    ? '<div class="info-banner info-amber" style="margin-bottom:16px"><i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;color:#BA7517"></i>' +
+    ? '<div class="info-banner info-amber" style="margin-bottom:16px"><i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;color:var(--hatch-border)"></i>' +
       '<span>This project depends on ' + (unplannedDepsEdit.length===1 ? 'a project' : unplannedDepsEdit.length + ' projects') + ' that ' + (unplannedDepsEdit.length===1?'hasn\'t':'haven\'t') + ' been planned yet: <strong>' + unplannedDepsEdit.map(function(d){ return d.name; }).join(', ') + '</strong>.</span></div>'
     : '';
   showModal('<div class="modal-title">Edit project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
@@ -6572,8 +6698,8 @@ function editProject(pid) {
     '<div class="form-group"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="ep-blocker" value="' + (p.blockers||'') + '"></div>' +
     '<div class="divider"></div>' +
     '<div class="grid-2">' +
-    '<div class="form-group"><div class="form-label">Sponsor</div>' + (D.role === 'admin' ? '<select id="ep-sponsor">' + sponsorOpts + '</select>' : '<div style="padding:8px 0;color:#444">' + (p.sponsor || '—') + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the sponsor</div></div>') + '</div>' +
-    '<div class="form-group"><div class="form-label">Owner</div>' + (D.role === 'admin' ? '<select id="ep-owner">' + ownerOpts + '</select>' : '<div style="padding:8px 0;color:#444">' + (p.owner || '—') + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the owner</div></div>') + '</div>' +
+    '<div class="form-group"><div class="form-label">Sponsor</div>' + (D.role === 'admin' ? '<select id="ep-sponsor">' + sponsorOpts + '</select>' : '<div style="padding:8px 0;color:var(--text-2)">' + (p.sponsor || '—') + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the sponsor</div></div>') + '</div>' +
+    '<div class="form-group"><div class="form-label">Owner</div>' + (D.role === 'admin' ? '<select id="ep-owner">' + ownerOpts + '</select>' : '<div style="padding:8px 0;color:var(--text-2)">' + (p.owner || '—') + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the owner</div></div>') + '</div>' +
     '</div>' +
     '<div class="form-group"><div class="form-label">Program</div><select id="ep-program">' + programOptsEdit + '</select></div>' +
     '<div class="modal-footer">' +
@@ -6819,7 +6945,7 @@ function pgHold() {
         '<div>' + scheduleInfo(p) + '</div>' +
       '</div>' +
       (p.tags && p.tags.length ? '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
-      '<div class="blocker-note" style="background:#FBE7E3;border-left-color:#993C1D;margin-top:10px"><i class="ti ti-player-pause"></i> <strong>Hold reason:</strong> ' + (p.holdReason||'—') + '</div>' +
+      '<div class="blocker-note" style="background:var(--coral-soft);border-left-color:var(--coral-strong-tx);margin-top:10px"><i class="ti ti-player-pause"></i> <strong>Hold reason:</strong> ' + (p.holdReason||'—') + '</div>' +
     '</div>';
   }).join('');
 
@@ -6954,15 +7080,15 @@ function pgFuturePlanning() {
       var widthPct = Math.max(0.3, clampedEnd - clampedStart) / quarters.length * 100;
       var leftPct = clampedStart / quarters.length * 100;
       var barStyle = entry.confirmed
-        ? 'background:' + (PHASE_COLORS[p.phase] || '#534AB7')
-        : 'background:repeating-linear-gradient(45deg,#EFCB8E,#EFCB8E 6px,#FBF0DA 6px,#FBF0DA 12px);border:1px dashed #BA7517;color:#63410A';
+        ? 'background:' + (PHASE_COLORS[p.phase] || 'var(--accent)')
+        : 'background:repeating-linear-gradient(45deg,var(--hatch-a),var(--hatch-a) 6px,var(--hatch-b) 6px,var(--hatch-b) 12px);border:1px dashed var(--hatch-border);color:var(--hatch-text)';
       var estimateLabel = 'Estimate';
       if (!entry.confirmed && p.targetQuarter && p.targetYear) {
         var hasRange = p.targetEndQuarter && p.targetEndYear && (p.targetEndQuarter !== p.targetQuarter || p.targetEndYear !== p.targetYear);
         estimateLabel = hasRange ? 'Q' + p.targetQuarter + ' \'' + String(p.targetYear).slice(2) + '–Q' + p.targetEndQuarter + ' \'' + String(p.targetEndYear).slice(2) : 'Estimate';
       }
       var lateNow = isProjectLate(p);
-      if (lateNow) barStyle += ';box-shadow:inset 0 0 0 2px #B23A3A';
+      if (lateNow) barStyle += ';box-shadow:inset 0 0 0 2px var(--bad)';
       var barLabel = entry.confirmed ? (p.phase||'') : estimateLabel;
       barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '" title="' + (lateNow ? 'Late — ' : '') + barLabel + '">' + (lateNow ? '<i class="ti ti-alert-triangle"></i> ' : '') + barLabel + '</div></div>';
     } else {
@@ -6977,22 +7103,22 @@ function pgFuturePlanning() {
   }
 
   var quarterHeaderHtml = '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + quarters.map(function(q){
-    return '<div style="flex:1;font-size:11px;color:#999;text-align:center">Q' + q.quarter + ' \'' + String(q.year).slice(2) + '</div>';
+    return '<div style="flex:1;font-size:11px;color:var(--text-faint);text-align:center">Q' + q.quarter + ' \'' + String(q.year).slice(2) + '</div>';
   }).join('') + '</div>';
 
-  var legendHtml = '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:#666">' +
-    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:10px;border-radius:2px;background:#534AB7;display:inline-block"></span>Confirmed (real dates)</div>' +
-    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:10px;border-radius:2px;background:repeating-linear-gradient(45deg,#EFCB8E,#EFCB8E 3px,#FBF0DA 3px,#FBF0DA 6px);border:1px dashed #BA7517;display:inline-block"></span>Estimated (quarter only)</div>' +
+  var legendHtml = '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:var(--text-2)">' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:10px;border-radius:2px;background:var(--accent);display:inline-block"></span>Confirmed (real dates)</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:10px;border-radius:2px;background:repeating-linear-gradient(45deg,var(--hatch-a),var(--hatch-a) 3px,var(--hatch-b) 3px,var(--hatch-b) 6px);border:1px dashed var(--hatch-border);display:inline-block"></span>Estimated (quarter only)</div>' +
   '</div>';
 
   var timelineHtml2 = allEntries.length
     ? '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">Timeline</div>' + legendHtml + quarterHeaderHtml + allEntries.map(timelineRow).join('') + '</div>'
     : '<div class="empty-state"><i class="ti ti-calendar-time"></i><p>Nothing scheduled or estimated in this window</p></div>';
 
-  var needsEstimateSection = '<div class="card mb-16" style="border:1px solid #EFCB8E"><div class="section-title">Needs an estimate</div>' +
+  var needsEstimateSection = '<div class="card mb-16" style="border:1px solid var(--hatch-a)"><div class="section-title">Needs an estimate</div>' +
     (needsEstimate.length
       ? needsEstimate.map(function(p){
-          return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;background:#faf9f7;border-radius:8px;margin-bottom:6px">' +
+          return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;background:var(--surface-3);border-radius:8px;margin-bottom:6px">' +
             '<span style="font-size:13px;font-weight:600">' + p.name + '</span>' +
             '<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
             '<button class="btn btn-sm btn-primary" onclick="openSetQuarterModal(\'' + p.id + '\')"><i class="ti ti-calendar-time"></i> Set target quarter</button>' +
@@ -7002,10 +7128,10 @@ function pgFuturePlanning() {
     '</div>';
 
   var missingScheduleSection = missingSchedule.length
-    ? '<div class="card mb-16" style="border:1px solid #F09595"><div class="section-title"><i class="ti ti-alert-triangle" style="color:#A32D2D"></i> Missing a schedule</div>' +
+    ? '<div class="card mb-16" style="border:1px solid var(--bad)"><div class="section-title"><i class="ti ti-alert-triangle" style="color:var(--danger)"></i> Missing a schedule</div>' +
       '<div class="text-muted" style="font-size:13px;margin-bottom:10px">These are marked Active or Planned but have no start or end date — usually from an import. They won\'t show anywhere on a timeline until fixed.</div>' +
       missingSchedule.map(function(p){
-        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;background:#faf9f7;border-radius:8px;margin-bottom:6px">' +
+        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;background:var(--surface-3);border-radius:8px;margin-bottom:6px">' +
           '<span style="font-size:13px;font-weight:600">' + p.name + '</span> <span class="badge badge-gray" style="font-size:11px">' + p.stage + '</span>' +
           '<div style="display:flex;gap:6px;margin-left:auto"><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
           '<button class="btn btn-sm btn-primary" onclick="closeModal();editProject(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit project</button></div></div>';
@@ -7039,7 +7165,7 @@ function pgFuturePlanning() {
     }
 
     showModal('<div class="modal-title">Set target quarter <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-      '<div style="font-weight:600;margin-bottom:16px;color:#534AB7">' + p.name + '</div>' +
+      '<div style="font-weight:600;margin-bottom:16px;color:var(--accent)">' + p.name + '</div>' +
       '<div class="form-sub" style="margin-bottom:12px">For work spanning more than one quarter, set an end quarter later than the start — only quarters on or after the start are selectable, so the range is always sequential.</div>' +
       '<div class="grid-2"><div class="form-group"><div class="form-label">Start quarter</div><select id="sq-start" onchange="onSqStartChange()">' + startOptsHtml() + '</select></div>' +
       '<div class="form-group"><div class="form-label">End quarter</div><select id="sq-end">' + endOptsHtml() + '</select></div></div>' +
@@ -7143,7 +7269,7 @@ function pgRoadmap() {
       var clampedEnd = Math.min(windowMonths, endOffset);
       var widthPct = Math.max(1, clampedEnd - clampedStart) / windowMonths * 100;
       var leftPct = clampedStart / windowMonths * 100;
-      var barColor = PHASE_COLORS[p.phase] || '#534AB7';
+      var barColor = PHASE_COLORS[p.phase] || 'var(--accent)';
       barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + '">' + (p.phase||'') + '</div></div>';
     } else {
       barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">No schedule set</span></div>';
@@ -7154,7 +7280,7 @@ function pgRoadmap() {
   }
 
   var phaseLegend = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px">' + PHASES.map(function(ph){
-    return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#666"><span style="width:10px;height:10px;border-radius:3px;background:' + (PHASE_COLORS[ph]||'#534AB7') + ';display:inline-block"></span>' + ph + '</div>';
+    return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-2)"><span style="width:10px;height:10px;border-radius:3px;background:' + (PHASE_COLORS[ph]||'var(--accent)') + ';display:inline-block"></span>' + ph + '</div>';
   }).join('') + '</div>';
 
   var timelineBody;
@@ -7235,7 +7361,7 @@ function pgRoadmap() {
     tagFilterBarHtml(roadmapTagFilter, 'openRoadmapTagFilter') +
     '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">' + windowMonths + '-month view — ' + rangeLabel + '</div>' +
     phaseLegend +
-    '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + m + '</div>'; }).join('') + '</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:var(--text-faint);text-align:center">' + m + '</div>'; }).join('') + '</div>' +
     timelineBody + '</div>' +
     '<div class="card"><div class="section-title">Upcoming milestones</div>' + msSearchBar +
     (msItems.length
@@ -7400,14 +7526,14 @@ function renderImportPreview() {
 
   var tableRows = validated.map(function(v, idx) {
     return '<tr>' +
-      '<td>' + (v.valid ? '<i class="ti ti-circle-check" style="color:#1D9E75"></i>' : '<i class="ti ti-alert-circle" style="color:#A32D2D"></i>') + '</td>' +
+      '<td>' + (v.valid ? '<i class="ti ti-circle-check" style="color:var(--good)"></i>' : '<i class="ti ti-alert-circle" style="color:var(--danger)"></i>') + '</td>' +
       '<td>' + (v.record.name || '<span class="text-muted">(missing)</span>') + '</td>' +
       '<td>' + (v.record.stage || '') + '</td>' +
       '<td>' + (v.record.owner_name || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (v.categories.length ? v.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (v.tags.length ? v.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (v.record.target_quarter && v.record.target_year ? '<span class="badge badge-amber">Q' + v.record.target_quarter + ' ' + v.record.target_year + '</span>' : '<span class="text-muted">—</span>') + '</td>' +
-      '<td style="color:#A32D2D;font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
+      '<td style="color:var(--danger);font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
       '</tr>';
   }).join('');
 
@@ -7571,13 +7697,13 @@ function renderWorkRequestImportPreview() {
 
   var tableRows = validated.map(function(v) {
     return '<tr>' +
-      '<td>' + (v.valid ? '<i class="ti ti-circle-check" style="color:#1D9E75"></i>' : '<i class="ti ti-alert-circle" style="color:#A32D2D"></i>') + '</td>' +
+      '<td>' + (v.valid ? '<i class="ti ti-circle-check" style="color:var(--good)"></i>' : '<i class="ti ti-alert-circle" style="color:var(--danger)"></i>') + '</td>' +
       '<td>' + (v.record.title || '<span class="text-muted">(missing)</span>') + '</td>' +
       '<td>' + v.requesterName + '</td>' +
       '<td>' + v.assigneeName + '</td>' +
       '<td>' + (v.record.status || '') + '</td>' +
       '<td>' + (v.record.requested_completion_date || '<span class="text-muted">—</span>') + '</td>' +
-      '<td style="color:#A32D2D;font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
+      '<td style="color:var(--danger);font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
       '</tr>';
   }).join('');
 
@@ -7935,7 +8061,7 @@ function pgManageValues() {
     var rows = values.map(function(v){
       var count = usageCount(fieldName, v);
       var esc = v.replace(/'/g,"\\'");
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0ede8">' +
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-soft)">' +
         '<div><span style="font-size:13px;font-weight:600">' + v + '</span> <span class="text-muted" style="font-size:12px">— used by ' + count + '</span></div>' +
         '<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="renameFieldOption(\'' + fieldName + '\',\'' + esc + '\')"><i class="ti ti-edit"></i></button>' +
         '<button class="btn btn-sm btn-danger" onclick="deleteFieldOption(\'' + fieldName + '\',\'' + esc + '\')"><i class="ti ti-trash"></i></button></div></div>';
@@ -8031,7 +8157,7 @@ function pgAdminTags() {
       var projLinks = projectsWithTag.map(function(p){ return '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>' + p.name + ' ' + stagePill(p.stage) + '</span><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button></div>'; }).join('');
       var resLinks = resourcesWithTag.map(function(r){ return '<div style="display:flex;justify-content:space-between;padding:4px 0"><span>' + r.name + ' <span class="text-muted" style="font-size:11px">(resource)</span></span><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-eye"></i></button></div>'; }).join('');
       var body = (projLinks + resLinks) || '<span class="text-muted" style="font-size:13px">Not currently used anywhere</span>';
-      expandRow = '<tr><td colspan="3" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
+      expandRow = '<tr><td colspan="3" style="background:var(--surface-3);padding:10px 16px">' + body + '</td></tr>';
     }
     return '<tr>' +
       '<td>' + tagBadge(t.name) + '</td>' +
@@ -8345,15 +8471,15 @@ async function openDeletedProjectModal(pid) {
   var teamNamesList = teamRows.map(function(t){ return resourceNameById[t.resource_id] || '(no longer a resource)'; });
 
   var milestonesHtml = milestoneRows.length ? milestoneRows.map(function(m) {
-    return '<div style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:13px">' +
-      '<i class="ti ' + (m.done ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="color:' + (m.done ? '#1D9E75' : '#ccc') + ';margin-right:6px"></i>' +
+    return '<div style="padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:13px">' +
+      '<i class="ti ' + (m.done ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="color:' + (m.done ? 'var(--good)' : 'var(--text-disabled)') + ';margin-right:6px"></i>' +
       m.name + ' <span class="text-muted">' + (m.done ? 'Completed ' + (m.completed_date || m.target_date) : 'Target ' + m.target_date) + '</span></div>';
   }).join('') : '<div class="text-muted" style="font-size:13px">None</div>';
 
   // Hierarchy depth isn't reconstructed here -- a flat, position-ordered
   // list is enough for a read-only review.
   var tasksHtml = taskRows.length ? taskRows.map(function(t) {
-    return '<div style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:13px">' +
+    return '<div style="padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:13px">' +
       t.title + ' <span class="text-muted">— ' + (t.assignee_name || 'Unassigned') + '</span> ' + bdg(t.status) +
       (t.start_date || t.end_date ? ' <span class="text-muted">' + (t.start_date||'') + (t.start_date && t.end_date ? ' – ' : '') + (t.end_date||'') + '</span>' : '') +
       '</div>';
@@ -8365,7 +8491,7 @@ async function openDeletedProjectModal(pid) {
     if (!items.length) return '';
     return '<div class="bold" style="margin-top:10px;font-size:13px">' + label + '</div>' +
       items.map(function(r) {
-        return '<div style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:13px">' + r.description +
+        return '<div style="padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:13px">' + r.description +
           (r.owner_name ? ' <span class="text-muted">— ' + r.owner_name + '</span>' : '') +
           (r.status ? ' ' + bdg(r.status) : '') + '</div>';
       }).join('');
@@ -8375,7 +8501,7 @@ async function openDeletedProjectModal(pid) {
   if (!raidHtml) raidHtml = '<div class="text-muted" style="font-size:13px">None</div>';
 
   var docsHtml = docRows.length ? docRows.map(function(d) {
-    return '<div style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:13px"><i class="ti ' + (d.source_type==='link'?'ti-link':'ti-file-text') + '" style="margin-right:6px;color:#888"></i>' +
+    return '<div style="padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:13px"><i class="ti ' + (d.source_type==='link'?'ti-link':'ti-file-text') + '" style="margin-right:6px;color:var(--text-muted)"></i>' +
       d.name + ' <span class="text-muted">— ' + d.category + '</span></div>';
   }).join('') : '<div class="text-muted" style="font-size:13px">None</div>';
 
@@ -8506,18 +8632,18 @@ function renderSubmitWorkRequestForm() {
     var matches = pool.filter(function(n){ return n.toLowerCase().indexOf(q) >= 0; });
     var rows = matches.map(function(n){
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">' +
-        '<span style="font-size:13px"><i class="ti ti-user" style="margin-right:6px;color:#888"></i>' + n + '</span>' +
+        '<span style="font-size:13px"><i class="ti ti-user" style="margin-right:6px;color:var(--text-muted)"></i>' + n + '</span>' +
         '<button type="button" class="btn btn-sm" onclick="window.__wrResourcePick(\'' + n.replace(/'/g,"\\'") + '\')">Select</button>' +
         '</div>';
     }).join('');
-    return '<div style="border:1px solid #e8e8e5;border-radius:8px;padding:10px;margin-top:8px">' +
+    return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:8px">' +
       '<input type="text" id="wr-resource-search" placeholder="Search people…" value="' + query.replace(/"/g,'&quot;') + '" oninput="window.__wrResourceSearch(this.value)">' +
       '<div style="max-height:180px;overflow-y:auto;margin-top:8px">' + (rows || '<span class="text-muted" style="font-size:13px">No matches</span>') + '</div>' +
       '</div>';
   }
   function resourceFieldInner() {
     return '<div style="display:flex;align-items:center;gap:8px">' +
-      '<span style="font-size:13px' + (selectedResource ? '' : ';color:#999') + '">' + (selectedResource || 'Choose who this is for') + '</span>' +
+      '<span style="font-size:13px' + (selectedResource ? '' : ';color:var(--text-faint)') + '">' + (selectedResource || 'Choose who this is for') + '</span>' +
       '<button type="button" class="btn btn-sm" onclick="window.__wrResourceToggle()">' + (selectedResource ? 'Change' : 'Select') + '</button>' +
       '</div>' + (pickerOpen ? pickerPanelHtml() : '');
   }
@@ -8637,7 +8763,7 @@ function workRequestRowHtml(w, flavor, opts) {
   }
 
   var detailLine = '';
-  if ((w.status === 'Needs Info' || w.status === 'Complete' || w.status === 'Declined') && w.infoNote) detailLine += '<div style="font-size:12px;color:#555;margin-top:4px;background:#f5f5f3;padding:6px 8px;border-radius:6px">' + w.infoNote + '</div>';
+  if ((w.status === 'Needs Info' || w.status === 'Complete' || w.status === 'Declined') && w.infoNote) detailLine += '<div style="font-size:12px;color:var(--text-2);margin-top:4px;background:var(--surface-2);padding:6px 8px;border-radius:6px">' + w.infoNote + '</div>';
   if (flavor === 'assigned' && w.status === 'New' && w.requestedCompletionDate) detailLine += '<div class="text-muted" style="font-size:12px;margin-top:4px">Requested completion: ' + w.requestedCompletionDate + '</div>';
   if (w.status === 'Accepted' || w.status === 'Complete') {
     var bits = [];
@@ -8646,7 +8772,7 @@ function workRequestRowHtml(w, flavor, opts) {
     if (bits.length) detailLine += '<div class="text-muted" style="font-size:12px;margin-top:4px">Est. ' + bits.join(', ') + '</div>';
   }
 
-  return '<tr><td class="bold">' + w.title + (w.description ? '<div style="font-size:12px;color:#777;margin-top:4px;font-weight:400">' + w.description + '</div>' : '') + detailLine + '</td>' +
+  return '<tr><td class="bold">' + w.title + (w.description ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;font-weight:400">' + w.description + '</div>' : '') + detailLine + '</td>' +
     '<td>' + (flavor==='assigned' ? w.requesterName : w.resourceName) + '</td>' +
     '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span> ' + lateBadgeHtml(isWorkRequestLate(w)) + '</td>' +
     (opts.showCompletionColumn ? '<td class="text-muted">' + workRequestCompletionCellHtml(w) + '</td>' : '') +
@@ -9066,7 +9192,7 @@ function pgAdminPersonalTodos() {
 
   var rows = list.map(function(td) {
     var idx = D.personalTodos.indexOf(td);
-    return '<tr><td class="bold">' + td.title + (td.description ? '<div style="font-size:12px;color:#777;margin-top:4px;font-weight:400">' + td.description + '</div>' : '') + '</td>' +
+    return '<tr><td class="bold">' + td.title + (td.description ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;font-weight:400">' + td.description + '</div>' : '') + '</td>' +
       '<td>' + (td.assignee || '<span class="text-muted">Unassigned</span>') + '</td>' +
       '<td>' + bdg(td.status) + '</td>' +
       '<td class="text-muted">' + (td.due || '—') + ' ' + lateBadgeHtml(isTodoLate(td)) + '</td>' +
@@ -9218,7 +9344,7 @@ function userActivityPanelHtml() {
     body = '<div class="text-muted" style="padding:20px;text-align:center">No activity in this range</div>';
   } else {
     body = entries.map(function(e) {
-      return '<div style="padding:8px 0;border-bottom:1px solid #f0ede8;font-size:13px">' +
+      return '<div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:13px">' +
         '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">' +
           '<span><span class="badge badge-gray" style="font-size:10px;margin-right:6px">' + e.kind + '</span>' +
           (e.project ? '<a href="#" onclick="goToProject(\'' + e.project.id + '\');return false;">' + e.project.name + '</a> — ' : '') +
@@ -9229,7 +9355,7 @@ function userActivityPanelHtml() {
       '</div>';
     }).join('');
   }
-  return '<tr><td colspan="5" style="padding:16px;background:#fafaf8">' +
+  return '<tr><td colspan="5" style="padding:16px;background:var(--surface-3)">' +
     '<div class="tab-bar" style="margin-bottom:12px">' + rangeTabs + '</div>' + body +
     '</td></tr>';
 }
@@ -9535,8 +9661,8 @@ function resourceCurrentLoadBadgeHtml(r) {
   var placed = resourcePlacedProjects(r);
   var openWR = r.type === 'individual' ? resourceOpenWorkRequests(r) : [];
   var pct = resourceMonthLoadPct(r, placed, openWR, m);
-  var bg = pct >= 110 ? '#F0A7A3' : pct >= 80 ? '#F5CE8B' : pct >= 50 ? '#BFE3D3' : '#f0ede8';
-  var fg = pct === 0 ? '#999' : '#3a3a3a';
+  var bg = pct >= 110 ? 'var(--heat-over)' : pct >= 80 ? 'var(--heat-full)' : pct >= 50 ? 'var(--heat-moderate)' : 'var(--border-soft)';
+  var fg = pct === 0 ? 'var(--text-faint)' : 'var(--text)';
   return '<button class="btn btn-sm" style="background:' + bg + ';color:' + fg + ';border:none" title="View in Capacity" onclick="nav(\'capacity\')">' + pct + '%</button>';
 }
 
@@ -9607,7 +9733,7 @@ function pgResources() {
             '<span>' + p.name + ' ' + stagePill(p.stage) + ' <span class="badge ' + (p.isOwner ? 'badge-purple' : 'badge-gray') + '" style="font-size:10px">' + (p.isOwner ? 'Owner' : 'Contributor') + '</span></span></div>';
         }).join('')
       : '<span class="text-muted">No projects assigned</span>';
-    return '<tr><td colspan="' + colspan + '" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
+    return '<tr><td colspan="' + colspan + '" style="background:var(--surface-3);padding:10px 16px">' + body + '</td></tr>';
   }
   window.toggleResourceExpand = function(rid) { resourcesPageState.expandedId = resourcesPageState.expandedId === rid ? null : rid; pgResources(); };
   function teamMembersExpandRow(r, colspan) {
@@ -9621,7 +9747,7 @@ function pgResources() {
             '<span>' + n + '</span></div>';
         }).join('')
       : '<span class="text-muted">No members yet</span>';
-    return '<tr><td colspan="' + colspan + '" style="background:#faf9f7;padding:10px 16px">' + body + '</td></tr>';
+    return '<tr><td colspan="' + colspan + '" style="background:var(--surface-3);padding:10px 16px">' + body + '</td></tr>';
   }
   window.toggleResourceMembersExpand = function(rid) { resourcesPageState.expandedMembersId = resourcesPageState.expandedMembersId === rid ? null : rid; pgResources(); };
 
@@ -9630,7 +9756,7 @@ function pgResources() {
     var rows = list.map(function(r) {
       var taskCount = resourceOpenTaskCount(r);
       var combinedCount = resourceCombinedProjectIds(r).allIds.length;
-      var linkIcon = r.userId ? '<i class="ti ti-link" title="Linked to a real account" style="color:#1D9E75"></i>' : '<i class="ti ti-link-off" title="Not linked yet" style="color:#ccc"></i>';
+      var linkIcon = r.userId ? '<i class="ti ti-link" title="Linked to a real account" style="color:var(--good)"></i>' : '<i class="ti ti-link-off" title="Not linked yet" style="color:var(--text-disabled)"></i>';
       return '<tr>' +
         '<td class="bold">' + (r.firstName||'') + '</td>' +
         '<td class="bold">' + (r.lastName||'') + '</td>' +
@@ -9782,8 +9908,8 @@ function capacityMonthBuckets(windowStart, windowMonths) {
 }
 
 function capacityHeatCellHtml(pct, monthLabel) {
-  var bg = pct >= 110 ? '#F0A7A3' : pct >= 80 ? '#F5CE8B' : pct >= 50 ? '#BFE3D3' : '#f0ede8';
-  var fg = pct === 0 ? '#999' : '#3a3a3a';
+  var bg = pct >= 110 ? 'var(--heat-over)' : pct >= 80 ? 'var(--heat-full)' : pct >= 50 ? 'var(--heat-moderate)' : 'var(--border-soft)';
+  var fg = pct === 0 ? 'var(--text-faint)' : 'var(--text)';
   return '<div class="cap-heat-cell" style="background:' + bg + ';color:' + fg + '" title="' + monthLabel + ': ' + pct + '% load">' + (pct ? pct + '%' : '') + '</div>';
 }
 
@@ -9813,10 +9939,10 @@ function capacityDetailBarHtml(entry, windowStart, totalMonths, r) {
   var widthPct = Math.max(0.5, clampedEnd - clampedStart) / totalMonths * 100;
   var leftPct = clampedStart / totalMonths * 100;
   var barStyle = isEstimate
-    ? 'background:repeating-linear-gradient(45deg,#EFCB8E,#EFCB8E 6px,#FBF0DA 6px,#FBF0DA 12px);border:1px dashed #BA7517;color:#63410A'
-    : 'background:' + (PHASE_COLORS[p.phase] || '#534AB7');
+    ? 'background:repeating-linear-gradient(45deg,var(--hatch-a),var(--hatch-a) 6px,var(--hatch-b) 6px,var(--hatch-b) 12px);border:1px dashed var(--hatch-border);color:var(--hatch-text)'
+    : 'background:' + (PHASE_COLORS[p.phase] || 'var(--accent)');
   var lateNow = isProjectLate(p);
-  if (lateNow) barStyle += ';box-shadow:inset 0 0 0 2px #B23A3A';
+  if (lateNow) barStyle += ';box-shadow:inset 0 0 0 2px var(--bad)';
   return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' + viewBtn + p.name + tierBadge + '</div>' +
     '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;' + barStyle + '" title="' + (lateNow ? 'Late — ' : '') + (isEstimate ? 'Estimate' : (p.phase||'')) + '">' + (lateNow ? '<i class="ti ti-alert-triangle"></i> ' : '') + (isEstimate ? 'Estimate' : (p.phase||'')) + '</div></div></div>';
 }
@@ -9855,8 +9981,8 @@ function capacityResourceRowHtml(r, months, windowStart, indent) {
       (bars || '<span class="text-muted" style="font-size:12px">No placed projects in this window</span>') +
       (unplacedCount > 0 ? '<div class="text-muted" style="font-size:11px;margin-top:6px">+' + unplacedCount + ' more assigned but not shown (on hold, completed, or missing a schedule/estimate)</div>' : '') +
       (r.type === 'individual'
-        ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee">' +
-          '<div style="font-size:11px;color:#999;margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em">Work requests</div>' +
+        ? '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-soft)">' +
+          '<div style="font-size:11px;color:var(--text-faint);margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em">Work requests</div>' +
           (openWR.length ? openWR.map(capacityWorkRequestDetailRowHtml).join('') : '<span class="text-muted" style="font-size:12px">No open work requests</span>') +
           '</div>'
         : '') +
@@ -9865,7 +9991,7 @@ function capacityResourceRowHtml(r, months, windowStart, indent) {
   // Work requests are only ever assigned to individuals, kept as a plain
   // number/hours summary rather than folded into the month heat-track --
   // there's no date range to place a bar with, just an hours estimate.
-  var wrCell = '<div style="width:140px;min-width:140px;font-size:12px;color:#666;text-align:right;padding-right:4px">' +
+  var wrCell = '<div style="width:140px;min-width:140px;font-size:12px;color:var(--text-2);text-align:right;padding-right:4px">' +
     (r.type === 'individual' ? resourceWorkRequestSummary(r) : '') + '</div>';
   // Indent lives inside the fixed-width label (padding, not margin) so the
   // heat-track columns stay aligned with the month header regardless of
@@ -9937,14 +10063,14 @@ function pgCapacity() {
   }
 
   var monthHeaderHtml = '<div style="display:flex;gap:12px;margin-bottom:10px"><div style="width:190px;min-width:190px"></div><div class="cap-heat-track">' +
-    months.map(function(m){ return '<div style="flex:1;font-size:11px;color:#999;text-align:center">' + m.label + '</div>'; }).join('') +
-    '</div><div style="width:140px;min-width:140px;font-size:11px;color:#999;text-align:right;padding-right:4px">Work requests</div></div>';
+    months.map(function(m){ return '<div style="flex:1;font-size:11px;color:var(--text-faint);text-align:center">' + m.label + '</div>'; }).join('') +
+    '</div><div style="width:140px;min-width:140px;font-size:11px;color:var(--text-faint);text-align:right;padding-right:4px">Work requests</div></div>';
 
-  var legendHtml = '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:#666">' +
-    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#f0ede8;display:inline-block"></span>Light (&lt;50%)</div>' +
-    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#BFE3D3;display:inline-block"></span>Moderate (50–79%)</div>' +
-    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#F5CE8B;display:inline-block"></span>Full (80–109%)</div>' +
-    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:#F0A7A3;display:inline-block"></span>Over-allocated (110%+)</div>' +
+  var legendHtml = '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;font-size:11px;color:var(--text-2)">' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:var(--border-soft);display:inline-block"></span>Light (&lt;50%)</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:var(--heat-moderate);display:inline-block"></span>Moderate (50–79%)</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:var(--heat-full);display:inline-block"></span>Full (80–109%)</div>' +
+    '<div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:var(--heat-over);display:inline-block"></span>Over-allocated (110%+)</div>' +
     '<div class="text-muted">= BAU % + project tiers + work requests</div>' +
   '</div>';
 
@@ -10112,7 +10238,7 @@ function phCard(cardKey, title, subtitle, heroHtml, bars, columns, note, allRows
       rows = match ? match.rows : [];
       label = match ? match.label : filterKey;
     }
-    drillHtml = '<div class="mt-16" style="border-top:1px dashed #e8e8e5;padding-top:14px">' +
+    drillHtml = '<div class="mt-16" style="border-top:1px dashed var(--border);padding-top:14px">' +
       '<div class="ph-chip">' + label + ' · ' + rows.length + (rows.length === 1 ? ' project' : ' projects') +
         '<button onclick="event.stopPropagation();phToggle(\'' + cardKey + '\',null)"><i class="ti ti-x" style="font-size:10px"></i></button></div>' +
       (rows.length
@@ -10132,7 +10258,7 @@ function phCard(cardKey, title, subtitle, heroHtml, bars, columns, note, allRows
     (note ? '<div class="text-muted" style="font-size:12px;margin-top:6px">' + note + '</div>' : '') +
     (extraHtml || '') +
     '<div style="text-align:right;margin-top:10px">' +
-      '<span style="font-size:12px;font-weight:600;color:#534AB7;cursor:pointer" onclick="phToggle(\'' + cardKey + '\',\'all\')">' +
+      '<span style="font-size:12px;font-weight:600;color:var(--accent);cursor:pointer" onclick="phToggle(\'' + cardKey + '\',\'all\')">' +
         (filterKey === 'all' ? 'Hide list' : 'View all projects') + ' <i class="ti ti-chevron-' + (filterKey === 'all' ? 'up' : 'down') + '"></i></span>' +
     '</div>' +
     drillHtml +
@@ -10161,12 +10287,12 @@ function phRagTrendHtml() {
     var title = fmtMonthYear(s.period_month) + ': ' + green + ' green, ' + amber + ' amber, ' + red + ' red';
     function seg(n, color) { return total ? ('<div style="flex:' + n + ';background:' + color + '" title="' + title + '"></div>') : ''; }
     return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px">' +
-      '<div style="width:100%;max-width:30px;height:56px;border-radius:4px;overflow:hidden;display:flex;flex-direction:column-reverse;gap:2px;background:#f0ede8" title="' + title + '">' +
-        seg(green, '#1D9E75') + seg(amber, '#EF9F27') + seg(red, '#E24B4A') +
-      '</div><div style="font-size:10.5px;color:#999">' + label + '</div>' +
+      '<div style="width:100%;max-width:30px;height:56px;border-radius:4px;overflow:hidden;display:flex;flex-direction:column-reverse;gap:2px;background:var(--border-soft)" title="' + title + '">' +
+        seg(green, 'var(--good)') + seg(amber, 'var(--warn)') + seg(red, 'var(--bad)') +
+      '</div><div style="font-size:10.5px;color:var(--text-faint)">' + label + '</div>' +
     '</div>';
   }).join('');
-  return '<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #e8e8e5">' +
+  return '<div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--border)">' +
     '<div class="text-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Mix, last ' + phState.trend.length + ' snapshot' + (phState.trend.length===1?'':'s') + '</div>' +
     '<div style="display:flex;align-items:flex-end;gap:8px;height:76px">' + months + '</div>' +
   '</div>';
@@ -10187,7 +10313,7 @@ function renderPortfolioHealth() {
     'Hold is a paused state, not further progress along the funnel.');
 
   var ragCard = phCard('rag', 'RAG status — active projects', 'Current health across the ' + snap.activeCount + ' Active-stage projects',
-    phHero(snap.rag.redCount, 'red right now', '#E24B4A'), snap.rag.bars,
+    phHero(snap.rag.redCount, 'red right now', 'var(--bad)'), snap.rag.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
@@ -10198,7 +10324,7 @@ function renderPortfolioHealth() {
     null, undefined, phRagTrendHtml());
 
   var lateCard = phCard('late', 'Late projects', 'Projects past their target end date, by the stage they\'re stuck in',
-    phHero(snap.late.count, 'late right now', '#E24B4A'), snap.late.bars,
+    phHero(snap.late.count, 'late right now', 'var(--bad)'), snap.late.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Stage', cell:function(p){ return bdg(EXPORT_STAGE_LABELS[p.stage] || p.stage); } },
@@ -10208,7 +10334,7 @@ function renderPortfolioHealth() {
     ]);
 
   var lateTaskCard = phCard('latetasks', 'Late tasks', 'Projects with plan tasks or to-dos past their date and not yet done, grouped by how many',
-    phHero(snap.lateTasks.projectsAffected, 'projects affected', snap.lateTasks.projectsAffected ? '#E24B4A' : null), snap.lateTasks.bars,
+    phHero(snap.lateTasks.projectsAffected, 'projects affected', snap.lateTasks.projectsAffected ? 'var(--bad)' : null), snap.lateTasks.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Owner', cell:function(p){ return phOwnerCell(p.owner); } },
@@ -10228,7 +10354,7 @@ function renderPortfolioHealth() {
     'Risks don\'t carry their own severity, so theirs is derived from probability × impact to sit on the same scale as issues.');
 
   var missingCard = phCard('missing', 'Missing owner or sponsor', 'Backlog through Hold — projects that should have both roles filled in',
-    phHero(snap.missing.allRows.length, 'projects affected', '#EF9F27'), snap.missing.bars,
+    phHero(snap.missing.allRows.length, 'projects affected', 'var(--warn)'), snap.missing.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Stage', cell:function(p){ return bdg(EXPORT_STAGE_LABELS[p.stage] || p.stage); } },
@@ -10239,7 +10365,7 @@ function renderPortfolioHealth() {
     null, snap.missing.allRows);
 
   var loadCard = phCard('load', 'Owner load', 'Active + Planned + Hold projects, counted per person as Owner (top 8 shown)',
-    phHero(snap.load.overThreshold, 'at/over ' + snap.load.threshold + ' projects', snap.load.overThreshold ? '#EF9F27' : null), snap.load.bars,
+    phHero(snap.load.overThreshold, 'at/over ' + snap.load.threshold + ' projects', snap.load.overThreshold ? 'var(--warn)' : null), snap.load.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Stage', cell:function(p){ return bdg(EXPORT_STAGE_LABELS[p.stage] || p.stage); } },
@@ -10248,7 +10374,7 @@ function renderPortfolioHealth() {
     null, snap.load.allRows);
 
   var staleCard = phCard('stale', 'Stale active projects', 'Active-stage projects by days since their last logged change — 30+ counts as stale',
-    phHero(snap.stale.trueStaleCount, 'of ' + snap.activeCount + ' active', snap.stale.trueStaleCount ? '#EF9F27' : null), snap.stale.bars,
+    phHero(snap.stale.trueStaleCount, 'of ' + snap.activeCount + ' active', snap.stale.trueStaleCount ? 'var(--warn)' : null), snap.stale.bars,
     [
       { h:'Project', cell:function(p){ return '<span class="bold">' + p.name + '</span>'; } },
       { h:'Days since update', cell:function(p){ return p._staleDays + 'd'; } },
@@ -10402,13 +10528,13 @@ function editResource(rid) {
         '<div class="form-group"><div class="form-label">Last name</div><input type="text" id="er-last" value="' + (res.lastName||'') + '"></div></div>' +
         '<div class="grid-2"><div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="er-role" value="' + (res.role||'') + '"></div>' +
         '<div class="form-group"><div class="form-label">Team</div><select id="er-team">' + teamOpts + '</select></div></div>' +
-        '<div class="form-group"><div class="form-label">Email</div><input type="email" id="er-email" value="' + (res.email||'') + '">' + (res.userId ? '<p class="text-muted" style="font-size:12px;margin-top:4px"><i class="ti ti-link" style="color:#1D9E75"></i> Linked to a real account</p>' : '') + '</div>' +
+        '<div class="form-group"><div class="form-label">Email</div><input type="email" id="er-email" value="' + (res.email||'') + '">' + (res.userId ? '<p class="text-muted" style="font-size:12px;margin-top:4px"><i class="ti ti-link" style="color:var(--good)"></i> Linked to a real account</p>' : '') + '</div>' +
         '<div class="form-group"><div class="form-label">BAU (non-project) %</div><input type="number" id="er-bau" min="0" max="100" value="' + (res.bauPercent != null ? res.bauPercent : '') + '"><p class="text-muted" style="font-size:12px;margin-top:4px">Normally self-reported from My Tasks — override here if needed.</p></div>'
       : '<div class="form-group"><div class="form-label">Team name</div><input type="text" id="er-name" value="' + res.name + '"></div>' +
         '<div class="form-group"><div class="form-label">Manager</div><select id="er-manager">' + managerOpts + '</select></div>' +
         '<div class="form-group"><div class="form-label">Team members</div>' +
           '<input type="text" id="er-member-search" placeholder="Search people…" oninput="filterMemberChecklist(this.value)">' +
-          '<div id="er-member-list" style="max-height:220px;overflow-y:auto;border:1px solid #e8e8e5;border-radius:8px;padding:8px;margin-top:6px">' + (memberChecklist || '<span class="text-muted" style="font-size:13px">No individual resources yet</span>') + '</div>' +
+          '<div id="er-member-list" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;margin-top:6px">' + (memberChecklist || '<span class="text-muted" style="font-size:13px">No individual resources yet</span>') + '</div>' +
         '</div>'
     ) +
     '<div class="form-group"><div class="form-label">Tags</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
@@ -10536,7 +10662,7 @@ function renderSubmitProjectRequestForm() {
         '<button type="button" class="btn btn-sm" onclick="window.__reqSponsorPick(\'' + n.replace(/'/g,"\\'") + '\')">Select</button>' +
         '</div>';
     }).join('');
-    return '<div style="border:1px solid #e8e8e5;border-radius:8px;padding:10px;margin-top:8px">' +
+    return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:8px">' +
       '<button type="button" class="btn btn-sm" style="margin-bottom:8px" onclick="window.__reqSponsorPick(\'\')"><i class="ti ti-user-off"></i> No sponsor</button>' +
       '<input type="text" id="f-sponsor-search" placeholder="Search people…" value="' + sponsorQuery.replace(/"/g,'&quot;') + '" oninput="window.__reqSponsorSearch(this.value)">' +
       '<div style="max-height:180px;overflow-y:auto;margin-top:8px">' + (rows || '<span class="text-muted" style="font-size:13px">No matches</span>') + '</div>' +
@@ -10545,7 +10671,7 @@ function renderSubmitProjectRequestForm() {
 
   function sponsorFieldInner() {
     return '<div style="display:flex;align-items:center;gap:8px">' +
-      '<span style="font-size:13px' + (selectedSponsor ? '' : ';color:#999') + '">' + (selectedSponsor || 'Optional') + '</span>' +
+      '<span style="font-size:13px' + (selectedSponsor ? '' : ';color:var(--text-faint)') + '">' + (selectedSponsor || 'Optional') + '</span>' +
       '<button type="button" class="btn btn-sm" onclick="window.__reqSponsorToggle()">' + (selectedSponsor ? 'Change' : 'Select') + '</button>' +
       '</div>' +
       (sponsorPickerOpen ? sponsorPanelHtml() : '');
@@ -10579,12 +10705,12 @@ function renderSubmitProjectRequestForm() {
         '<div class="grid-2"><select id="f-est-freq"><option>Monthly</option><option>Annually</option></select>' +
         '<input type="text" id="f-est-amount" placeholder="$ amount (optional)"></div>' +
         '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="f-value-confidence">' + confidenceOptsHtml() + '</select></div>' +
-        '<div id="f-est-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
+        '<div id="f-est-err" style="color:var(--danger);font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
       '</div>' +
       '<div class="form-group"><div class="form-label">Value justification</div><div class="form-sub">How did you arrive at the estimated value?</div><textarea id="f-justification" rows="3" placeholder="e.g. Reduces manual reconciliation time by an estimated 10 hours/week…"></textarea></div>' +
       '<div class="form-group"><div class="form-label">Cost estimate</div><div class="form-sub">What might this cost to deliver? Optional — a rough number is fine.</div>' +
         '<div class="grid-2"><input type="text" id="f-cost-amount" placeholder="$ amount (optional)"><select id="f-cost-confidence">' + confidenceOptsHtml() + '</select></div>' +
-        '<div id="f-cost-err" style="color:#A32D2D;font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
+        '<div id="f-cost-err" style="color:var(--danger);font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
       '</div>'
     : '<div class="form-group"><div class="form-label">What\'s the expected value? *</div><div class="form-sub">Describe the benefit in your own words.</div><textarea id="f-value-desc" rows="3" placeholder="e.g. Saves the team several hours a week on manual reconciliation"></textarea></div>';
 
@@ -10780,7 +10906,7 @@ function renderMyProjectRequests() {
       var canRevoke = r.status === 'Pending';
       var linkedP = r.linkedProject ? D.projects.find(function(p){ return p.id === r.linkedProject; }) : null;
       return '<tr><td class="bold">' + r.title + '</td><td class="text-muted">' + (r.businessUnit||'—') + '</td><td class="text-muted">' + r.date + '</td><td>' + (r.priority ? bdg(r.priority) : '<span class="text-muted">—</span>') + '</td><td>' + bdg(r.status) + '</td>' +
-        '<td style="font-size:12px;color:#777;max-width:180px;word-break:break-word">' + (r.feedback||'—') + '</td>' +
+        '<td style="font-size:12px;color:var(--text-muted);max-width:180px;word-break:break-word">' + (r.feedback||'—') + '</td>' +
         '<td><div style="display:flex;gap:4px">' +
         '<button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> Details</button>' +
         (linkedP ? '<button class="btn btn-sm" onclick="viewLinkedProject(\'' + linkedP.id + '\')"><i class="ti ti-external-link"></i></button>' : '') +
@@ -11026,7 +11152,7 @@ function pgProgramDetail(id) {
 
   var stageSectionsHtml = stageOrder.filter(function(s){ return byStage[s] && byStage[s].length; }).map(function(s) {
     var rows = byStage[s].map(function(p) {
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0ede8">' +
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-soft)">' +
         '<span style="font-size:13px;cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' + hdot(p.health) + p.name + '</span>' +
         '<span style="display:flex;align-items:center;gap:12px">' +
           '<span class="text-muted" style="font-size:12px">' + (p.owner || '—') + '</span>' +
@@ -11059,13 +11185,13 @@ function pgProgramDetail(id) {
     : '';
 
   function fieldRow(label, value, inputId, isTextarea) {
-    if (!canEditProgram) return '<div class="form-group"><div class="form-label">' + label + '</div><div style="font-size:13px;color:#444">' + (value || '—') + '</div></div>';
+    if (!canEditProgram) return '<div class="form-group"><div class="form-label">' + label + '</div><div style="font-size:13px;color:var(--text-2)">' + (value || '—') + '</div></div>';
     return '<div class="form-group"><div class="form-label">' + label + '</div>' +
       (isTextarea ? '<textarea id="' + inputId + '">' + (value||'') + '</textarea>' : '<input type="text" id="' + inputId + '" value="' + (value||'').replace(/"/g,'&quot;') + '">') +
       '</div>';
   }
   function roleRow(label, currentName, selectId) {
-    if (!canReassignRoles) return '<div class="form-group"><div class="form-label">' + label + '</div><div style="font-size:13px;color:#444">' + (currentName || '—') + '</div></div>';
+    if (!canReassignRoles) return '<div class="form-group"><div class="form-label">' + label + '</div><div style="font-size:13px;color:var(--text-2)">' + (currentName || '—') + '</div></div>';
     return '<div class="form-group"><div class="form-label">' + label + '</div><select id="' + selectId + '">' + programResourceOpts(currentName) + '</select></div>';
   }
 
@@ -11193,7 +11319,7 @@ function myProjectCard(p) {
       '<div style="display:flex;gap:6px;flex-wrap:wrap">' + roleBadges + ' ' + bdg(p.status) + ' ' + stagePill(p.stage) + ' ' + badgeIf('badge-purple', p.value) + '</div></div>' +
       '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
     '</div>' +
-    '<div class="grid-2 mt-12" style="font-size:12px;color:#777">' +
+    '<div class="grid-2 mt-12" style="font-size:12px;color:var(--text-muted)">' +
       '<div>Owner: ' + (p.owner||'—') + '</div><div>Due: ' + (p.end||'TBD') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</div>' +
       '<div>My tasks: ' + doneTasks + '/' + myTasks.length + ' done</div>' +
     '</div>' +
@@ -11313,7 +11439,7 @@ function pgMyCapacity() {
   // to the number shown -- may drift by 1% from the admin Capacity page's
   // figure for the same person/month, which rounds the total as a whole.
   var totalPct = bau + projectPct + wrPct;
-  var totalBg = totalPct >= 110 ? '#F0A7A3' : totalPct >= 80 ? '#F5CE8B' : totalPct >= 50 ? '#BFE3D3' : '#f0ede8';
+  var totalBg = totalPct >= 110 ? 'var(--heat-over)' : totalPct >= 80 ? 'var(--heat-full)' : totalPct >= 50 ? 'var(--heat-moderate)' : 'var(--border-soft)';
 
   var rows = placedThisMonth.map(function(x){
     return {
@@ -11341,7 +11467,7 @@ function pgMyCapacity() {
         '<div class="text-muted" style="font-size:12px">Your non-project (BAU) % plus the allocation % for every project of yours active in ' + m.label + ', plus a prorated share of your open work requests due around then. This mirrors what admins see for you on the Capacity page.</div></div>' +
         '<span style="font-size:20px;font-weight:700;padding:4px 12px;border-radius:8px;background:' + totalBg + '">' + totalPct + '%</span>' +
       '</div>' +
-      '<div class="text-muted" style="font-size:11px;margin-top:10px;padding-top:10px;border-top:1px solid #eee">' +
+      '<div class="text-muted" style="font-size:11px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-soft)">' +
         'BAU ' + bau + '% + projects ' + projectPct + '% + work requests ≈' + wrPct + '%' +
       '</div>' +
     '</div>' +
@@ -11355,7 +11481,7 @@ window.setMyCapacityMonth = function(key) { myCapacityPageState.month = key; pgM
 function myCapacityRowHtml(entry) {
   var p = entry.p, tier = entry.tier, effPct = entry.effPct, overridden = entry.overridden;
   var sizeLabel = p.tshirtSize || 'Not sized';
-  return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0ede8">' +
+  return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border-soft)">' +
     '<div style="min-width:0">' +
       '<div style="font-size:13px" class="bold">' + p.name + ' ' + stagePill(p.stage) + '</div>' +
       '<div class="text-muted" style="font-size:11px;margin-top:2px">' + (tier ? tier : 'Tier not set') + ' · ' + sizeLabel + (overridden ? ' · custom override' : '') + '</div>' +
@@ -11473,7 +11599,7 @@ function renderMyPlanTasks() {
       var itemsHtml = checklist.length ? checklist.map(function(c) {
         return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;cursor:pointer">' +
           '<input type="checkbox"' + (c.done ? ' checked' : '') + ' onchange="toggleChecklistItem(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')">' +
-          '<span style="flex:1' + (c.done ? ';text-decoration:line-through;color:#999' : '') + '">' + c.text + '</span>' +
+          '<span style="flex:1' + (c.done ? ';text-decoration:line-through;color:var(--text-faint)' : '') + '">' + c.text + '</span>' +
           (canEditThis ? '<button class="btn btn-sm btn-danger" onclick="deleteChecklistItem(\'' + p.id + '\',\'' + task.id + '\',\'' + c.id + '\')"><i class="ti ti-x"></i></button>' : '') +
           '</label>';
       }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No checklist items yet</div>';
@@ -11513,11 +11639,11 @@ function renderMyPlanTasks() {
     }
 
     var taskTags = task.tags || [];
-    var doneIconHtml = '<i class="ti ' + (task.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;cursor:pointer;color:' + (task.status==='Done' ? '#1D9E75' : '#ccc') + '" title="' + (task.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTaskDoneIcon(\'' + p.id + '\',' + idx + ')"></i>';
+    var doneIconHtml = '<i class="ti ' + (task.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;cursor:pointer;color:' + (task.status==='Done' ? 'var(--good)' : 'var(--text-disabled)') + '" title="' + (task.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTaskDoneIcon(\'' + p.id + '\',' + idx + ')"></i>';
     var titleCell = '<div style="display:flex;align-items:flex-start;gap:8px">' +
       doneIconHtml +
       '<div style="flex:1;min-width:0">' +
-      '<div class="bold" style="font-size:13px' + (task.status==='Done' ? ';color:#999' : '') + '">' + task.title + '</div>' +
+      '<div class="bold" style="font-size:13px' + (task.status==='Done' ? ';color:var(--text-faint)' : '') + '">' + task.title + '</div>' +
       ((canEditThis || taskTags.length) ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">' +
         taskTags.map(function(tg){ return tagBadge(tg); }).join('') +
         (canEditThis ? '<button class="btn btn-sm" style="padding:1px 6px" title="Edit tags" onclick="openTaskTagPicker(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ti-tag"></i></button>' : '') +
@@ -11673,8 +11799,8 @@ function renderMyTodos() {
         '</div></td></tr>';
     }
 
-    var doneIconHtml = '<i class="ti ' + (td.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;cursor:pointer;color:' + (td.status==='Done' ? '#1D9E75' : '#ccc') + '" title="' + (td.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTodoDoneIcon(' + (isPersonal?'null':("'"+p.id+"'")) + ',' + idx + ')"></i>';
-    var titleCell = '<div style="display:flex;align-items:center;gap:8px">' + doneIconHtml + '<span style="font-size:13px' + (td.status==='Done' ? ';color:#999' : '') + '">' + td.title + '</span></div>';
+    var doneIconHtml = '<i class="ti ' + (td.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;cursor:pointer;color:' + (td.status==='Done' ? 'var(--good)' : 'var(--text-disabled)') + '" title="' + (td.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTodoDoneIcon(' + (isPersonal?'null':("'"+p.id+"'")) + ',' + idx + ')"></i>';
+    var titleCell = '<div style="display:flex;align-items:center;gap:8px">' + doneIconHtml + '<span style="font-size:13px' + (td.status==='Done' ? ';color:var(--text-faint)' : '') + '">' + td.title + '</span></div>';
 
     var projectCell = isPersonal
       ? '<span class="badge badge-gray">Personal</span>'
@@ -11848,7 +11974,34 @@ function openChangePasswordModal() {
   };
 }
 
+function wireThemeToggle() {
+  var buttons = document.querySelectorAll('#theme-toggle button');
+  function currentChoice() {
+    try { var saved = localStorage.getItem('pmohub-theme'); if (saved === 'light' || saved === 'dark') return saved; } catch (e) {}
+    return 'system';
+  }
+  function refreshActive() {
+    var choice = currentChoice();
+    buttons.forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-theme-choice') === choice); });
+  }
+  buttons.forEach(function(b) {
+    b.onclick = function() {
+      var choice = b.getAttribute('data-theme-choice');
+      if (choice === 'system') {
+        document.documentElement.removeAttribute('data-theme');
+        try { localStorage.removeItem('pmohub-theme'); } catch (e) {}
+      } else {
+        document.documentElement.setAttribute('data-theme', choice);
+        try { localStorage.setItem('pmohub-theme', choice); } catch (e) {}
+      }
+      refreshActive();
+    };
+  });
+  refreshActive();
+}
+
 async function initApp() {
+  wireThemeToggle();
   document.getElementById('auth-submit').onclick = handleLoginSubmit;
   document.getElementById('auth-password').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') handleLoginSubmit();
