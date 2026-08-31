@@ -9,6 +9,17 @@
 <meta http-equiv="Expires" content="0">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
+<script>
+// Applied before first paint, so a stored dark/light choice never flashes the
+// wrong theme. No entry (or "system") leaves the [data-theme] attribute off
+// entirely -- the prefers-color-scheme CSS handles that case on its own.
+(function(){
+  try {
+    var saved = localStorage.getItem('pmohub-theme');
+    if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved);
+  } catch (e) {}
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -50,6 +61,14 @@
       <div id="global-search-results" class="global-search-results" hidden></div>
     </div>
     <div id="nav-menu"></div>
+    <div class="theme-toggle-row">
+      <div class="role-label">Theme</div>
+      <div class="theme-toggle" id="theme-toggle">
+        <button type="button" data-theme-choice="light" title="Light"><i class="ti ti-sun"></i></button>
+        <button type="button" data-theme-choice="system" title="Match system"><i class="ti ti-circle-half-2"></i></button>
+        <button type="button" data-theme-choice="dark" title="Dark"><i class="ti ti-moon"></i></button>
+      </div>
+    </div>
     <div class="role-switcher">
       <div class="role-label">Signed in as</div>
       <div id="current-user-display" style="font-size:13px;font-weight:500;margin-bottom:4px"></div>
