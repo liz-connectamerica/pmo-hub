@@ -2210,7 +2210,7 @@ var projectDetailReferrer = null;
 
 var NAV_DEF = {
   admin: [
-    { s:'Overview', items:[{id:'home',icon:'ti-home',label:'Home'},{id:'portfolio-health',icon:'ti-activity',label:'Portfolio Health'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
+    { s:'Overview', items:[{id:'home',icon:'ti-home',label:'Home'},{id:'summary',icon:'ti-chart-bar',label:'Summary'},{id:'portfolio-health',icon:'ti-activity',label:'Portfolio Health'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
       {id:'my-requests',  icon:'ti-clock', label:'My Requests', badge:'my-requests'}
@@ -2246,6 +2246,7 @@ var NAV_DEF = {
   member: [
     { s:'Overview', items:[
       {id:'home',      icon:'ti-home',              label:'Home'},
+      {id:'summary',   icon:'ti-chart-bar',        label:'Summary'},
       {id:'roadmap',   icon:'ti-road',             label:'Roadmap'},
       {id:'portfolio', icon:'ti-folder-open',      label:'Portfolio'},
       {id:'programs',  icon:'ti-folders',           label:'Programs'}
@@ -2456,7 +2457,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 var PAGE_RENDERERS = {
-  home:pgHome, portfolio:pgPortfolio, requests:pgRequests,
+  home:pgHome, summary:pgSummary, portfolio:pgPortfolio, requests:pgRequests,
   backlog:pgBacklog, planned:pgPlanned, projects:pgProjects,
   completed:pgCompleted, roadmap:pgRoadmap, resources:pgResources,
   submit:pgSubmit, 'my-requests':pgMyRequests,
@@ -2798,6 +2799,149 @@ function pgHome() {
         '<tbody>' + sponsoredRows + '</tbody></table></div></div>' : '');
 }
 
+// ── Summary ─────────────────────────────────────────────────────────────────
+// A read-only, portfolio-wide "what's going on" pulse -- everyone can see it
+// (no financial data), and every component drills into a page or project
+// any Member can already reach on their own (Active/Planned/Backlog/Hold/
+// Completed, a project's own tabs) -- nothing here is a new permission.
+
+function summaryBar(label, count, max, color, onclick) {
+  return '<div class="ph-bar-row"' + (onclick ? ' onclick="' + onclick + '"' : '') + '>' +
+    '<div class="ph-bar-label">' + label + '</div>' +
+    '<div class="ph-bar-track"><div class="ph-bar-fill" style="width:' + (max ? (count / max * 100) : 0) + '%;background:' + color + '"></div></div>' +
+    '<div class="ph-bar-value">' + count + '</div>' +
+  '</div>';
+}
+
+function summaryRow(title, sub, badgeHtml, onclick) {
+  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-soft);cursor:pointer" onclick="' + onclick + '">' +
+    '<div style="min-width:0"><div class="bold" style="font-size:13px">' + title + '</div>' +
+    (sub ? '<div class="text-muted" style="font-size:11.5px;margin-top:1px">' + sub + '</div>' : '') + '</div>' +
+    badgeHtml +
+  '</div>';
+}
+
+function pgSummary() {
+  tb('Summary');
+  var all = D.projects;
+  var active = all.filter(function(p){ return p.stage === 'active'; });
+  var stageCounts = {
+    backlog: all.filter(function(p){ return p.stage === 'backlog'; }).length,
+    planned: all.filter(function(p){ return p.stage === 'planned'; }).length,
+    active: active.length,
+    hold: all.filter(function(p){ return p.stage === 'hold'; }).length,
+    complete: all.filter(function(p){ return p.stage === 'complete'; }).length
+  };
+  var maxStage = Math.max(stageCounts.backlog, stageCounts.planned, stageCounts.active, stageCounts.hold, stageCounts.complete, 1);
+
+  var buCount = []; active.forEach(function(p){ if (p.businessUnit && buCount.indexOf(p.businessUnit) < 0) buCount.push(p.businessUnit); });
+
+  var now = new Date();
+  var monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  var completedThisMonth = all.filter(function(p){ return p.stage === 'complete' && p.completedAt && p.completedAt.slice(0, 10) >= monthStart; });
+
+  // Category breakdown, active projects only -- same "categories" concept
+  // (and the same tab state) as the Active/Planned/Backlog/Completed pages.
+  var catCounts = {};
+  active.forEach(function(p) {
+    var cats = (p.categories && p.categories.length) ? p.categories : ['Uncategorized'];
+    cats.forEach(function(c){ catCounts[c] = (catCounts[c] || 0) + 1; });
+  });
+  var catList = Object.keys(catCounts).map(function(c){ return { name: c, count: catCounts[c] }; }).sort(function(a, b){ return b.count - a.count; }).slice(0, 8);
+  var maxCat = catList.length ? catList[0].count : 1;
+
+  var statusCounts = {};
+  active.forEach(function(p){ var s = p.status || 'Not set'; statusCounts[s] = (statusCounts[s] || 0) + 1; });
+  var statusOrder = ['On Track', 'At Risk', 'Blocked', 'Not set'];
+  var statusColors = { 'On Track':'var(--good)', 'At Risk':'var(--warn)', 'Blocked':'var(--bad)', 'Not set':'var(--border-soft)' };
+  var statusList = statusOrder.filter(function(s){ return statusCounts[s]; }).concat(Object.keys(statusCounts).filter(function(s){ return statusOrder.indexOf(s) < 0; }));
+  var maxStatus = active.length || 1;
+
+  var recentlyCompleted = all.filter(function(p){ return p.stage === 'complete' && p.completedAt; })
+    .sort(function(a, b){ return b.completedAt.localeCompare(a.completedAt); }).slice(0, 5);
+  var recentlyStarted = active.filter(function(p){ return p.start && p.start <= todayStr(); })
+    .sort(function(a, b){ return b.start.localeCompare(a.start); }).slice(0, 5);
+  var onHold = all.filter(function(p){ return p.stage === 'hold'; })
+    .sort(function(a, b){ return (a.heldAt||'').localeCompare(b.heldAt||''); }).slice(0, 5);
+
+  var soon = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  var upcomingMs = [];
+  active.forEach(function(p) {
+    p.milestones.filter(function(m){ return !m.done && m.date && m.date >= todayStr() && m.date <= soon; }).forEach(function(m) {
+      upcomingMs.push({ pid: p.id, project: p.name, name: m.name, date: m.date });
+    });
+  });
+  upcomingMs.sort(function(a, b){ return a.date.localeCompare(b.date); });
+  upcomingMs = upcomingMs.slice(0, 8);
+
+  var funnelHtml = summaryBar('Backlog', stageCounts.backlog, maxStage, 'var(--accent)', "nav('backlog')") +
+    summaryBar('Planned', stageCounts.planned, maxStage, 'var(--accent)', "nav('planned')") +
+    summaryBar('Active', stageCounts.active, maxStage, 'var(--accent)', "nav('projects')") +
+    summaryBar('Hold', stageCounts.hold, maxStage, 'var(--warn)', "nav('hold')") +
+    summaryBar('Completed', stageCounts.complete, maxStage, 'var(--good)', "nav('completed')");
+
+  var catHtml = catList.map(function(c) {
+    var onclick = "summaryGoCategory('" + c.name.replace(/'/g,"\\'") + "')";
+    return summaryBar(c.name, c.count, maxCat, 'var(--accent)', onclick);
+  }).join('');
+
+  var statusHtml = statusList.map(function(s) {
+    var onclick = "summaryGoStatus('" + s.replace(/'/g,"\\'") + "')";
+    return summaryBar(s, statusCounts[s], maxStatus, statusColors[s] || 'var(--accent)', onclick);
+  }).join('');
+
+  function projRow(p, badgeHtml, tab) {
+    return summaryRow(p.name, (p.categories && p.categories[0]) || EXPORT_STAGE_LABELS[p.stage] || '', badgeHtml, "goToProject('" + p.id + "'" + (tab ? ",'" + tab + "'" : '') + ")");
+  }
+
+  var completedHtml = recentlyCompleted.length
+    ? recentlyCompleted.map(function(p){ return projRow(p, '<span class="badge badge-gray">' + fmtDate(p.completedAt) + '</span>'); }).join('')
+    : '<div class="text-muted" style="font-size:12.5px;padding:8px 0">Nothing completed recently</div>';
+  var startedHtml = recentlyStarted.length
+    ? recentlyStarted.map(function(p){ return projRow(p, '<span class="badge badge-blue">' + fmtDate(p.start) + '</span>'); }).join('')
+    : '<div class="text-muted" style="font-size:12.5px;padding:8px 0">Nothing started recently</div>';
+  var holdHtml = onHold.length
+    ? onHold.map(function(p){ return projRow(p, '<span class="badge badge-amber">' + (p.heldAt ? daysSince(p.heldAt) + 'd' : '—') + '</span>', null); }).join('')
+    : '<div class="text-muted" style="font-size:12.5px;padding:8px 0">Nothing on hold</div>';
+  var msHtml = upcomingMs.length
+    ? upcomingMs.map(function(m){ return summaryRow(m.name, m.project, '<span class="badge badge-gray">' + fmtDate(m.date) + '</span>', "goToProject('" + m.pid + "','milestones')"); }).join('')
+    : '<div class="text-muted" style="font-size:12.5px;padding:8px 0">No milestones due in the next 30 days</div>';
+
+  document.getElementById('content').innerHTML =
+    '<div class="text-muted" style="font-size:12px;margin-bottom:16px">A shared, read-only pulse of the whole portfolio — click anything to see the projects behind it.</div>' +
+    '<div class="grid-4 mb-16">' +
+      '<div class="metric" style="cursor:pointer" onclick="nav(\'projects\')"><div class="metric-label">Active projects</div><div class="metric-value">' + active.length + '</div></div>' +
+      '<div class="metric" style="cursor:pointer" onclick="nav(\'portfolio\')"><div class="metric-label">Total portfolio</div><div class="metric-value">' + all.length + '</div><div class="metric-sub">All stages, incl. completed</div></div>' +
+      '<div class="metric"><div class="metric-label">Business units</div><div class="metric-value">' + buCount.length + '</div><div class="metric-sub">Represented in Active</div></div>' +
+      '<div class="metric" style="cursor:pointer" onclick="nav(\'completed\')"><div class="metric-label">Completed this month</div><div class="metric-value" style="color:var(--good)">' + completedThisMonth.length + '</div></div>' +
+      '<div class="metric" style="cursor:pointer" onclick="nav(\'hold\')"><div class="metric-label">On Hold</div><div class="metric-value" style="color:var(--warn)">' + stageCounts.hold + '</div></div>' +
+    '</div>' +
+    '<div class="card mb-16"><div class="section-title">Portfolio funnel</div>' + funnelHtml + '</div>' +
+    '<div class="grid-2 mb-16">' +
+      '<div class="card"><div class="section-title">Active projects by category</div>' + (catHtml || '<div class="text-muted" style="font-size:12.5px">No active projects</div>') + '</div>' +
+      '<div class="card"><div class="section-title">Status — Active projects</div>' + (statusHtml || '<div class="text-muted" style="font-size:12.5px">No active projects</div>') + '</div>' +
+    '</div>' +
+    '<div class="grid-3 mb-16">' +
+      '<div class="card"><div class="section-title">Recently completed</div>' + completedHtml + '</div>' +
+      '<div class="card"><div class="section-title">Recently kicked off</div>' + startedHtml + '</div>' +
+      '<div class="card"><div class="section-title">On Hold</div>' + holdHtml + '</div>' +
+    '</div>' +
+    '<div class="card"><div class="section-title">Upcoming milestones — next 30 days</div>' + msHtml + '</div>';
+
+  window.summaryGoCategory = function(cat) {
+    activeProjState.category = cat;
+    activeProjState.filters = { tags:[], status:[], priority:[], phase:[], owner:[] };
+    nav('projects');
+  };
+  window.summaryGoStatus = function(status) {
+    activeProjState.category = 'All';
+    // The Active page's own Status filter has no "not set" option (unlike
+    // All Projects) -- "Not set" here just clears the filter and shows
+    // everything, rather than claiming a precision it can't deliver.
+    activeProjState.filters = { tags:[], status: status === 'Not set' ? [] : [status], priority:[], phase:[], owner:[] };
+    nav('projects');
+  };
+}
 
 // ── Portfolio ───────────────────────────────────────────────────────────────
 
