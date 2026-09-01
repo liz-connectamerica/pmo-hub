@@ -1,4 +1,28 @@
 (function () {
+  var themeButtons = document.querySelectorAll('#doc-theme-toggle button');
+  function currentThemeChoice() {
+    try { var saved = localStorage.getItem('pmohub-docs-theme'); if (saved === 'light' || saved === 'dark') return saved; } catch (e) {}
+    return 'system';
+  }
+  function refreshThemeActive() {
+    var choice = currentThemeChoice();
+    themeButtons.forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-theme-choice') === choice); });
+  }
+  themeButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var choice = b.getAttribute('data-theme-choice');
+      if (choice === 'system') {
+        document.documentElement.removeAttribute('data-theme');
+        try { localStorage.removeItem('pmohub-docs-theme'); } catch (e) {}
+      } else {
+        document.documentElement.setAttribute('data-theme', choice);
+        try { localStorage.setItem('pmohub-docs-theme', choice); } catch (e) {}
+      }
+      refreshThemeActive();
+    });
+  });
+  refreshThemeActive();
+
   var content = document.getElementById('doc-content');
   var tocList = document.getElementById('doc-toc-list');
 

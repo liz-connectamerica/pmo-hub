@@ -2,6 +2,7 @@
 layout: page
 title: PMO Hub Documentation
 permalink: /
+toc: false
 ---
 
 PMO Hub is the team's project portfolio tool — request tracking, project management, and PMO reporting in one place.

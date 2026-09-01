@@ -1,6 +1,64 @@
-/* Layout: sidebar TOC + search, alongside the guide content. Scoped to
-   .doc-layout so it doesn't affect the home page (index.md), which keeps
-   minima's plain default layout. */
+/* ── Color tokens ─────────────────────────────────────────────────────────
+   Light values keep minima's own defaults (background #fdfdfd, text #111,
+   brand blue #2a7ae2, border #e8e8e8) so existing pages don't shift. Dark
+   values follow the same palette used across the PMO Hub app itself, for a
+   consistent feel -- this is a separate site (GitHub Pages, not the app's
+   origin), so the choice can't literally be shared via storage, but the
+   toggle, behavior, and colors are the same. Default is system preference;
+   the toggle's [data-theme] override wins either direction. */
+:root {
+  --docs-bg: #fdfdfd; --docs-surface: #fff; --docs-surface-2: #f5f5f5;
+  --docs-border: #e8e8e8; --docs-text: #111; --docs-muted: #6b6b6b; --docs-faint: #767676;
+  --docs-accent: #2a7ae2; --docs-code-bg: #eef0f2;
+  --docs-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --docs-bg: #121212; --docs-surface: #1B1B1B; --docs-surface-2: #201f1d;
+    --docs-border: #2E2D2A; --docs-text: #F3F2ED; --docs-muted: #9a988f; --docs-faint: #8F8D85;
+    --docs-accent: #7EB2FF; --docs-code-bg: #232321;
+    --docs-shadow: 0 8px 20px rgba(0,0,0,0.4);
+  }
+}
+:root[data-theme="dark"] {
+  --docs-bg: #121212; --docs-surface: #1B1B1B; --docs-surface-2: #201f1d;
+  --docs-border: #2E2D2A; --docs-text: #F3F2ED; --docs-muted: #9a988f; --docs-faint: #8F8D85;
+  --docs-accent: #7EB2FF; --docs-code-bg: #232321;
+  --docs-shadow: 0 8px 20px rgba(0,0,0,0.4);
+}
+
+/* ── Minima chrome ────────────────────────────────────────────────────────
+   Minima (the GitHub Pages default theme) ships light-only, with its own
+   hardcoded colors -- these overrides make the rest of the page track the
+   toggle too, not just the doc-layout/search/changelog widgets below. */
+body { background: var(--docs-bg); color: var(--docs-text); }
+.site-header { border-top-color: var(--docs-accent); border-bottom-color: var(--docs-border); background: var(--docs-bg); }
+.site-title, .site-title:visited { color: var(--docs-text); }
+.site-nav .page-link { color: var(--docs-text); }
+.site-nav .page-link:hover { color: var(--docs-accent); }
+.site-footer { border-top-color: var(--docs-border); background: var(--docs-bg); }
+.footer-heading { color: var(--docs-text); }
+.contact-list, .social-media-list, .footer-col { color: var(--docs-muted); }
+a { color: var(--docs-accent); }
+.post-content h1, .post-content h2, .post-content h3, .post-content h4 { color: var(--docs-text); }
+.post-content blockquote { color: var(--docs-muted); border-left-color: var(--docs-border); }
+.post-content hr { border-color: var(--docs-border); }
+.post-content table { color: var(--docs-text); }
+.post-content table th, .post-content table td { border-color: var(--docs-border); }
+.post-content table th { background: var(--docs-surface-2); }
+.post-content code { background: var(--docs-code-bg); color: var(--docs-text); }
+.post-content .highlight, .post-content pre { background: var(--docs-code-bg); }
+
+/* ── Theme toggle ─────────────────────────────────────────────────────────
+   Sits above the page content on every page (including the home page, which
+   otherwise has no sidebar to hold it). */
+.doc-theme-row { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+.doc-theme-toggle { display: inline-flex; border: 1px solid var(--docs-border); border-radius: 8px; overflow: hidden; }
+.doc-theme-toggle button { border: none; background: var(--docs-surface); color: var(--docs-faint); font-size: 14px; padding: 5px 10px; cursor: pointer; line-height: 1; }
+.doc-theme-toggle button + button { border-left: 1px solid var(--docs-border); }
+.doc-theme-toggle button.active { background: var(--docs-surface-2); color: var(--docs-accent); }
+
+/* ── Layout: sidebar TOC + search, alongside the guide content ───────────── */
 
 .wrapper:has(.doc-layout) {
   max-width: 1120px;
@@ -26,7 +84,7 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #6b6b6b;
+  color: var(--docs-muted);
   margin: 18px 0 8px;
 }
 
@@ -34,7 +92,7 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  border-left: 2px solid #e8e8e5;
+  border-left: 2px solid var(--docs-border);
 }
 
 .doc-toc-item a {
@@ -44,23 +102,23 @@
   border-left: 2px solid transparent;
   font-size: 13.5px;
   line-height: 1.4;
-  color: #555;
+  color: var(--docs-muted);
   text-decoration: none;
 }
 
 .doc-toc-item.doc-toc-h3 a {
   padding-left: 28px;
   font-size: 13px;
-  color: #767676;
+  color: var(--docs-faint);
 }
 
 .doc-toc-item a:hover {
-  color: #2a7ae2;
+  color: var(--docs-accent);
 }
 
 .doc-toc-item a.active {
-  border-left-color: #2a7ae2;
-  color: #2a7ae2;
+  border-left-color: var(--docs-accent);
+  color: var(--docs-accent);
   font-weight: 600;
 }
 
@@ -76,13 +134,14 @@
   box-sizing: border-box;
   padding: 9px 12px;
   font-size: 14px;
-  border: 1px solid #d6d6d6;
+  border: 1px solid var(--docs-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--docs-surface);
+  color: var(--docs-text);
 }
 
 .doc-search input[type="search"]:focus {
-  outline: 2px solid #2a7ae2;
+  outline: 2px solid var(--docs-accent);
   outline-offset: 1px;
 }
 
@@ -92,10 +151,10 @@
   left: 0;
   right: 0;
   z-index: 30;
-  background: #fff;
-  border: 1px solid #d6d6d6;
+  background: var(--docs-surface);
+  border: 1px solid var(--docs-border);
   border-radius: 8px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+  box-shadow: var(--docs-shadow);
   max-height: 60vh;
   overflow-y: auto;
 }
@@ -104,12 +163,12 @@
   display: block;
   padding: 9px 12px;
   text-decoration: none;
-  border-bottom: 1px solid #eee;
-  color: #222;
+  border-bottom: 1px solid var(--docs-border);
+  color: var(--docs-text);
 }
 
 .doc-search-result:last-child { border-bottom: none; }
-.doc-search-result:hover { background: #f5f7fb; }
+.doc-search-result:hover { background: var(--docs-surface-2); }
 
 .doc-search-result-title {
   display: block;
@@ -122,14 +181,14 @@
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #2a7ae2;
+  color: var(--docs-accent);
   margin-top: 2px;
 }
 
 .doc-search-result-blurb {
   display: block;
   font-size: 12px;
-  color: #767676;
+  color: var(--docs-faint);
   margin-top: 2px;
   line-height: 1.4;
 }
@@ -137,7 +196,7 @@
 .doc-search-empty {
   padding: 10px 12px;
   font-size: 13px;
-  color: #767676;
+  color: var(--docs-faint);
 }
 
 /* Mobile TOC toggle */
@@ -151,10 +210,11 @@
   padding: 10px 14px;
   font-size: 14px;
   font-weight: 600;
-  background: #f5f5f5;
-  border: 1px solid #d6d6d6;
+  background: var(--docs-surface-2);
+  border: 1px solid var(--docs-border);
   border-radius: 8px;
   cursor: pointer;
+  color: var(--docs-text);
 }
 
 @media (max-width: 900px) {
@@ -168,8 +228,8 @@
     display: none;
     position: static;
     max-height: none;
-    background: #fafafa;
-    border: 1px solid #e8e8e5;
+    background: var(--docs-surface-2);
+    border: 1px solid var(--docs-border);
     border-radius: 10px;
     padding: 14px;
     margin-bottom: 20px;
@@ -200,24 +260,25 @@ pre.mermaid {
   box-sizing: border-box;
   padding: 10px 14px;
   font-size: 15px;
-  border: 1px solid #d6d6d6;
+  border: 1px solid var(--docs-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--docs-surface);
+  color: var(--docs-text);
 }
 
 .changelog-search input[type="search"]:focus {
-  outline: 2px solid #2a7ae2;
+  outline: 2px solid var(--docs-accent);
   outline-offset: 1px;
 }
 
 .changelog-count {
   font-size: 12px;
-  color: #6b6b6b;
+  color: var(--docs-muted);
   margin-top: 6px;
 }
 
 .changelog-entry {
-  border-bottom: 1px solid #e8e8e5;
+  border-bottom: 1px solid var(--docs-border);
   padding: 18px 0;
 }
 
@@ -232,7 +293,7 @@ pre.mermaid {
 
 .changelog-date {
   font-size: 12.5px;
-  color: #6b6b6b;
+  color: var(--docs-muted);
   margin: 0 0 10px;
 }
 
@@ -249,6 +310,6 @@ pre.mermaid {
 
 .changelog-note {
   font-size: 13px;
-  color: #6b6b6b;
+  color: var(--docs-muted);
   padding: 20px 0;
 }

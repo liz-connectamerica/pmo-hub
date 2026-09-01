@@ -2,7 +2,37 @@
 layout: default
 ---
 <link rel="stylesheet" href="{{ '/assets/css/docs.css' | relative_url }}">
+<script>
+// Applied as early as possible so a stored dark/light choice doesn't flash
+// the wrong theme -- can't get this fully flash-free without owning
+// _layouts/default.html (it ships with the minima gem, not this repo), but
+// running it as the first thing this layout emits keeps the window small.
+(function(){
+  try {
+    var saved = localStorage.getItem('pmohub-docs-theme');
+    if (saved === 'light' || saved === 'dark') document.documentElement.setAttribute('data-theme', saved);
+  } catch (e) {}
+})();
+</script>
 
+<div class="doc-theme-row">
+  <div class="doc-theme-toggle" id="doc-theme-toggle">
+    <button type="button" data-theme-choice="light" title="Light"><i>&#9728;</i></button>
+    <button type="button" data-theme-choice="system" title="Match system"><i>&#9680;</i></button>
+    <button type="button" data-theme-choice="dark" title="Dark"><i>&#9790;</i></button>
+  </div>
+</div>
+
+{% if page.toc == false %}
+<article class="doc-article doc-article-plain">
+  <header class="post-header">
+    <h1 class="post-title">{{ page.title | escape }}</h1>
+  </header>
+  <div class="post-content">
+    {{ content }}
+  </div>
+</article>
+{% else %}
 <div class="doc-layout">
   <button class="doc-toc-toggle" id="doc-toc-toggle" type="button" aria-controls="doc-toc" aria-expanded="false">☰ On this page &amp; search</button>
 
@@ -24,6 +54,7 @@ layout: default
     </div>
   </article>
 </div>
+{% endif %}
 
 <script type="application/json" id="doc-search-index">{{ site.data.search_index | jsonify }}</script>
 <script>window.DOC_BASEURL = {{ site.baseurl | jsonify }};</script>
