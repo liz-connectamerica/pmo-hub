@@ -3634,8 +3634,7 @@ function pgBacklog() {
   }).join('');
 
   document.getElementById('content').innerHTML =
-    '<div class="info-banner info-amber"><i class="ti ti-stack-2" style="font-size:20px;flex-shrink:0;color:var(--hatch-border)"></i>' +
-    '<span>Projects here are <strong>approved</strong> and waiting to be scheduled. Assign a start date to move them to Planned — an Owner can be assigned later.</span></div>' +
+    '<div class="text-muted" style="font-size:12px;margin-bottom:12px">Projects here are <strong>approved</strong> and waiting to be scheduled. Assign a start date to move them to Planned — an Owner can be assigned later.</div>' +
     searchBoxHtml(st.search, 'Search projects by name…', 'backlog-search', 'onBacklogSearch') +
     cat.html +
     '<div class="card"><div class="table-wrap"><table><thead><tr>' +
@@ -3867,8 +3866,7 @@ function pgPrioritizeBacklog() {
   }).join('');
 
   document.getElementById('content').innerHTML =
-    '<div class="info-banner info-amber"><i class="ti ti-arrows-sort" style="font-size:20px;flex-shrink:0;color:var(--hatch-border)"></i>' +
-    '<span>Drag rows in the list to set priority order for <strong>' + scope + '</strong>. There is one overall ranking across all categories — this tab shows just the projects in it, in that same order. Reordering here only changes what you see elsewhere if it moves a project past another one that shares a category with it.</span></div>' +
+    '<div class="text-muted" style="font-size:12px;margin-bottom:12px">Drag rows in the list to set priority order for <strong>' + scope + '</strong>. There is one overall ranking across all categories — this tab shows just the projects in it, in that same order. Reordering here only changes what you see elsewhere if it moves a project past another one that shares a category with it.</div>' +
     searchBoxHtml(st.search, 'Search projects by name…', 'prioritize-search', 'onPrioritizeSearch') +
     cat.html +
     '<div class="grid-2" style="align-items:start;gap:20px">' +
@@ -4124,7 +4122,7 @@ function pgPlanned() {
   var bannerText = 'These projects are <strong>scheduled</strong> with a start date. Activate them when work begins.';
 
   document.getElementById('content').innerHTML =
-    '<div class="info-banner info-blue"><i class="ti ti-calendar-event" style="font-size:20px;flex-shrink:0;color:var(--blue-tx)"></i><span>' + bannerText + '</span></div>' +
+    '<div class="text-muted" style="font-size:12px;margin-bottom:12px">' + bannerText + '</div>' +
     searchBoxHtml(st.search, 'Search projects by name…', 'planned-search', 'onPlannedSearch') +
     cat.html +
     '<div class="card"><div class="table-wrap"><table><thead><tr>' +
@@ -10298,7 +10296,7 @@ function renderPortfolioHealth() {
 
   var bannerHtml = phState.viewing
     ? '<div class="info-banner info-blue mb-16"><i class="ti ti-calendar-event"></i><span>Viewing the <strong>' + fmtMonthYear(phState.viewing.period_month) + '</strong> snapshot, captured ' + fmtDate(phState.viewing.captured_at) + (phState.viewing.captured_by_name ? ' by ' + phState.viewing.captured_by_name : ' automatically') + '. <a href="javascript:void(0)" onclick="phViewSnapshot(null)">Back to live</a></span></div>'
-    : '<div class="info-banner info-blue mb-16"><i class="ti ti-info-circle"></i><span>Computed from your live project, RAID, and change-log data. Click any bar to see which projects make it up.</span></div>';
+    : '<div class="text-muted" style="font-size:12px;margin-bottom:16px">Computed from your live project, RAID, and change-log data. Click any bar to see which projects make it up.</div>';
 
   document.getElementById('content').innerHTML =
     toolbarHtml + bannerHtml +
