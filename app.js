@@ -3634,7 +3634,7 @@ function pgBacklog() {
   }).join('');
 
   document.getElementById('content').innerHTML =
-    '<div class="text-muted" style="font-size:12px;margin-bottom:12px">Projects here are <strong>approved</strong> and waiting to be scheduled. Assign a start date to move them to Planned — an Owner can be assigned later.</div>' +
+    '<div class="text-muted" style="font-size:12px;margin-bottom:12px">Projects here are <strong>approved</strong> and waiting to be scheduled. They\'ll move to Planned once a start date is assigned — an Owner can be added later.</div>' +
     searchBoxHtml(st.search, 'Search projects by name…', 'backlog-search', 'onBacklogSearch') +
     cat.html +
     '<div class="card"><div class="table-wrap"><table><thead><tr>' +
@@ -4119,7 +4119,7 @@ function pgPlanned() {
       '</tr>';
   }).join('');
 
-  var bannerText = 'These projects are <strong>scheduled</strong> with a start date. Activate them when work begins.';
+  var bannerText = 'These projects are <strong>scheduled</strong> with a start date. They\'re activated once work begins.';
 
   document.getElementById('content').innerHTML =
     '<div class="text-muted" style="font-size:12px;margin-bottom:12px">' + bannerText + '</div>' +
