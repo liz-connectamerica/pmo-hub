@@ -18,7 +18,13 @@
   page: /user-guide/
   anchor: home
   guide: User Guide
-  blurb: Your default landing page -- needs your attention, your projects, rejected proposals.
+  blurb: Your default landing page -- needs your attention, your projects, projects you sponsor.
+
+- title: Summary
+  page: /user-guide/
+  anchor: summary
+  guide: User Guide
+  blurb: Portfolio-wide "what's going on" pulse, visible to everyone -- click-to-drill, no financial data.
 
 - title: Roadmap
   page: /user-guide/
