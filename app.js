@@ -2834,8 +2834,6 @@ function pgSummary() {
   };
   var maxStage = Math.max(stageCounts.backlog, stageCounts.planned, stageCounts.active, stageCounts.hold, stageCounts.complete, 1);
 
-  var buCount = []; active.forEach(function(p){ if (p.businessUnit && buCount.indexOf(p.businessUnit) < 0) buCount.push(p.businessUnit); });
-
   var now = new Date();
   var monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
   var completedThisMonth = all.filter(function(p){ return p.stage === 'complete' && p.completedAt && p.completedAt.slice(0, 10) >= monthStart; });
@@ -2912,7 +2910,6 @@ function pgSummary() {
     '<div class="grid-4 mb-16">' +
       '<div class="metric" style="cursor:pointer" onclick="nav(\'projects\')"><div class="metric-label">Active projects</div><div class="metric-value">' + active.length + '</div></div>' +
       '<div class="metric" style="cursor:pointer" onclick="nav(\'portfolio\')"><div class="metric-label">Total portfolio</div><div class="metric-value">' + all.length + '</div><div class="metric-sub">All stages, incl. completed</div></div>' +
-      '<div class="metric"><div class="metric-label">Business units</div><div class="metric-value">' + buCount.length + '</div><div class="metric-sub">Represented in Active</div></div>' +
       '<div class="metric" style="cursor:pointer" onclick="nav(\'completed\')"><div class="metric-label">Completed this month</div><div class="metric-value" style="color:var(--good)">' + completedThisMonth.length + '</div></div>' +
       '<div class="metric" style="cursor:pointer" onclick="nav(\'hold\')"><div class="metric-label">On Hold</div><div class="metric-value" style="color:var(--warn)">' + stageCounts.hold + '</div></div>' +
     '</div>' +
