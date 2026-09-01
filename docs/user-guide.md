@@ -28,9 +28,9 @@ The search box under the PMO Hub logo works from anywhere in the app and looks a
 
 Home is what you land on after logging in — a personalized view of what needs you, not a portfolio-wide browse.
 
-**Needs your attention** leads the page: any project you own that's past its target end date, tasks and to-dos assigned to you due within 3 days (or overdue), high-severity open RAID items on projects you own, and your work request status — a request sent back to you needing more detail (or, for admins, counts of project/work requests awaiting review). Click any item to jump straight to it. Below that, **Your projects** is a compact strip of the active projects you own or sponsor, and admins get a **Portfolio pulse** strip (active count, RAG split, projects missing an owner or sponsor) linking to the full [Portfolio Health](../admin-guide/#portfolio-health) page.
+**Needs your attention** leads the page: any project you own that's past its target end date, overdue milestones on projects you own, tasks and to-dos assigned to you due within 3 days (or overdue), high-severity open RAID items on projects you own, and your work request status — a request sent back to you needing more detail (or, for admins, counts of project/work requests awaiting review). Click any item to jump straight to it. Below that, **Your projects** is a compact strip of the active projects you own or sponsor, and admins get a **Portfolio pulse** strip (active count, RAG split, projects missing an owner or sponsor) linking to the full [Portfolio Health](../admin-guide/#portfolio-health) page.
 
-If you're a project sponsor, a **Projects you sponsor** table with an inline **Edit financials** shortcut sits at the bottom of the page too, since it had no other home.
+If you're a project sponsor, a **Projects you sponsor** table sits at the bottom of the page too, since it had no other home — health, owner, T-shirt size, stage, and progress for each; financial editing lives on the project's own Information tab, not here.
 
 ## Summary
 

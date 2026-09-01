@@ -16,7 +16,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div class="changelog-entry" id="cl-2026-09-01">
   <h2>My Projects</h2>
-  <p class="changelog-date">September 1, 2026 · 8:50 AM – 11:15 AM</p>
+  <p class="changelog-date">September 1, 2026 · 8:50 AM – 11:50 AM</p>
   <ul>
     <li><strong>My Projects:</strong> Every tab (Sponsor, Owner: Active, Owner: Not Started, Contributor, Completed) is now the same searchable, sortable table instead of cards, with column filters on Status, Stage, Priority, and Owner. The Value area column was replaced with Priority.</li>
     <li><strong>Backlog, Planned, Prioritize Backlog:</strong> The description at the top of each page no longer looks like a warning — switched from a colored banner to plain text, and reworded Backlog/Planned to be informative rather than directive (e.g. "They'll move to Planned once a start date is assigned" instead of "Assign a start date"), since most readers of those pages can't take that action themselves. Portfolio Health's "how this works" note got the same banner-to-plain-text treatment.</li>
@@ -26,6 +26,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li>Scrollbars now follow <strong>dark mode</strong> too, instead of showing the browser's default light track/thumb on a dark page.</li>
     <li><strong>Portfolio:</strong> Replaced the 2-column, description-heavy card grid with a compact, collapsible table per Value Area (health, name, category, stage, progress, owner, due) — a Collapse/Expand-all shortcut, plus new Category and Stage filters alongside the existing tag filter. Description and estimated cost are gone from the row (cost was previously visible to everyone regardless of financial-view permission).</li>
     <li><strong>Programs:</strong> A program's detail page no longer permanently renders as a live edit form for anyone who can edit it — <strong>View</strong> is now the default (read-only About card, a new stats strip covering linked/active project counts, a RAG mini-bar, average progress, late and on-hold counts, plus a richer linked-projects list and an <strong>Upcoming &amp; late milestones</strong> list across every linked project), with an explicit <strong>Edit</strong> button that swaps in the form. The Programs list shows avatar initials for each role and a RAG-dot project-count pill.</li>
+    <li><strong>Home:</strong> "Needs your attention" now flags overdue milestones on projects you own, alongside late projects and open high-severity RAID items. <strong>Projects you sponsor</strong> swapped Estimated value/Cost estimate/Edit financials for Owner, T-shirt Size, Stage, and Progress — financial editing is still available from the project's own Information tab.</li>
   </ul>
 </div>
 
