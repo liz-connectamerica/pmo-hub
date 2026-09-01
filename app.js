@@ -1895,15 +1895,15 @@ var allProjectsState = {
 var tagAdminState = { expandedId: null };
 var myTasksState = { kind:'plan', sort:'end', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var myProjectsPageState = { tab:'sponsor' };
-// Sponsor, Owner: Active, Contributor, and Completed are table views
-// (search/sort/filter); Owner: Not Started stays as cards -- keyed
-// separately since a search/filter/sort chosen on one tab shouldn't reset
-// when you switch to another.
+// Every My Projects tab is this same table (search/sort/filter) -- keyed per
+// tab since a search/filter/sort chosen on one tab shouldn't reset when you
+// switch to another.
 var myProjectsTableState = {
-  sponsor:           { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
-  'owner-active':    { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
-  contributor:       { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
-  completed:         { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } }
+  sponsor:            { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
+  'owner-active':     { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
+  'owner-notstarted': { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
+  contributor:        { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
+  completed:          { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } }
 };
 var myCapacityPageState = { month:'current' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
@@ -11198,28 +11198,7 @@ function myProjectRoles(p) {
   return roles;
 }
 
-function myProjectCard(p) {
-  var myTasks = p.tasks.filter(function(t){ return t.assignee === currentUser(); });
-  var doneTasks = myTasks.filter(function(t){ return t.status==='Done'; }).length;
-  var roleBadgeClass = { Owner:'badge-blue', Sponsor:'badge-coral', Contributor:'badge-teal' };
-  var roleBadges = myProjectRoles(p).map(function(r){ return '<span class="badge ' + roleBadgeClass[r] + '" style="font-size:10px">' + r + '</span>'; }).join(' ');
-  return '<div class="project-card">' +
-    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
-      '<div><div class="bold mb-12">' + hdot(p.health) + p.name + '</div>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap">' + roleBadges + ' ' + bdg(p.status) + ' ' + stagePill(p.stage) + ' ' + badgeIf('badge-purple', p.value) + '</div></div>' +
-      '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
-    '</div>' +
-    '<div class="grid-2 mt-12" style="font-size:12px;color:var(--text-muted)">' +
-      '<div>Owner: ' + (p.owner||'—') + '</div><div>Due: ' + (p.end||'TBD') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</div>' +
-      '<div>My tasks: ' + doneTasks + '/' + myTasks.length + ' done</div>' +
-    '</div>' +
-    (p.blockers ? '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + p.blockers + '</div>' : '') +
-  '</div>';
-}
-
-// Sponsor, Owner: Active, Contributor, and Completed tabs use this standard
-// table (search/sort/filter) instead of myProjectCard's cards -- same data
-// points the card showed:
+// Every My Projects tab uses this standard table (search/sort/filter) --
 // health, role(s), status, stage, value area, owner, due date, my task
 // progress, and blockers.
 function myProjectsTableHtml(tabKey, list, emptyMsg) {
@@ -11356,12 +11335,7 @@ function pgMyProjectsResource() {
       ' <span class="badge badge-gray" style="font-size:10px">' + t.list.length + '</span></div>';
   }).join('') + '</div>';
 
-  var isTableTab = activeTab.key === 'sponsor' || activeTab.key === 'owner-active' || activeTab.key === 'contributor' || activeTab.key === 'completed';
-  var bodyHtml = isTableTab
-    ? myProjectsTableHtml(activeTab.key, activeTab.list, activeTab.empty)
-    : (activeTab.list.length
-        ? activeTab.list.map(myProjectCard).join('')
-        : '<div class="empty-state" style="padding:30px"><p>' + activeTab.empty + '</p></div>');
+  var bodyHtml = myProjectsTableHtml(activeTab.key, activeTab.list, activeTab.empty);
 
   document.getElementById('content').innerHTML = tabHtml + bodyHtml;
   window.setMyProjectsTab = function(k) { st.tab = k; pgMyProjectsResource(); };
