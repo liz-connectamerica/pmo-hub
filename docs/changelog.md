@@ -15,9 +15,11 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-01">
-  <h2>My Projects, Documentation &amp; RAID log</h2>
-  <p class="changelog-date">September 1, 2026 · 8:50 AM – 5:05 PM</p>
+  <h2>My Projects, Documentation, RAID log &amp; Portfolio</h2>
+  <p class="changelog-date">September 1, 2026 · 8:50 AM – 5:20 PM</p>
   <ul>
+    <li><strong>Portfolio:</strong> Added an Owner filter, alongside the existing Category, Stage, and Tag filters.</li>
+    <li><strong>RAID log:</strong> Issues now have an optional free-form <strong>Impact</strong> field, describing what happens if the issue isn't resolved — separate from Risk's existing Impact (High/Medium/Low).</li>
     <li><strong>Home:</strong> "Needs your attention" now also lists any open RAID issue assigned to you personally, on any project — not just high-severity issues on projects you own (that existing entry is unchanged, and the two are deduped so the same issue never shows twice).</li>
     <li><strong>RAID log &amp; Documentation:</strong> Each item in the left-hand sub-nav now shows a count badge for its open items (not at a terminal status — Closed for risks/issues, Resolved for dependencies, Completed/Deferred/Cancelled for requirements/scope). Attachments has no status concept, so it has no badge.</li>
     <li><strong>RAID log:</strong> Now a left-hand sub-nav split into Risks, Assumptions, Issues, and Dependencies, styled like the Information and Documentation tabs — one section at a time instead of all four stacked on a single scrolling page. Search, add, edit/delete, and change-log all work the same, just scoped to whichever section is active.</li>
