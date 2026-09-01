@@ -2714,6 +2714,9 @@ function pgHome() {
       var opened = raidOpenedDate(i);
       addAttn('bad', 'ti-alert-circle', 'Open issue: "' + i.desc + '"', p.name + (opened ? ' · logged ' + daysSince(opened) + 'd ago' : ''), 'goToProject(\'' + p.id + '\',\'raid\')');
     });
+    p.milestones.filter(isMilestoneLate).forEach(function(m) {
+      addAttn('bad', 'ti-flag', 'Milestone "' + m.name + '" is overdue', p.name + ' · was due ' + fmtDate(m.date), 'goToProject(\'' + p.id + '\',\'milestones\')');
+    });
   });
 
   if (D.role === 'admin') {
