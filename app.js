@@ -464,7 +464,7 @@ async function loadAllProjects() {
 
     var raid = { risks: [], assumptions: [], issues: [], dependencies: [] };
     (raidByProj[pr.id] || []).forEach(function(r) {
-      var base = { id: r.id, desc: r.description, owner: r.owner_name, status: r.status, log: mapLog(raidLogByItem[r.id]) };
+      var base = { id: r.id, desc: r.description, owner: r.owner_name, ownerId: r.owner_id, status: r.status, log: mapLog(raidLogByItem[r.id]) };
       if (r.type === 'risk') {
         raid.risks.push(Object.assign(base, { probability: r.probability, impact: r.impact, mitigation: r.mitigation }));
       } else if (r.type === 'assumption') {
@@ -2738,6 +2738,7 @@ function pgHome() {
 
   var attn = [];
   function addAttn(sev, icon, title, sub, onclick) { attn.push({ sev:sev, icon:icon, title:title, sub:sub, onclick:onclick }); }
+  var attnIssueIds = {};
 
   var myOwned = D.projects.filter(isMyOwnedProject);
   myOwned.forEach(function(p) {
@@ -2769,6 +2770,7 @@ function pgHome() {
       addAttn('bad', 'ti-alert-circle', 'Open risk: "' + r.desc + '"', p.name + (opened ? ' · logged ' + daysSince(opened) + 'd ago' : ''), 'goToProject(\'' + p.id + '\',\'raid\')');
     });
     p.raid.issues.filter(function(i){ return i.status === 'Open' && i.severity === 'High'; }).forEach(function(i) {
+      attnIssueIds[i.id] = true;
       var opened = raidOpenedDate(i);
       addAttn('bad', 'ti-alert-circle', 'Open issue: "' + i.desc + '"', p.name + (opened ? ' · logged ' + daysSince(opened) + 'd ago' : ''), 'goToProject(\'' + p.id + '\',\'raid\')');
     });
@@ -2776,6 +2778,18 @@ function pgHome() {
       addAttn('bad', 'ti-flag', 'Milestone "' + m.name + '" is overdue', p.name + ' · was due ' + fmtDate(m.date), 'goToProject(\'' + p.id + '\',\'milestones\')');
     });
   });
+
+  // Issues assigned to you personally, on any project -- not just ones you
+  // own. The owned-project loop above already covers high-severity issues on
+  // your own projects, so skip anything it already added.
+  if (myId) {
+    D.projects.forEach(function(p) {
+      p.raid.issues.filter(function(i){ return i.ownerId === myId && i.status === 'Open' && !attnIssueIds[i.id]; }).forEach(function(i) {
+        var opened = raidOpenedDate(i);
+        addAttn(i.severity === 'High' ? 'bad' : 'warn', 'ti-alert-circle', 'Issue assigned to you: "' + i.desc + '"', p.name + (opened ? ' · logged ' + daysSince(opened) + 'd ago' : ''), 'goToProject(\'' + p.id + '\',\'raid\')');
+      });
+    });
+  }
 
   if (D.role === 'admin') {
     var pend = pendingCount();
@@ -6402,6 +6416,7 @@ function openRaidModal(pid, type, idx) {
     if (!desc){ showToast('Description required'); return; }
     var owner = document.getElementById('rd-owner').value;
     if (owner === '__add__') owner = '';
+    var ownerResource = owner ? resolveResource(owner) : null;
     var btn = document.getElementById('rd-save'); btn.disabled = true;
     var dbType = { risks:'risk', assumptions:'assumption', issues:'issue', dependencies:'dependency' }[type];
 
@@ -6419,7 +6434,7 @@ function openRaidModal(pid, type, idx) {
         if (oldV !== newV) changes.push((fieldLabels[f]||f) + ': "' + (oldV||'—') + (f==='probability'&&oldV!==''?'%':'') + '" → "' + (newV||'—') + (f==='probability'&&newV!==''?'%':'') + '"');
       });
 
-      var dbUpdate = { description: newVals.desc, owner_name: newVals.owner || null };
+      var dbUpdate = { description: newVals.desc, owner_name: newVals.owner || null, owner_id: ownerResource ? ownerResource.id : null };
       if (newVals.probability !== undefined) dbUpdate.probability = newVals.probability;
       if (newVals.impact !== undefined) dbUpdate.impact = newVals.impact;
       if (newVals.mitigation !== undefined) dbUpdate.mitigation = newVals.mitigation;
@@ -6430,17 +6445,18 @@ function openRaidModal(pid, type, idx) {
       var result = await sb.from('raid_items').update(dbUpdate).eq('id', item.id);
       if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
       Object.keys(newVals).forEach(function(f){ item[f] = newVals[f]; });
+      item.ownerId = ownerResource ? ownerResource.id : null;
       if (changes.length) item.log.push(await writeLog('raid_log', 'raid_item_id', item.id, 'Updated', changes.join('; ')));
       showToast(label + ' updated');
     } else {
-      var record = { project_id: pid, type: dbType, description: desc, owner_name: owner || null };
+      var record = { project_id: pid, type: dbType, description: desc, owner_name: owner || null, owner_id: ownerResource ? ownerResource.id : null };
       if (type==='risks')   { record.probability = parseInt(document.getElementById('rd-prob').value)||0; record.impact = document.getElementById('rd-impact').value; record.status = document.getElementById('rd-status').value; record.mitigation = document.getElementById('rd-mit').value; }
       else if (type==='issues')       { record.severity = document.getElementById('rd-sev').value; record.status = document.getElementById('rd-issuest').value; record.solution = document.getElementById('rd-sol').value; }
       else if (type==='dependencies') { record.status = document.getElementById('rd-depst').value; }
 
       var insertResult = await sb.from('raid_items').insert(record).select().single();
       if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
-      var n = { id: insertResult.data.id, desc: desc, owner: owner, log: [] };
+      var n = { id: insertResult.data.id, desc: desc, owner: owner, ownerId: ownerResource ? ownerResource.id : null, log: [] };
       if (type==='risks')        { n.probability = record.probability; n.impact = record.impact; n.status = record.status; n.mitigation = record.mitigation; }
       else if (type==='issues')       { n.severity = record.severity; n.status = record.status; n.solution = record.solution; }
       else if (type==='dependencies') { n.status = record.status; }
