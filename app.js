@@ -1895,6 +1895,13 @@ var allProjectsState = {
 var tagAdminState = { expandedId: null };
 var myTasksState = { kind:'plan', sort:'end', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var myProjectsPageState = { tab:'sponsor' };
+// Sponsor and Contributor are table views (search/sort/filter); Owner and
+// Completed stay as cards -- keyed separately since a search/filter/sort
+// chosen on one tab shouldn't reset when you switch to the other.
+var myProjectsTableState = {
+  sponsor:     { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
+  contributor: { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } }
+};
 var myCapacityPageState = { month:'current' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
@@ -11207,6 +11214,103 @@ function myProjectCard(p) {
   '</div>';
 }
 
+// Sponsor and Contributor tabs use this standard table (search/sort/filter)
+// instead of myProjectCard's cards -- same data points the card showed:
+// health, role(s), status, stage, value area, owner, due date, my task
+// progress, and blockers.
+function myProjectsTableHtml(tabKey, list, emptyMsg) {
+  var st = myProjectsTableState[tabKey];
+  var roleBadgeClass = { Owner:'badge-blue', Sponsor:'badge-coral', Contributor:'badge-teal' };
+
+  var statusChoices = []; list.forEach(function(p){ if (p.status && statusChoices.indexOf(p.status) < 0) statusChoices.push(p.status); });
+  var stageChoices = []; list.forEach(function(p){ if (p.stage && stageChoices.indexOf(p.stage) < 0) stageChoices.push(p.stage); });
+  var ownerChoices = []; list.forEach(function(p){ if (p.owner && ownerChoices.indexOf(p.owner) < 0) ownerChoices.push(p.owner); }); ownerChoices.sort();
+
+  var filtered = list.slice();
+  if (st.search) { var q = st.search.toLowerCase(); filtered = filtered.filter(function(p){ return p.name.toLowerCase().indexOf(q) >= 0; }); }
+  if (st.filters.status.length) filtered = filtered.filter(function(p){ return st.filters.status.indexOf(p.status) >= 0; });
+  if (st.filters.stage.length) filtered = filtered.filter(function(p){ return st.filters.stage.indexOf(p.stage) >= 0; });
+  if (st.filters.owner.length) filtered = filtered.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
+
+  filtered.sort(function(a, b) {
+    var av, bv;
+    if (st.sort === 'stage') { av = EXPORT_STAGE_LABELS[a.stage] || a.stage || ''; bv = EXPORT_STAGE_LABELS[b.stage] || b.stage || ''; }
+    else { av = a[st.sort]; bv = b[st.sort]; }
+    av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+
+  function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
+  function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMyProjectsTableFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
+
+  var rows = filtered.map(function(p) {
+    var myTasks = p.tasks.filter(function(t){ return t.assignee === currentUser(); });
+    var doneTasks = myTasks.filter(function(t){ return t.status==='Done'; }).length;
+    var roleBadges = myProjectRoles(p).map(function(r){ return '<span class="badge ' + roleBadgeClass[r] + '" style="font-size:10px">' + r + '</span>'; }).join(' ');
+    return '<tr>' +
+      '<td style="text-align:center">' + hdot(p.health) + '</td>' +
+      '<td class="bold">' + p.name + '</td>' +
+      '<td>' + roleBadges + '</td>' +
+      '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + stagePill(p.stage) + '</td>' +
+      '<td>' + badgeIf('badge-purple', p.value) + '</td>' +
+      '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
+      '<td class="text-muted">' + doneTasks + '/' + myTasks.length + ' done</td>' +
+      '<td>' + (p.blockers ? '<span style="color:var(--coral-strong-tx);font-size:12px"><i class="ti ti-alert-triangle"></i> Yes</span>' : '<span class="text-muted">—</span>') + '</td>' +
+      '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td>' +
+      '</tr>';
+  }).join('');
+
+  var html = searchBoxHtml(st.search, 'Search projects by name…', 'my-proj-table-search', 'onMyProjectsTableSearch') +
+    '<div class="card"><div class="table-wrap"><table><thead><tr>' +
+      '<th style="text-align:center">Health</th>' +
+      '<th class="sortable-th" onclick="setMyProjectsTableSort(\'name\')">Project ' + arrow('name') + '</th>' +
+      '<th>Role</th>' +
+      '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'stage\')">Stage ' + arrow('stage') + '</span>' + filterIcon('stage', st.filters.stage.length>0) + '</th>' +
+      '<th>Value area</th>' +
+      '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th class="sortable-th" onclick="setMyProjectsTableSort(\'end\')">Due ' + arrow('end') + '</th>' +
+      '<th>My tasks</th>' +
+      '<th>Blockers</th>' +
+      '<th></th>' +
+    '</tr></thead><tbody>' + (rows || '<tr><td colspan="11" class="text-muted" style="text-align:center;padding:20px">' + emptyMsg + '</td></tr>') + '</tbody></table></div></div>';
+
+  window.onMyProjectsTableSearch = function(v) {
+    myProjectsTableState[myProjectsPageState.tab].search = v;
+    pgMyProjectsResource();
+    var el = document.getElementById('my-proj-table-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.setMyProjectsTableSort = function(col) {
+    var s = myProjectsTableState[myProjectsPageState.tab];
+    if (s.sort === col) s.dir = s.dir === 'asc' ? 'desc' : 'asc'; else { s.sort = col; s.dir = 'asc'; }
+    pgMyProjectsResource();
+  };
+  window.toggleMyProjectsTableFilter = function(col) {
+    var s = myProjectsTableState[myProjectsPageState.tab];
+    var labelMap = { status:'Status', stage:'Stage', owner:'Owner' };
+    var choicesMap = { status:statusChoices, stage:stageChoices.map(function(v){ return EXPORT_STAGE_LABELS[v] || v; }), owner:ownerChoices };
+    // Stage is stored/filtered by raw value but shown by its display label --
+    // map back to the raw value the same way the filter-modal pattern expects.
+    var stageRawByLabel = {}; stageChoices.forEach(function(v){ stageRawByLabel[EXPORT_STAGE_LABELS[v] || v] = v; });
+    openFilterModal(labelMap[col], choicesMap[col],
+      function() { return col === 'stage' ? s.filters.stage.map(function(v){ return EXPORT_STAGE_LABELS[v] || v; }) : s.filters[col]; },
+      function(val) {
+        var rawVal = col === 'stage' ? (stageRawByLabel[val] || val) : val;
+        var arr = s.filters[col]; var i = arr.indexOf(rawVal); if (i>=0) arr.splice(i,1); else arr.push(rawVal);
+      },
+      function() { s.filters[col] = []; },
+      pgMyProjectsResource
+    );
+  };
+
+  return html;
+}
+
 function pgMyProjectsResource() {
   tb('My Projects');
   var nonComplete = D.projects.filter(function(p){ return p.stage !== 'complete'; });
@@ -11248,11 +11352,14 @@ function pgMyProjectsResource() {
       ' <span class="badge badge-gray" style="font-size:10px">' + t.list.length + '</span></div>';
   }).join('') + '</div>';
 
-  var cardsHtml = activeTab.list.length
-    ? activeTab.list.map(myProjectCard).join('')
-    : '<div class="empty-state" style="padding:30px"><p>' + activeTab.empty + '</p></div>';
+  var isTableTab = activeTab.key === 'sponsor' || activeTab.key === 'contributor';
+  var bodyHtml = isTableTab
+    ? myProjectsTableHtml(activeTab.key, activeTab.list, activeTab.empty)
+    : (activeTab.list.length
+        ? activeTab.list.map(myProjectCard).join('')
+        : '<div class="empty-state" style="padding:30px"><p>' + activeTab.empty + '</p></div>');
 
-  document.getElementById('content').innerHTML = tabHtml + cardsHtml;
+  document.getElementById('content').innerHTML = tabHtml + bodyHtml;
   window.setMyProjectsTab = function(k) { st.tab = k; pgMyProjectsResource(); };
 }
 
