@@ -590,6 +590,13 @@ function canEdit(p) {
   return isProgramManagerOf(programForProject(p));
 }
 
+// Requirements/Scope tabs: everything canEdit(p) allows, plus the project's
+// designated Requirements Owner (a role separate from the project owner).
+function canEditRequirements(p) {
+  if (canEdit(p)) return true;
+  return !!(p.requirementsOwnerId && D.myResourceId && p.requirementsOwnerId === D.myResourceId);
+}
+
 function isProjectSponsor(p) {
   return !!(p && p.sponsorResourceId && D.myResourceId && p.sponsorResourceId === D.myResourceId);
 }
@@ -5361,7 +5368,7 @@ function pgProjectDetail(pid, tab) {
           return '<div class="nav-item' + (docSub===n.key?' active':'') + '" onclick="setDocSubTab(\'' + p.id + '\',\'' + n.key + '\')"><i class="ti ' + n.icon + '"></i>' + n.label + '</div>';
         }).join('') +
         '</div>';
-      var docPanelHtml = docSub === 'attachments' ? attachmentsPanelHtml() : renderReqScopePanel(p, docSub, editable);
+      var docPanelHtml = docSub === 'attachments' ? attachmentsPanelHtml() : renderReqScopePanel(p, docSub, canEditRequirements(p));
       return '<div style="display:flex;gap:24px;align-items:flex-start">' + docNavHtml + '<div style="flex:1;min-width:0">' + docPanelHtml + '</div></div>';
     }
     return '';
