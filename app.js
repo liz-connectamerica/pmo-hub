@@ -1912,6 +1912,7 @@ var todoLogOpen = {};
 var todoCommentsOpen = {};
 var todoDescOpen = {};
 var raidSearchState = {};
+var raidSubTabState = {};
 var docFolderState = {};
 var docSubTabState = {};
 var reqScopeLogOpen = {};
@@ -5263,6 +5264,7 @@ function pgProjectDetail(pid, tab) {
           : '<div class="empty-state" style="padding:30px"><i class="ti ti-list-check"></i><p>No to-dos yet — action items, follow-ups, access requests, and other lightweight work go here.</p></div>');
     }
     if (t === 'raid') {
+      var raidSub = raidSubTabState[p.id] || 'risks';
       var raidQ = (raidSearchState[p.id] || '').toLowerCase();
       function matchesSearch(item) { return !raidQ || (item.desc||'').toLowerCase().indexOf(raidQ) >= 0; }
 
@@ -5282,18 +5284,15 @@ function pgProjectDetail(pid, tab) {
         }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
         return '<div class="raid-log">' + entries + '</div>';
       }
-      function rSection(label, allItems, type) {
+      function rSectionBody(allItems, type) {
         var items = allItems.filter(matchesSearch);
-        var addBtn = editable ? '<button class="btn btn-sm btn-primary" onclick="openAddRaid(\'' + p.id + '\',\'' + type + '\')"><i class="ti ti-plus"></i> Add</button>' : '';
-        var header = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><div class="bold">' + label + '</div>' + addBtn + '</div>';
-        if (!items.length) {
-          var msg = allItems.length ? 'No matches in this section' : 'None logged';
-          return header + '<div class="text-muted" style="font-size:12px;margin-bottom:12px">' + msg + '</div><div class="divider"></div>';
-        }
-        var body;
         function idxOf(item) { return allItems.indexOf(item); }
+        if (!items.length) {
+          var msg = allItems.length ? 'No matches' : 'None logged yet';
+          return '<div class="empty-state" style="padding:30px"><i class="ti ti-list-search"></i><p>' + msg + '</p></div>';
+        }
         if (type === 'risks') {
-          body = '<div class="raid-grid-risks raid-grid-hdr"><div>Probability</div><div>Impact</div><div>Description &amp; Mitigation</div><div>Owner</div><div>Status</div><div></div></div>' +
+          return '<div class="raid-grid-risks raid-grid-hdr"><div>Probability</div><div>Impact</div><div>Description &amp; Mitigation</div><div>Owner</div><div>Status</div><div></div></div>' +
             items.map(function(item) {
               var idx = idxOf(item);
               return '<div class="raid-grid-risks raid-grid-row">' +
@@ -5307,7 +5306,7 @@ function pgProjectDetail(pid, tab) {
                 logBlock(type, idx, item);
             }).join('');
         } else if (type === 'issues') {
-          body = '<div class="raid-grid-issues raid-grid-hdr"><div>Severity</div><div>Description &amp; Solution</div><div>Owner</div><div>Status</div><div></div></div>' +
+          return '<div class="raid-grid-issues raid-grid-hdr"><div>Severity</div><div>Description &amp; Solution</div><div>Owner</div><div>Status</div><div></div></div>' +
             items.map(function(item) {
               var idx = idxOf(item);
               return '<div class="raid-grid-issues raid-grid-row">' +
@@ -5319,19 +5318,32 @@ function pgProjectDetail(pid, tab) {
                 '<div>' + actionBtns(type, idx, item) + '</div></div>' +
                 logBlock(type, idx, item);
             }).join('');
-        } else {
-          body = items.map(function(item) {
-            var idx = idxOf(item);
-            return '<div style="font-size:13px;padding:10px 0;border-bottom:1px solid var(--border-soft);display:flex;justify-content:space-between;align-items:center;gap:8px;word-break:break-word">' +
-              '<div style="flex:1">' + item.desc + (item.owner ? ' <span class="text-muted">— ' + item.owner + '</span>' : '') + (item.status ? ' ' + bdg(item.status) : '') + '</div>' +
-              actionBtns(type, idx, item) + '</div>' +
-              logBlock(type, idx, item);
-          }).join('');
         }
-        return header + body + '<div class="divider"></div>';
+        return items.map(function(item) {
+          var idx = idxOf(item);
+          return '<div style="font-size:13px;padding:10px 0;border-bottom:1px solid var(--border-soft);display:flex;justify-content:space-between;align-items:center;gap:8px;word-break:break-word">' +
+            '<div style="flex:1">' + item.desc + (item.owner ? ' <span class="text-muted">— ' + item.owner + '</span>' : '') + (item.status ? ' ' + bdg(item.status) : '') + '</div>' +
+            actionBtns(type, idx, item) + '</div>' +
+            logBlock(type, idx, item);
+        }).join('');
       }
-      var raidSearchBar = '<div class="task-filter-bar"><input type="text" id="raid-search" placeholder="Search RAID log…" value="' + (raidSearchState[p.id]||'').replace(/"/g,'&quot;') + '" oninput="onRaidSearch(\'' + p.id + '\',this.value)"></div>';
-      return raidSearchBar + rSection('Risks', p.raid.risks, 'risks') + rSection('Assumptions', p.raid.assumptions, 'assumptions') + rSection('Issues', p.raid.issues, 'issues') + rSection('Dependencies', p.raid.dependencies, 'dependencies');
+
+      var raidNavItems = [
+        { key:'risks',        label:'Risks',        icon:'ti-alert-triangle' },
+        { key:'assumptions',  label:'Assumptions',  icon:'ti-bulb' },
+        { key:'issues',       label:'Issues',       icon:'ti-alert-circle' },
+        { key:'dependencies', label:'Dependencies', icon:'ti-git-branch' }
+      ];
+      var raidSingular = { risks:'risk', assumptions:'assumption', issues:'issue', dependencies:'dependency' }[raidSub];
+      var raidNavHtml = '<div style="width:180px;flex-shrink:0;display:flex;flex-direction:column;gap:2px">' +
+        raidNavItems.map(function(n){
+          return '<div class="nav-item' + (raidSub===n.key?' active':'') + '" onclick="setRaidSubTab(\'' + p.id + '\',\'' + n.key + '\')"><i class="ti ' + n.icon + '"></i>' + n.label + '</div>';
+        }).join('') +
+        '</div>';
+      var raidSearchBar = '<div class="task-filter-bar"><input type="text" id="raid-search" placeholder="Search…" value="' + (raidSearchState[p.id]||'').replace(/"/g,'&quot;') + '" oninput="onRaidSearch(\'' + p.id + '\',this.value)"></div>';
+      var raidAddBtn = editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddRaid(\'' + p.id + '\',\'' + raidSub + '\')"><i class="ti ti-plus"></i> Add ' + raidSingular + '</button>' : '';
+      var raidPanelHtml = raidSearchBar + raidAddBtn + rSectionBody(p.raid[raidSub], raidSub);
+      return '<div style="display:flex;gap:24px;align-items:flex-start">' + raidNavHtml + '<div style="flex:1;min-width:0">' + raidPanelHtml + '</div></div>';
     }
     if (t === 'documentation') {
       var docSub = docSubTabState[p.id] || 'requirements';
@@ -6548,6 +6560,11 @@ function openMoveDocModal(pid, idx) {
 
 function setDocSubTab(pid2, subTab) {
   docSubTabState[pid2] = subTab;
+  refreshTaskView();
+}
+
+function setRaidSubTab(pid2, subTab) {
+  raidSubTabState[pid2] = subTab;
   refreshTaskView();
 }
 
