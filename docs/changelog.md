@@ -14,6 +14,14 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-01">
+  <h2>My Projects</h2>
+  <p class="changelog-date">September 1, 2026 · 8:50 AM – 9:15 AM</p>
+  <ul>
+    <li><strong>My Projects:</strong> Every tab (Sponsor, Owner: Active, Owner: Not Started, Contributor, Completed) is now the same searchable, sortable table instead of cards, with column filters on Status, Stage, Priority, and Owner. The Value area column was replaced with Priority.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-08-31">
   <h2>Home &amp; Dark Mode</h2>
   <p class="changelog-date">August 31, 2026 · 2:45 PM – 4:50 PM</p>
