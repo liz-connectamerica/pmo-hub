@@ -1872,6 +1872,10 @@ var TASK_STATUS_COLORS = { 'To Do':'var(--text-faint)', 'In Progress':'var(--acc
 var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null, expandedMembersId:null };
 var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null, expandedAvgId:null };
 var portfolioTagFilter = [];
+var portfolioSearch = '';
+var portfolioCategoryFilter = [];
+var portfolioStageFilter = [];
+var portfolioCollapsed = {};
 var prioritizeBacklogState = { category:'All', dragPid:null, search:'', materializing:false, lastMove:null };
 var backlogProjState = { sort:'name', dir:'asc', search:'', category:'All',
   filters: { tags:[], value:[], priority:[], owner:[] }, openFilter:null };
@@ -2945,41 +2949,107 @@ function pgSummary() {
 function pgPortfolio() {
   tb('Portfolio');
   var stageOrder = { active: 0, planned: 1, backlog: 2, hold: 3, complete: 4 };
+  var stageChoices = ['active', 'planned', 'backlog', 'hold'];
+
   var filtered = D.projects.filter(function(p){ return p.stage !== 'complete'; });
+  if (portfolioSearch) { var q = portfolioSearch.toLowerCase(); filtered = filtered.filter(function(p){ return p.name.toLowerCase().indexOf(q) >= 0; }); }
   if (portfolioTagFilter.length) filtered = filtered.filter(function(p){ return portfolioTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
+  if (portfolioCategoryFilter.length) filtered = filtered.filter(function(p){ return portfolioCategoryFilter.some(function(c){ return (p.categories||[]).indexOf(c) >= 0; }); });
+  if (portfolioStageFilter.length) filtered = filtered.filter(function(p){ return portfolioStageFilter.indexOf(p.stage) >= 0; });
+
+  var categoryChoices = []; filtered.forEach(function(p){ (p.categories||[]).forEach(function(c){ if (categoryChoices.indexOf(c) < 0) categoryChoices.push(c); }); }); categoryChoices.sort();
+
   var byVal = {};
-  filtered.forEach(function(p){ if (!byVal[p.value]) byVal[p.value] = []; byVal[p.value].push(p); });
+  filtered.forEach(function(p){ var v = p.value || 'Not set'; if (!byVal[v]) byVal[v] = []; byVal[v].push(p); });
   Object.keys(byVal).forEach(function(v) {
     byVal[v].sort(function(a, b) {
       var ar = stageOrder[a.stage]; if (ar == null) ar = 9;
       var br = stageOrder[b.stage]; if (br == null) br = 9;
-      return ar - br;
+      if (ar !== br) return ar - br;
+      return a.name.localeCompare(b.name);
     });
   });
-  var cols = ['badge-purple','badge-teal','badge-blue','badge-coral','badge-amber'];
-  var i = 0, h = tagFilterBarHtml(portfolioTagFilter, 'openPortfolioTagFilter');
-  Object.keys(byVal).forEach(function(v) {
-    var cl = cols[i++ % cols.length];
-    var cards = byVal[v].map(function(p) {
-      var req = p.requestId ? D.requests.find(function(r){ return r.id === p.requestId; }) : null;
-      return '<div class="card card-sm" style="cursor:pointer;border:1px solid var(--border);border-radius:10px" onclick="goToProject(\'' + p.id + '\')">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px"><span class="bold" style="font-size:13px">' + p.name + '</span>' +
-        '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0">' + stagePill(p.stage) + '<button class="btn btn-sm" onclick="event.stopPropagation();goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></div></div>' +
-        (p.stage === 'hold' && p.holdReason ? '<div class="text-muted mb-12" style="font-size:12px"><i class="ti ti-player-pause"></i> ' + p.holdReason + '</div>' : '') +
-        '<div class="text-muted mb-12" style="line-height:1.5">' + (p.description||'') + '</div>' +
-        (req && req.cost != null ? '<div class="text-muted mb-12" style="font-size:12px"><i class="ti ti-currency-dollar"></i> Estimated cost: ' + fmtCost(req.cost) + '</div>' : '') +
-        '<div class="progress-bar mb-12"><div class="progress-fill" style="width:' + p.progress + '%"></div></div>' +
-        '<div style="display:flex;justify-content:space-between;align-items:center"><span class="text-muted">' + (p.owner || 'No Owner') + '</span><span class="text-muted">' + (p.end || 'TBD') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</span></div></div>';
+  var valNames = Object.keys(byVal).sort();
+
+  function statusCounts(list) {
+    var counts = {};
+    list.forEach(function(p){ if (p.stage === 'active') { var s = p.status || 'Not set'; counts[s] = (counts[s]||0) + 1; } });
+    return counts;
+  }
+  var statusColors = { 'On Track':'var(--good)', 'At Risk':'var(--warn)', 'Blocked':'var(--bad)' };
+
+  var sectionsHtml = valNames.map(function(v) {
+    var list = byVal[v];
+    var collapsed = !!portfolioCollapsed[v];
+    var counts = statusCounts(list);
+    var pulseHtml = Object.keys(statusColors).filter(function(s){ return counts[s]; }).map(function(s) {
+      return '<span style="display:inline-flex;align-items:center;gap:4px"><i style="width:7px;height:7px;border-radius:50%;background:' + statusColors[s] + ';display:inline-block"></i>' + counts[s] + ' ' + s + '</span>';
     }).join('');
-    h += '<div class="card mb-16"><div class="mb-12"><span class="badge ' + cl + '" style="font-size:13px;padding:5px 14px">' + v + '</span></div><div class="grid-2">' + cards + '</div></div>';
-  });
-  document.getElementById('content').innerHTML = (Object.keys(byVal).length ? h : h + '<div class="empty-state"><i class="ti ti-folder-open"></i><p>No projects yet</p></div>');
+    var rows = list.map(function(p) {
+      var cats = (p.categories && p.categories.length) ? p.categories.join(', ') : '—';
+      return '<tr style="cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' +
+        '<td class="bold">' + hdot(p.health) + p.name + '</td>' +
+        '<td class="text-muted">' + cats + '</td>' +
+        '<td>' + stagePill(p.stage) + (p.stage === 'hold' && p.holdReason ? '<div class="text-muted" style="font-size:11px;margin-top:2px"><i class="ti ti-player-pause"></i> ' + p.holdReason + '</div>' : '') + '</td>' +
+        '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
+        '<td class="text-muted">' + (p.owner || 'No Owner') + '</td>' +
+        '<td class="text-muted">' + (p.end || 'TBD') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
+        '</tr>';
+    }).join('');
+    return '<div class="card mb-12" style="padding:0;overflow:hidden">' +
+      '<div style="display:flex;align-items:center;gap:10px;padding:14px 18px;cursor:pointer" onclick="togglePortfolioSection(\'' + v.replace(/'/g,"\\'") + '\')">' +
+        '<i class="ti ti-chevron-' + (collapsed ? 'right' : 'down') + '" style="font-size:12px;color:var(--text-faint)"></i>' +
+        '<span class="badge badge-purple" style="font-size:12.5px;padding:4px 12px">' + v + '</span>' +
+        '<span class="text-muted" style="font-size:12px">' + list.length + ' project' + (list.length===1?'':'s') + '</span>' +
+        '<div style="margin-left:auto;display:flex;gap:12px;font-size:11.5px;color:var(--text-faint)">' + pulseHtml + '</div>' +
+      '</div>' +
+      (collapsed ? '' : '<table><thead><tr><th style="padding-left:18px">Project</th><th>Category</th><th>Stage</th><th>Progress</th><th>Owner</th><th>Due</th></tr></thead><tbody>' + rows + '</tbody></table>') +
+    '</div>';
+  }).join('');
+
+  document.getElementById('content').innerHTML =
+    '<div class="text-muted" style="font-size:12px;margin-bottom:16px">Every project that isn\'t yet completed, grouped by Value Area. Click a row to open that project.</div>' +
+    '<div class="task-filter-bar">' +
+      '<input type="text" id="portfolio-search" placeholder="Search projects by name…" value="' + portfolioSearch.replace(/"/g,'&quot;') + '" oninput="onPortfolioSearch(this.value)">' +
+      '<button class="btn btn-sm" onclick="openPortfolioCategoryFilter()"><i class="ti ti-category"></i> Category' + (portfolioCategoryFilter.length ? ' (' + portfolioCategoryFilter.length + ')' : '') + '</button>' +
+      '<button class="btn btn-sm" onclick="openPortfolioStageFilter()"><i class="ti ti-flag"></i> Stage' + (portfolioStageFilter.length ? ' (' + portfolioStageFilter.length + ')' : '') + '</button>' +
+      '<button class="btn btn-sm" onclick="openPortfolioTagFilter()"><i class="ti ti-tag"></i> Tag' + (portfolioTagFilter.length ? ' (' + portfolioTagFilter.length + ')' : '') + '</button>' +
+      (portfolioTagFilter.concat(portfolioCategoryFilter).concat(portfolioStageFilter.map(function(s){ return EXPORT_STAGE_LABELS[s]||s; })).map(function(t){ return tagBadge(t); }).join('')) +
+      '<div style="margin-left:auto"><span class="link-btn" style="font-size:12px;color:var(--accent);font-weight:600;cursor:pointer" onclick="setAllPortfolioSections(true)">Collapse all</span> · ' +
+      '<span class="link-btn" style="font-size:12px;color:var(--accent);font-weight:600;cursor:pointer" onclick="setAllPortfolioSections(false)">Expand all</span></div>' +
+    '</div>' +
+    (valNames.length ? sectionsHtml : '<div class="empty-state"><i class="ti ti-folder-open"></i><p>No projects match these filters</p></div>');
+
+  window.onPortfolioSearch = function(v) {
+    portfolioSearch = v; pgPortfolio();
+    var el = document.getElementById('portfolio-search');
+    if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+  };
+  window.togglePortfolioSection = function(v) { portfolioCollapsed[v] = !portfolioCollapsed[v]; pgPortfolio(); };
+  window.setAllPortfolioSections = function(collapsed) { valNames.forEach(function(v){ portfolioCollapsed[v] = collapsed; }); pgPortfolio(); };
   window.openPortfolioTagFilter = function() {
     openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
       function() { return portfolioTagFilter; },
       function(val) { var i2 = portfolioTagFilter.indexOf(val); if (i2>=0) portfolioTagFilter.splice(i2,1); else portfolioTagFilter.push(val); },
       function() { portfolioTagFilter = []; },
       pgPortfolio
+    );
+  };
+  window.openPortfolioCategoryFilter = function() {
+    openFilterModal('Category', categoryChoices,
+      function() { return portfolioCategoryFilter; },
+      function(val) { var i2 = portfolioCategoryFilter.indexOf(val); if (i2>=0) portfolioCategoryFilter.splice(i2,1); else portfolioCategoryFilter.push(val); },
+      function() { portfolioCategoryFilter = []; },
+      pgPortfolio
+    );
+  };
+  window.openPortfolioStageFilter = function() {
+    openFilterModal('Stage', stageChoices,
+      function() { return portfolioStageFilter; },
+      function(val) { var i2 = portfolioStageFilter.indexOf(val); if (i2>=0) portfolioStageFilter.splice(i2,1); else portfolioStageFilter.push(val); },
+      function() { portfolioStageFilter = []; },
+      pgPortfolio,
+      function(v) { return EXPORT_STAGE_LABELS[v] || v; }
     );
   };
 }
