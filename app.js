@@ -1899,11 +1899,11 @@ var myProjectsPageState = { tab:'sponsor' };
 // tab since a search/filter/sort chosen on one tab shouldn't reset when you
 // switch to another.
 var myProjectsTableState = {
-  sponsor:            { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
-  'owner-active':     { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
-  'owner-notstarted': { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
-  contributor:        { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
-  completed:          { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } }
+  sponsor:            { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], priority:[], owner:[] } },
+  'owner-active':     { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], priority:[], owner:[] } },
+  'owner-notstarted': { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], priority:[], owner:[] } },
+  contributor:        { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], priority:[], owner:[] } },
+  completed:          { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], priority:[], owner:[] } }
 };
 var myCapacityPageState = { month:'current' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
@@ -11199,7 +11199,7 @@ function myProjectRoles(p) {
 }
 
 // Every My Projects tab uses this standard table (search/sort/filter) --
-// health, role(s), status, stage, value area, owner, due date, my task
+// health, role(s), status, stage, priority, owner, due date, my task
 // progress, and blockers.
 function myProjectsTableHtml(tabKey, list, emptyMsg) {
   var st = myProjectsTableState[tabKey];
@@ -11207,17 +11207,20 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
 
   var statusChoices = []; list.forEach(function(p){ if (p.status && statusChoices.indexOf(p.status) < 0) statusChoices.push(p.status); });
   var stageChoices = []; list.forEach(function(p){ if (p.stage && stageChoices.indexOf(p.stage) < 0) stageChoices.push(p.stage); });
+  var priorityChoices = []; list.forEach(function(p){ if (p.priority && priorityChoices.indexOf(p.priority) < 0) priorityChoices.push(p.priority); });
   var ownerChoices = []; list.forEach(function(p){ if (p.owner && ownerChoices.indexOf(p.owner) < 0) ownerChoices.push(p.owner); }); ownerChoices.sort();
 
   var filtered = list.slice();
   if (st.search) { var q = st.search.toLowerCase(); filtered = filtered.filter(function(p){ return p.name.toLowerCase().indexOf(q) >= 0; }); }
   if (st.filters.status.length) filtered = filtered.filter(function(p){ return st.filters.status.indexOf(p.status) >= 0; });
   if (st.filters.stage.length) filtered = filtered.filter(function(p){ return st.filters.stage.indexOf(p.stage) >= 0; });
+  if (st.filters.priority.length) filtered = filtered.filter(function(p){ return st.filters.priority.indexOf(p.priority) >= 0; });
   if (st.filters.owner.length) filtered = filtered.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
 
   filtered.sort(function(a, b) {
     var av, bv;
     if (st.sort === 'stage') { av = EXPORT_STAGE_LABELS[a.stage] || a.stage || ''; bv = EXPORT_STAGE_LABELS[b.stage] || b.stage || ''; }
+    else if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
     else { av = a[st.sort]; bv = b[st.sort]; }
     av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
     if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
@@ -11238,7 +11241,7 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
       '<td>' + roleBadges + '</td>' +
       '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + stagePill(p.stage) + '</td>' +
-      '<td>' + badgeIf('badge-purple', p.value) + '</td>' +
+      '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td class="text-muted">' + doneTasks + '/' + myTasks.length + ' done</td>' +
@@ -11254,7 +11257,7 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
       '<th>Role</th>' +
       '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'stage\')">Stage ' + arrow('stage') + '</span>' + filterIcon('stage', st.filters.stage.length>0) + '</th>' +
-      '<th>Value area</th>' +
+      '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
       '<th class="sortable-th" onclick="setMyProjectsTableSort(\'end\')">Due ' + arrow('end') + '</th>' +
       '<th>My tasks</th>' +
@@ -11275,8 +11278,8 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
   };
   window.toggleMyProjectsTableFilter = function(col) {
     var s = myProjectsTableState[myProjectsPageState.tab];
-    var labelMap = { status:'Status', stage:'Stage', owner:'Owner' };
-    var choicesMap = { status:statusChoices, stage:stageChoices.map(function(v){ return EXPORT_STAGE_LABELS[v] || v; }), owner:ownerChoices };
+    var labelMap = { status:'Status', stage:'Stage', priority:'Priority', owner:'Owner' };
+    var choicesMap = { status:statusChoices, stage:stageChoices.map(function(v){ return EXPORT_STAGE_LABELS[v] || v; }), priority:priorityChoices, owner:ownerChoices };
     // Stage is stored/filtered by raw value but shown by its display label --
     // map back to the raw value the same way the filter-modal pattern expects.
     var stageRawByLabel = {}; stageChoices.forEach(function(v){ stageRawByLabel[EXPORT_STAGE_LABELS[v] || v] = v; });
