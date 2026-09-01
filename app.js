@@ -470,7 +470,7 @@ async function loadAllProjects() {
       } else if (r.type === 'assumption') {
         raid.assumptions.push(base);
       } else if (r.type === 'issue') {
-        raid.issues.push(Object.assign(base, { severity: r.severity, solution: r.solution }));
+        raid.issues.push(Object.assign(base, { severity: r.severity, impactDescription: r.impact_description, solution: r.solution }));
       } else if (r.type === 'dependency') {
         raid.dependencies.push(base);
       }
@@ -1933,6 +1933,7 @@ var portfolioTagFilter = [];
 var portfolioSearch = '';
 var portfolioCategoryFilter = [];
 var portfolioStageFilter = [];
+var portfolioOwnerFilter = [];
 var portfolioCollapsed = {};
 var prioritizeBacklogState = { category:'All', dragPid:null, search:'', materializing:false, lastMove:null };
 var backlogProjState = { sort:'name', dir:'asc', search:'', category:'All',
@@ -3030,8 +3031,10 @@ function pgPortfolio() {
   if (portfolioTagFilter.length) filtered = filtered.filter(function(p){ return portfolioTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   if (portfolioCategoryFilter.length) filtered = filtered.filter(function(p){ return portfolioCategoryFilter.some(function(c){ return (p.categories||[]).indexOf(c) >= 0; }); });
   if (portfolioStageFilter.length) filtered = filtered.filter(function(p){ return portfolioStageFilter.indexOf(p.stage) >= 0; });
+  if (portfolioOwnerFilter.length) filtered = filtered.filter(function(p){ return portfolioOwnerFilter.indexOf(p.owner || 'No Owner') >= 0; });
 
   var categoryChoices = []; filtered.forEach(function(p){ (p.categories||[]).forEach(function(c){ if (categoryChoices.indexOf(c) < 0) categoryChoices.push(c); }); }); categoryChoices.sort();
+  var ownerChoices = []; filtered.forEach(function(p){ var o = p.owner || 'No Owner'; if (ownerChoices.indexOf(o) < 0) ownerChoices.push(o); }); ownerChoices.sort();
 
   var byVal = {};
   filtered.forEach(function(p){ var v = p.value || 'Not set'; if (!byVal[v]) byVal[v] = []; byVal[v].push(p); });
@@ -3087,8 +3090,9 @@ function pgPortfolio() {
       '<input type="text" id="portfolio-search" placeholder="Search projects by name…" value="' + portfolioSearch.replace(/"/g,'&quot;') + '" oninput="onPortfolioSearch(this.value)">' +
       '<button class="btn btn-sm" onclick="openPortfolioCategoryFilter()"><i class="ti ti-category"></i> Category' + (portfolioCategoryFilter.length ? ' (' + portfolioCategoryFilter.length + ')' : '') + '</button>' +
       '<button class="btn btn-sm" onclick="openPortfolioStageFilter()"><i class="ti ti-flag"></i> Stage' + (portfolioStageFilter.length ? ' (' + portfolioStageFilter.length + ')' : '') + '</button>' +
+      '<button class="btn btn-sm" onclick="openPortfolioOwnerFilter()"><i class="ti ti-user"></i> Owner' + (portfolioOwnerFilter.length ? ' (' + portfolioOwnerFilter.length + ')' : '') + '</button>' +
       '<button class="btn btn-sm" onclick="openPortfolioTagFilter()"><i class="ti ti-tag"></i> Tag' + (portfolioTagFilter.length ? ' (' + portfolioTagFilter.length + ')' : '') + '</button>' +
-      (portfolioTagFilter.concat(portfolioCategoryFilter).concat(portfolioStageFilter.map(function(s){ return EXPORT_STAGE_LABELS[s]||s; })).map(function(t){ return tagBadge(t); }).join('')) +
+      (portfolioTagFilter.concat(portfolioCategoryFilter).concat(portfolioStageFilter.map(function(s){ return EXPORT_STAGE_LABELS[s]||s; })).concat(portfolioOwnerFilter).map(function(t){ return tagBadge(t); }).join('')) +
       '<div style="margin-left:auto"><span class="link-btn" style="font-size:12px;color:var(--accent);font-weight:600;cursor:pointer" onclick="setAllPortfolioSections(true)">Collapse all</span> · ' +
       '<span class="link-btn" style="font-size:12px;color:var(--accent);font-weight:600;cursor:pointer" onclick="setAllPortfolioSections(false)">Expand all</span></div>' +
     '</div>' +
@@ -3124,6 +3128,14 @@ function pgPortfolio() {
       function() { portfolioStageFilter = []; },
       pgPortfolio,
       function(v) { return EXPORT_STAGE_LABELS[v] || v; }
+    );
+  };
+  window.openPortfolioOwnerFilter = function() {
+    openFilterModal('Owner', ownerChoices,
+      function() { return portfolioOwnerFilter; },
+      function(val) { var i2 = portfolioOwnerFilter.indexOf(val); if (i2>=0) portfolioOwnerFilter.splice(i2,1); else portfolioOwnerFilter.push(val); },
+      function() { portfolioOwnerFilter = []; },
+      pgPortfolio
     );
   };
 }
@@ -5320,12 +5332,13 @@ function pgProjectDetail(pid, tab) {
                 logBlock(type, idx, item);
             }).join('');
         } else if (type === 'issues') {
-          return '<div class="raid-grid-issues raid-grid-hdr"><div>Severity</div><div>Description &amp; Solution</div><div>Owner</div><div>Status</div><div></div></div>' +
+          return '<div class="raid-grid-issues raid-grid-hdr"><div>Severity</div><div>Description, Impact &amp; Solution</div><div>Owner</div><div>Status</div><div></div></div>' +
             items.map(function(item) {
               var idx = idxOf(item);
               return '<div class="raid-grid-issues raid-grid-row">' +
                 '<div>' + bdg(item.severity) + '</div>' +
                 '<div><div style="font-size:13px;word-break:break-word;white-space:normal;margin-bottom:4px">' + item.desc + '</div>' +
+                (item.impactDescription ? '<div style="font-size:12px;color:var(--text-muted);word-break:break-word;white-space:normal;margin-bottom:4px"><strong>Impact:</strong> ' + item.impactDescription + '</div>' : '') +
                 '<div style="font-size:12px;color:var(--text-2);word-break:break-word;white-space:normal;background:var(--surface-2);padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.solution||'—') + '</div></div>' +
                 '<div style="font-size:12px;color:var(--text-muted)">' + item.owner + '</div>' +
                 '<div>' + bdg(item.status) + '</div>' +
@@ -6335,6 +6348,7 @@ function openRaidModal(pid, type, idx) {
       '<div class="form-group"><div class="form-label">Mitigation</div><textarea id="rd-mit" placeholder="Describe mitigation plan…" rows="3">' + (item ? (item.mitigation||'') : '') + '</textarea></div>';
   }
   if (type === 'issues')       extra = '<div class="form-group"><div class="form-label">Severity</div><select id="rd-sev"><option' + (item && item.severity==='High'?' selected':'') + '>High</option><option' + (!item || item.severity==='Medium'?' selected':'') + '>Medium</option><option' + (item && item.severity==='Low'?' selected':'') + '>Low</option></select></div>' +
+    '<div class="form-group"><div class="form-label">Impact</div><textarea id="rd-issue-impact" placeholder="Describe the impact if this isn\'t resolved…" rows="2">' + (item ? (item.impactDescription||'') : '') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">Status</div><select id="rd-issuest"><option' + (!item || item.status==='Open'?' selected':'') + '>Open</option><option' + (item && item.status==='Closed'?' selected':'') + '>Closed</option></select></div>' +
     '<div class="form-group"><div class="form-label">Solution</div><textarea id="rd-sol" placeholder="Describe the solution or resolution plan…" rows="3">' + (item ? (item.solution||'') : '') + '</textarea></div>';
   if (type === 'dependencies') extra = '<div class="form-group"><div class="form-label">Status</div><select id="rd-depst"><option' + (!item || item.status==='Pending'?' selected':'') + '>Pending</option><option' + (item && item.status==='Active'?' selected':'') + '>Active</option><option' + (item && item.status==='Resolved'?' selected':'') + '>Resolved</option></select></div>';
@@ -6421,10 +6435,10 @@ function openRaidModal(pid, type, idx) {
     var dbType = { risks:'risk', assumptions:'assumption', issues:'issue', dependencies:'dependency' }[type];
 
     if (isEdit) {
-      var fieldLabels = { desc:'Description', owner:'Owner', probability:'Probability', impact:'Impact', status:'Status', mitigation:'Mitigation', severity:'Severity', solution:'Solution' };
+      var fieldLabels = { desc:'Description', owner:'Owner', probability:'Probability', impact:'Impact', status:'Status', mitigation:'Mitigation', severity:'Severity', solution:'Solution', impactDescription:'Impact' };
       var newVals = { desc:desc, owner:owner };
       if (type==='risks') { newVals.probability = parseInt(document.getElementById('rd-prob').value)||0; newVals.impact = document.getElementById('rd-impact').value; newVals.status = document.getElementById('rd-status').value; newVals.mitigation = document.getElementById('rd-mit').value; }
-      else if (type==='issues') { newVals.severity = document.getElementById('rd-sev').value; newVals.status = document.getElementById('rd-issuest').value; newVals.solution = document.getElementById('rd-sol').value; }
+      else if (type==='issues') { newVals.severity = document.getElementById('rd-sev').value; newVals.impactDescription = document.getElementById('rd-issue-impact').value.trim(); newVals.status = document.getElementById('rd-issuest').value; newVals.solution = document.getElementById('rd-sol').value; }
       else if (type==='dependencies') { newVals.status = document.getElementById('rd-depst').value; }
 
       var changes = [];
@@ -6437,6 +6451,7 @@ function openRaidModal(pid, type, idx) {
       var dbUpdate = { description: newVals.desc, owner_name: newVals.owner || null, owner_id: ownerResource ? ownerResource.id : null };
       if (newVals.probability !== undefined) dbUpdate.probability = newVals.probability;
       if (newVals.impact !== undefined) dbUpdate.impact = newVals.impact;
+      if (newVals.impactDescription !== undefined) dbUpdate.impact_description = newVals.impactDescription;
       if (newVals.mitigation !== undefined) dbUpdate.mitigation = newVals.mitigation;
       if (newVals.severity !== undefined) dbUpdate.severity = newVals.severity;
       if (newVals.solution !== undefined) dbUpdate.solution = newVals.solution;
@@ -6451,14 +6466,14 @@ function openRaidModal(pid, type, idx) {
     } else {
       var record = { project_id: pid, type: dbType, description: desc, owner_name: owner || null, owner_id: ownerResource ? ownerResource.id : null };
       if (type==='risks')   { record.probability = parseInt(document.getElementById('rd-prob').value)||0; record.impact = document.getElementById('rd-impact').value; record.status = document.getElementById('rd-status').value; record.mitigation = document.getElementById('rd-mit').value; }
-      else if (type==='issues')       { record.severity = document.getElementById('rd-sev').value; record.status = document.getElementById('rd-issuest').value; record.solution = document.getElementById('rd-sol').value; }
+      else if (type==='issues')       { record.severity = document.getElementById('rd-sev').value; record.impact_description = document.getElementById('rd-issue-impact').value.trim(); record.status = document.getElementById('rd-issuest').value; record.solution = document.getElementById('rd-sol').value; }
       else if (type==='dependencies') { record.status = document.getElementById('rd-depst').value; }
 
       var insertResult = await sb.from('raid_items').insert(record).select().single();
       if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
       var n = { id: insertResult.data.id, desc: desc, owner: owner, ownerId: ownerResource ? ownerResource.id : null, log: [] };
       if (type==='risks')        { n.probability = record.probability; n.impact = record.impact; n.status = record.status; n.mitigation = record.mitigation; }
-      else if (type==='issues')       { n.severity = record.severity; n.status = record.status; n.solution = record.solution; }
+      else if (type==='issues')       { n.severity = record.severity; n.impactDescription = record.impact_description; n.status = record.status; n.solution = record.solution; }
       else if (type==='dependencies') { n.status = record.status; }
       n.log.push(await writeLog('raid_log', 'raid_item_id', n.id, 'Created', ''));
       p.raid[type].push(n);
