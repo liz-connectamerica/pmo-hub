@@ -2780,11 +2780,11 @@ function pgHome() {
   var sponsoredRows = sponsoredProjects.map(function(p) {
     return '<tr>' +
       '<td class="bold">' + hdot(p.health) + p.name + '</td>' +
-      '<td>' + (EXPORT_STAGE_LABELS[p.stage] || p.stage) + '</td>' +
-      '<td>' + (p.estimatedAmount != null ? fmtCost(p.estimatedAmount) : '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (p.costEstimate != null ? fmtCost(p.costEstimate) : '<span class="text-muted">—</span>') + '</td>' +
-      '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button> ' +
-        '<button class="btn btn-sm" onclick="openEditProjectFinancialsModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit financials</button></td></tr>';
+      '<td class="text-muted">' + (p.owner || 'No Owner') + '</td>' +
+      '<td class="text-muted">' + (p.tshirtSize || '—') + '</td>' +
+      '<td>' + stagePill(p.stage) + '</td>' +
+      '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
+      '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
   }).join('');
 
   document.getElementById('content').innerHTML =
@@ -2801,8 +2801,7 @@ function pgHome() {
     '</div></div>' +
     (sponsoredProjects.length
       ? '<div class="home-section card"><div class="section-title">Projects you sponsor <span class="badge badge-purple" style="margin-left:6px">' + sponsoredProjects.length + '</span></div>' +
-        '<div class="form-sub" style="margin-bottom:12px">You can see and edit financial detail for these, even though they\'re not otherwise admin-only.</div>' +
-        '<div class="table-wrap"><table><thead><tr><th>Project</th><th>Stage</th><th>Estimated value</th><th>Cost estimate</th><th></th></tr></thead>' +
+        '<div class="table-wrap"><table><thead><tr><th>Project</th><th>Owner</th><th>T-shirt Size</th><th>Stage</th><th>Progress</th><th></th></tr></thead>' +
         '<tbody>' + sponsoredRows + '</tbody></table></div></div>' : '');
 }
 
@@ -4531,57 +4530,6 @@ var SOURCE_LABELS = {
   request: 'From request', edit: 'Edited', schedule: 'Scheduled', activate: 'Activated',
   hold: 'Put on hold', resume: 'Resumed', complete: 'Marked complete', reactivate: 'Re-activated'
 };
-
-function openEditProjectFinancialsModal(pid) {
-  var p = D.projects.find(function(x){ return x.id === pid; });
-  if (!canEditProjectFinancials(p)) return; // safety check; UI is already hidden otherwise
-  showModal('<div class="modal-title">Edit financial detail <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div class="form-sub" style="margin-bottom:12px">Not visible to anyone without financial-view permission, anywhere in the app.</div>' +
-    '<div class="form-group"><div class="form-label">This is a…</div><select id="epf-type"><option value="">— Not set —</option><option value="Revenue"' + (p.estimatedType==='Revenue'?' selected':'') + '>Revenue opportunity</option><option value="Savings"' + (p.estimatedType==='Savings'?' selected':'') + '>Cost savings opportunity</option></select></div>' +
-    '<div class="grid-2"><select id="epf-freq"><option' + (p.estimatedFrequency==='Monthly'?' selected':'') + '>Monthly</option><option' + (p.estimatedFrequency==='Annually'?' selected':'') + '>Annually</option></select>' +
-    '<input type="text" id="epf-amount" value="' + (p.estimatedAmount!=null?p.estimatedAmount:'') + '" placeholder="$ amount (optional)"></div>' +
-    '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="epf-value-confidence">' + confidenceOptsHtml(p.valueConfidence) + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Cost estimate</div>' +
-      '<div class="grid-2"><input type="text" id="epf-cost-amount" value="' + (p.costEstimate!=null?p.costEstimate:'') + '" placeholder="$ amount (optional)"><select id="epf-cost-confidence">' + confidenceOptsHtml(p.costConfidence) + '</select></div>' +
-    '</div>' +
-    '<div id="epf-err" style="color:var(--danger);font-size:12px;margin-top:4px;display:none">Please enter valid numbers (digits only)</div>' +
-    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="epf-save">Save changes</button></div>');
-
-  ['epf-amount','epf-cost-amount'].forEach(function(id) {
-    document.getElementById(id).addEventListener('input', function() {
-      this.value = this.value.replace(/[^0-9]/g,'');
-      document.getElementById('epf-err').style.display = 'none';
-    });
-  });
-
-  document.getElementById('epf-save').onclick = async function() {
-    var estType = document.getElementById('epf-type').value || null;
-    var estAmountRaw = document.getElementById('epf-amount').value.trim();
-    var costAmountRaw = document.getElementById('epf-cost-amount').value.trim();
-    if ((estAmountRaw && isNaN(Number(estAmountRaw))) || (costAmountRaw && isNaN(Number(costAmountRaw)))) {
-      document.getElementById('epf-err').style.display = 'block'; return;
-    }
-    var btn = document.getElementById('epf-save'); btn.disabled = true;
-    var updates = {
-      estimated_type: estType,
-      estimated_frequency: estAmountRaw ? document.getElementById('epf-freq').value : null,
-      estimated_amount: estAmountRaw ? Number(estAmountRaw) : null,
-      value_confidence: document.getElementById('epf-value-confidence').value || null,
-      cost_estimate: costAmountRaw ? Number(costAmountRaw) : null,
-      cost_confidence: document.getElementById('epf-cost-confidence').value || null
-    };
-    // Deliberately not logged via logProjectChanges: the general Change Log tab
-    // is visible to anyone who can see the project, regardless of financial
-    // permission, so logging dollar figures there would leak them.
-    var result = await sb.from('projects').update(updates).eq('id', pid);
-    if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
-    p.estimatedType = updates.estimated_type; p.estimatedFrequency = updates.estimated_frequency;
-    p.estimatedAmount = updates.estimated_amount; p.valueConfidence = updates.value_confidence;
-    p.costEstimate = updates.cost_estimate; p.costConfidence = updates.cost_confidence;
-    showToast('Financial detail updated'); closeModal();
-    if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview');
-  };
-}
 
 // Fetches project_change_log once and populates both the System & Audit
 // "Last edited" line and the Change Log section at the bottom of the
