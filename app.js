@@ -276,7 +276,13 @@ async function loadAllProjects() {
     sb.from('task_baseline_entries').select('*'),
     sb.from('todo_items').select('*'),
     sb.from('todo_comments').select('*'),
-    sb.from('todo_log').select('*')
+    sb.from('todo_log').select('*'),
+    sb.from('requirement_items').select('*'),
+    sb.from('requirement_comments').select('*'),
+    sb.from('requirement_log').select('*'),
+    sb.from('scope_items').select('*'),
+    sb.from('scope_comments').select('*'),
+    sb.from('scope_log').select('*')
   ]);
 
   for (var i = 0; i < results.length; i++) {
@@ -311,6 +317,12 @@ async function loadAllProjects() {
   var todoRows           = results[18].data || [];
   var todoCommentRows    = results[19].data || [];
   var todoLogRows        = results[20].data || [];
+  var reqRows            = results[21].data || [];
+  var reqCommentRows     = results[22].data || [];
+  var reqLogRows         = results[23].data || [];
+  var scopeRows          = results[24].data || [];
+  var scopeCommentRows   = results[25].data || [];
+  var scopeLogRows       = results[26].data || [];
   var priorityRankByProj = {};
   priorityRankRows.forEach(function(r){ priorityRankByProj[r.project_id] = { rank: r.rank, isOverride: r.is_override }; });
 
@@ -344,6 +356,12 @@ async function loadAllProjects() {
   var todosByProj        = groupBy(todoRows, 'project_id');
   var todoCommentsByTodo = groupBy(todoCommentRows, 'todo_id');
   var todoLogByTodo      = groupBy(todoLogRows, 'todo_id');
+  var reqByProj          = groupBy(reqRows, 'project_id');
+  var reqCommentsByReq   = groupBy(reqCommentRows, 'requirement_id');
+  var reqLogByReq        = groupBy(reqLogRows, 'requirement_id');
+  var scopeByProj        = groupBy(scopeRows, 'project_id');
+  var scopeCommentsByItem = groupBy(scopeCommentRows, 'scope_item_id');
+  var scopeLogByItem     = groupBy(scopeLogRows, 'scope_item_id');
   var folderNameById     = {};
   folderRows.forEach(function(f){ folderNameById[f.id] = f.name; });
 
@@ -422,6 +440,28 @@ async function loadAllProjects() {
       };
     });
 
+    var requirements = (reqByProj[pr.id] || []).map(function(r) {
+      return {
+        id: r.id, title: r.title, description: r.description || '',
+        status: r.status, completedAt: r.completed_at,
+        log: mapLog(reqLogByReq[r.id]),
+        comments: (reqCommentsByReq[r.id] || []).map(function(c) {
+          return { id: c.id, text: c.body, author: c.author_name, date: ymd(c.created_at) };
+        })
+      };
+    });
+
+    var scope = (scopeByProj[pr.id] || []).map(function(s) {
+      return {
+        id: s.id, title: s.title, description: s.description || '',
+        status: s.status, completedAt: s.completed_at,
+        log: mapLog(scopeLogByItem[s.id]),
+        comments: (scopeCommentsByItem[s.id] || []).map(function(c) {
+          return { id: c.id, text: c.body, author: c.author_name, date: ymd(c.created_at) };
+        })
+      };
+    });
+
     var raid = { risks: [], assumptions: [], issues: [], dependencies: [] };
     (raidByProj[pr.id] || []).forEach(function(r) {
       var base = { id: r.id, desc: r.description, owner: r.owner_name, status: r.status, log: mapLog(raidLogByItem[r.id]) };
@@ -479,7 +519,8 @@ async function loadAllProjects() {
       priorityRank: priorityInfo ? priorityInfo.rank : null,
       priorityIsOverride: priorityInfo ? !!priorityInfo.isOverride : false,
       milestones: milestones, tasks: tasks, todos: todos, raid: raid, baselines: baselines,
-      documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds
+      documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds,
+      requirements: requirements, scope: scope
     };
   });
 }
@@ -1865,6 +1906,15 @@ var todoCommentsOpen = {};
 var todoDescOpen = {};
 var raidSearchState = {};
 var docFolderState = {};
+var docSubTabState = {};
+var reqScopeLogOpen = {};
+var reqScopeCommentsOpen = {};
+var reqScopeDescOpen = {};
+var REQ_SCOPE_STATUSES = ['Planned','In Progress','Completed','Deferred','Cancelled'];
+var REQ_SCOPE_CONFIG = {
+  requirements: { table: 'requirement_items', logTable: 'requirement_log', commentTable: 'requirement_comments', fk: 'requirement_id', arrayKey: 'requirements', singular: 'requirement', label: 'Requirement', addLabel: 'Add requirement' },
+  scope:        { table: 'scope_items',       logTable: 'scope_log',       commentTable: 'scope_comments',       fk: 'scope_item_id',   arrayKey: 'scope',        singular: 'scope item', label: 'Scope item', addLabel: 'Add scope item' }
+};
 var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fOwner:[], openFilter:null };
 var roadmapCategoryFilter = 'All';
 var PHASE_COLORS = { 'Not Started':'var(--text-faint)', 'Discovery':'var(--blue-tx)', 'Design':'var(--accent)', 'Build':'var(--good)', 'Testing':'var(--warn)', 'Deployment':'#D85A30', 'Monitor':'#993556' };
@@ -2128,7 +2178,7 @@ function bdg(s) {
     'On Track':'badge-teal','At Risk':'badge-amber','Planning':'badge-blue','Blocked':'badge-red','Complete':'badge-green','Completed':'badge-green','Not Started':'badge-gray',
     'Pending':'badge-amber','Approved':'badge-teal','Rejected':'badge-red','Backlog':'badge-amber','Active':'badge-teal','Planned':'badge-blue','Revoked':'badge-gray',
     'Done':'badge-teal','In Progress':'badge-purple','To Do':'badge-gray',
-    'Open':'badge-red','Closed':'badge-teal',
+    'Open':'badge-red','Closed':'badge-teal','Deferred':'badge-amber','Cancelled':'badge-red',
     'Critical':'badge-red','High':'badge-coral','Medium':'badge-amber','Low':'badge-blue','Needs prioritization':'badge-gray'
   };
   return '<span class="badge ' + (map[s] || 'badge-gray') + '">' + s + '</span>';
@@ -5277,30 +5327,42 @@ function pgProjectDetail(pid, tab) {
       return raidSearchBar + rSection('Risks', p.raid.risks, 'risks') + rSection('Assumptions', p.raid.assumptions, 'assumptions') + rSection('Issues', p.raid.issues, 'issues') + rSection('Dependencies', p.raid.dependencies, 'dependencies');
     }
     if (t === 'documentation') {
-      var docs = p.documents || [];
-      p.docFolders = (p.docFolders && p.docFolders.length) ? p.docFolders : ['General'];
-      var activeFolder = docFolderState[p.id] || 'All';
-      var missing = DOC_TYPES.filter(function(dt){ return !docs.some(function(d){ return d.category === dt; }); });
-      var guidance = missing.length
-        ? '<div class="info-banner info-blue"><i class="ti ti-info-circle"></i><div><strong>Still needed:</strong> ' + missing.join(', ') + '. These will disappear from this list once uploaded or linked.</div></div>'
-        : '';
-      var folderChips = ['All'].concat(p.docFolders).map(function(f) {
-        var esc = f.replace(/'/g,"\\'");
-        return '<button class="btn btn-sm' + (activeFolder===f?' btn-primary':'') + '" onclick="setDocFolder(\'' + p.id + '\',\'' + esc + '\')">' + (f==='All' ? '<i class="ti ti-folders"></i> All' : '<i class="ti ti-folder"></i> ' + f) + '</button>';
-      }).join('') + (editable ? '<button class="btn btn-sm" onclick="newDocFolder(\'' + p.id + '\')"><i class="ti ti-folder-plus"></i> New folder</button>' : '');
-      var shown = activeFolder === 'All' ? docs : docs.filter(function(d){ return (d.folder||'General') === activeFolder; });
-      var rows = shown.map(function(d) {
-        var idx = docs.indexOf(d);
-        return '<div class="doc-row"><i class="ti ' + (d.sourceType === 'link' ? 'ti-link' : 'ti-file-text') + ' doc-icon"></i>' +
-          '<div class="doc-info"><div class="doc-name">' + d.name + '</div><div class="text-muted">' + d.category + ' • ' + (d.folder||'General') + ' • added ' + d.dateAdded + '</div></div>' +
-          '<button class="btn btn-sm" onclick="openDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-external-link"></i> Open</button>' +
-          (editable ? '<button class="btn btn-sm" title="Move to folder" onclick="openMoveDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-folder-symlink"></i></button><button class="btn btn-sm" onclick="openEditDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
-          '</div>';
-      }).join('');
-      return guidance +
-        '<div class="doc-folder-bar">' + folderChips + '</div>' +
-        (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddDoc(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add document</button>' : '') +
-        (shown.length ? rows : '<div class="empty-state" style="padding:30px"><i class="ti ti-files"></i><p>No documents in this folder</p></div>');
+      var docSub = docSubTabState[p.id] || 'requirements';
+
+      function attachmentsPanelHtml() {
+        var docs = p.documents || [];
+        p.docFolders = (p.docFolders && p.docFolders.length) ? p.docFolders : ['General'];
+        var activeFolder = docFolderState[p.id] || 'All';
+        var folderChips = ['All'].concat(p.docFolders).map(function(f) {
+          var esc = f.replace(/'/g,"\\'");
+          return '<button class="btn btn-sm' + (activeFolder===f?' btn-primary':'') + '" onclick="setDocFolder(\'' + p.id + '\',\'' + esc + '\')">' + (f==='All' ? '<i class="ti ti-folders"></i> All' : '<i class="ti ti-folder"></i> ' + f) + '</button>';
+        }).join('') + (editable ? '<button class="btn btn-sm" onclick="newDocFolder(\'' + p.id + '\')"><i class="ti ti-folder-plus"></i> New folder</button>' : '');
+        var shown = activeFolder === 'All' ? docs : docs.filter(function(d){ return (d.folder||'General') === activeFolder; });
+        var rows = shown.map(function(d) {
+          var idx = docs.indexOf(d);
+          return '<div class="doc-row"><i class="ti ' + (d.sourceType === 'link' ? 'ti-link' : 'ti-file-text') + ' doc-icon"></i>' +
+            '<div class="doc-info"><div class="doc-name">' + d.name + '</div><div class="text-muted">' + (d.folder||'General') + ' • added ' + d.dateAdded + '</div></div>' +
+            '<button class="btn btn-sm" onclick="openDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-external-link"></i> Open</button>' +
+            (editable ? '<button class="btn btn-sm" title="Move to folder" onclick="openMoveDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-folder-symlink"></i></button><button class="btn btn-sm" onclick="openEditDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteDoc(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
+            '</div>';
+        }).join('');
+        return '<div class="doc-folder-bar">' + folderChips + '</div>' +
+          (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openAddDoc(\'' + p.id + '\')"><i class="ti ti-plus"></i> Add document</button>' : '') +
+          (shown.length ? rows : '<div class="empty-state" style="padding:30px"><i class="ti ti-files"></i><p>No documents in this folder</p></div>');
+      }
+
+      var docNavItems = [
+        { key:'requirements', label:'Requirements', icon:'ti-list-check' },
+        { key:'scope',        label:'Scope',        icon:'ti-target-arrow' },
+        { key:'attachments',  label:'Attachments',  icon:'ti-paperclip' }
+      ];
+      var docNavHtml = '<div style="width:180px;flex-shrink:0;display:flex;flex-direction:column;gap:2px">' +
+        docNavItems.map(function(n){
+          return '<div class="nav-item' + (docSub===n.key?' active':'') + '" onclick="setDocSubTab(\'' + p.id + '\',\'' + n.key + '\')"><i class="ti ' + n.icon + '"></i>' + n.label + '</div>';
+        }).join('') +
+        '</div>';
+      var docPanelHtml = docSub === 'attachments' ? attachmentsPanelHtml() : renderReqScopePanel(p, docSub, editable);
+      return '<div style="display:flex;gap:24px;align-items:flex-start">' + docNavHtml + '<div style="flex:1;min-width:0">' + docPanelHtml + '</div></div>';
     }
     return '';
   }
@@ -6366,15 +6428,11 @@ function openDocModal(pid, idx) {
   p.docFolders = (p.docFolders && p.docFolders.length) ? p.docFolders : ['General'];
   var isEdit = idx != null;
   var d = isEdit ? p.documents[idx] : null;
-  var catOpts = DOC_TYPES.concat(['Other']).map(function(c){ return '<option' + (d && d.category===c ? ' selected' : '') + '>' + c + '</option>'; }).join('');
   var defaultFolder = d ? (d.folder||'General') : (docFolderState[pid] && docFolderState[pid] !== 'All' ? docFolderState[pid] : 'General');
   var folderOpts = p.docFolders.map(function(f){ return '<option' + (defaultFolder===f?' selected':'') + '>' + f + '</option>'; }).join('') + '<option value="__new__">+ New folder…</option>';
 
   showModal('<div class="modal-title">' + (isEdit?'Edit document':'Add document') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div class="grid-2">' +
-    '<div class="form-group"><div class="form-label">Document type</div><select id="dm-cat">' + catOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Folder</div><select id="dm-folder" onchange="handleDocFolderChange(\'' + pid + '\')">' + folderOpts + '</select></div>' +
-    '</div>' +
     '<div class="form-group"><div class="form-label">Name *</div><input type="text" id="dm-name" value="' + (d ? d.name : '') + '" placeholder="e.g. Project Charter v1"></div>' +
     '<div class="form-group"><div class="form-label">Link URL *</div><input type="text" id="dm-url" value="' + (d ? d.url : '') + '" placeholder="https://…"></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
@@ -6406,7 +6464,6 @@ function openDocModal(pid, idx) {
   document.getElementById('dm-save').onclick = async function() {
     var name = document.getElementById('dm-name').value.trim();
     if (!name) { showToast('Document name required'); return; }
-    var cat = document.getElementById('dm-cat').value;
     var folder = document.getElementById('dm-folder').value;
     if (folder === '__new__') folder = 'General';
     var src = 'link';
@@ -6417,17 +6474,17 @@ function openDocModal(pid, idx) {
 
     if (isEdit) {
       var result = await sb.from('documents').update({
-        category: cat, name: name, source_type: src, url: url, folder_id: folderId
+        name: name, source_type: src, url: url, folder_id: folderId
       }).eq('id', d.id);
       if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
-      d.name = name; d.category = cat; d.sourceType = src; d.url = url; d.folder = folder;
+      d.name = name; d.sourceType = src; d.url = url; d.folder = folder;
       showToast('Document updated');
     } else {
       var insertResult = await sb.from('documents').insert({
-        project_id: pid, category: cat, name: name, source_type: src, url: url, folder_id: folderId, added_by: D.currentProfile.id
+        project_id: pid, name: name, source_type: src, url: url, folder_id: folderId, added_by: D.currentProfile.id
       }).select().single();
       if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
-      p.documents.push({ id: insertResult.data.id, category:cat, name:name, sourceType:src, url:url, folder:folder, dateAdded: insertResult.data.added_at });
+      p.documents.push({ id: insertResult.data.id, name:name, sourceType:src, url:url, folder:folder, dateAdded: insertResult.data.added_at });
       showToast('Document added');
     }
     closeModal(); if (window.switchPTab) window.switchPTab('documentation');
@@ -6480,6 +6537,217 @@ function openMoveDocModal(pid, idx) {
     showToast('Document moved to "' + folder + '"');
     closeModal(); if (window.switchPTab) window.switchPTab('documentation');
   };
+}
+
+function setDocSubTab(pid2, subTab) {
+  docSubTabState[pid2] = subTab;
+  refreshTaskView();
+}
+
+// ── Requirements / Scope: two identically-shaped trackable lists, driven by
+// REQ_SCOPE_CONFIG so the CRUD/comment/log code below isn't duplicated per kind.
+function renderReqScopePanel(p, kind, editable) {
+  var cfg = REQ_SCOPE_CONFIG[kind];
+  var items = p[cfg.arrayKey] || [];
+
+  var counts = {};
+  REQ_SCOPE_STATUSES.forEach(function(s){ counts[s] = 0; });
+  items.forEach(function(it){ counts[it.status] = (counts[it.status] || 0) + 1; });
+  var statusBadgeClass = { 'Planned':'badge-blue', 'In Progress':'badge-purple', 'Completed':'badge-green', 'Deferred':'badge-amber', 'Cancelled':'badge-red' };
+  var strip = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">' +
+    REQ_SCOPE_STATUSES.map(function(s){ return '<span class="badge ' + statusBadgeClass[s] + '">' + counts[s] + ' ' + s + '</span>'; }).join('') +
+    '</div>';
+
+  var sorted = items.slice().sort(function(a,b){
+    var ai = REQ_SCOPE_STATUSES.indexOf(a.status), bi = REQ_SCOPE_STATUSES.indexOf(b.status);
+    return ai !== bi ? ai - bi : 0;
+  });
+
+  var rows = sorted.map(function(it) {
+    var idx = items.indexOf(it);
+    var key = kind + '|' + p.id + '|' + it.id;
+    var logOpenNow = !!reqScopeLogOpen[key];
+    var logRow = '';
+    if (logOpenNow) {
+      var entries = (it.log && it.log.length) ? it.log.slice().reverse().map(function(e){
+        return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+      }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+      logRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+    }
+    var descOpenNow = !!reqScopeDescOpen[key];
+    var descRow = '';
+    if (descOpenNow) {
+      descRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+        (it.description ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + it.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
+        '</div></td></tr>';
+    }
+    var itComments = it.comments || [];
+    var cOpenNow = !!reqScopeCommentsOpen[key];
+    var commentsRow = '';
+    if (cOpenNow) {
+      var commentEntries = itComments.length ? itComments.slice().reverse().map(function(c) {
+        var mine = c.author === actorName();
+        return '<div class="comment-item">' +
+          '<div class="comment-meta"><strong>' + c.author + '</strong> <span class="text-muted">' + c.date + '</span></div>' +
+          '<div class="comment-text">' + c.text + '</div>' +
+          ((editable || mine) ? '<div class="comment-actions"><button class="btn btn-sm" onclick="openEditReqScopeComment(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\',\'' + c.id + '\')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteReqScopeComment(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\',\'' + c.id + '\')"><i class="ti ti-trash"></i></button></div>' : '') +
+          '</div>';
+      }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No comments yet</div>';
+      commentsRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+        commentEntries +
+        '<div class="comment-add-row"><textarea id="rs-cmt-input-' + it.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addReqScopeComment(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
+        '</div></td></tr>';
+    }
+    return '<tr><td><span style="font-size:13px">' + it.title + '</span></td><td>' + bdg(it.status) + '</td>' +
+      '<td class="text-muted">' + (it.completedAt || '—') + '</td>' +
+      '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
+      '<button class="btn btn-sm" title="Description" onclick="toggleReqScopeDescription(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
+      '<button class="btn btn-sm" title="Comments" onclick="toggleReqScopeComments(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (itComments.length ? ' ' + itComments.length : '') + '</button>' +
+      '<button class="btn btn-sm" title="Change log" onclick="toggleReqScopeLog(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+      (editable ? '<button class="btn btn-sm" onclick="openReqScopeModal(\'' + p.id + '\',\'' + kind + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteReqScopeItem(\'' + p.id + '\',\'' + kind + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
+      '</div></td></tr>' + descRow + commentsRow + logRow;
+  }).join('');
+
+  var header = '<tr><th>' + cfg.label + '</th><th>Status</th><th>Completed</th><th></th></tr>';
+
+  return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'' + kind + '\',null)"><i class="ti ti-plus"></i> ' + cfg.addLabel + '</button>' : '') +
+    (items.length
+      ? strip + '<table class="tasks-table"><thead>' + header + '</thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty-state" style="padding:30px"><i class="ti ti-list-check"></i><p>No ' + cfg.singular + 's tracked yet.</p></div>');
+}
+
+function openReqScopeModal(pid, kind, idx) {
+  var cfg = REQ_SCOPE_CONFIG[kind];
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  p[cfg.arrayKey] = p[cfg.arrayKey] || [];
+  var isEdit = idx != null;
+  var it = isEdit ? p[cfg.arrayKey][idx] : null;
+  var statusOpts = REQ_SCOPE_STATUSES.map(function(s){ return '<option' + ((it ? it.status : 'Planned') === s ? ' selected' : '') + '>' + s + '</option>'; }).join('');
+
+  showModal('<div class="modal-title">' + (isEdit ? 'Edit ' + cfg.singular : cfg.addLabel) + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Title *</div><input type="text" id="rsm-title" value="' + (it ? it.title : '') + '" placeholder="e.g. Mobile-responsive layout for tablets"></div>' +
+    '<div class="form-group"><div class="form-label">Description</div><textarea id="rsm-desc" rows="3" placeholder="Details, acceptance criteria, links…">' + (it ? (it.description||'') : '') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Status</div><select id="rsm-status">' + statusOpts + '</select></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="rsm-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':cfg.addLabel) + '</button></div>');
+
+  document.getElementById('rsm-save').onclick = async function() {
+    var title = document.getElementById('rsm-title').value.trim();
+    if (!title) { showToast('Title required'); return; }
+    var newVals = {
+      title: title, description: document.getElementById('rsm-desc').value.trim(),
+      status: document.getElementById('rsm-status').value
+    };
+    var btn = document.getElementById('rsm-save'); btn.disabled = true;
+
+    if (isEdit) {
+      var fieldLabels = { title:'Title', description:'Description', status:'Status' };
+      var changes = [];
+      ['title','description','status'].forEach(function(f){
+        if ((it[f]||'') !== (newVals[f]||'')) changes.push(fieldLabels[f] + ': "' + (it[f]||'—') + '" → "' + (newVals[f]||'—') + '"');
+      });
+      var newCompletedAt = it.completedAt;
+      if (newVals.status === 'Completed' && it.status !== 'Completed') { newCompletedAt = todayStr(); changes.push('Completed date: "—" → "' + newCompletedAt + '"'); }
+      else if (newVals.status !== 'Completed' && it.status === 'Completed') { newCompletedAt = null; changes.push('Completed date: "' + it.completedAt + '" → "—"'); }
+      var result = await sb.from(cfg.table).update({
+        title: newVals.title, description: newVals.description || null, status: newVals.status, completed_at: newCompletedAt
+      }).eq('id', it.id);
+      if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+      it.title = newVals.title; it.description = newVals.description; it.status = newVals.status; it.completedAt = newCompletedAt;
+      it.log = it.log || [];
+      if (changes.length) it.log.push(await writeLog(cfg.logTable, cfg.fk, it.id, 'Updated', changes.join('; ')));
+      showToast(cfg.label + ' updated');
+    } else {
+      var completedAt = newVals.status === 'Completed' ? todayStr() : null;
+      var insertResult = await sb.from(cfg.table).insert({
+        project_id: pid, title: newVals.title, description: newVals.description || null, status: newVals.status, completed_at: completedAt,
+        created_by: D.currentProfile.id, created_by_name: D.currentProfile.display_name
+      }).select().single();
+      if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
+      var newIt = { id: insertResult.data.id, title: newVals.title, description: newVals.description, status: newVals.status, completedAt: completedAt, log: [], comments: [] };
+      newIt.log.push(await writeLog(cfg.logTable, cfg.fk, newIt.id, 'Created', ''));
+      p[cfg.arrayKey].push(newIt);
+      showToast(cfg.label + ' added');
+    }
+    closeModal(); if (window.switchPTab) window.switchPTab('documentation');
+  };
+}
+
+async function deleteReqScopeItem(pid, kind, idx) {
+  var cfg = REQ_SCOPE_CONFIG[kind];
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var it = p[cfg.arrayKey][idx];
+  if (!confirm('Delete "' + it.title + '"?')) return;
+  var result = await sb.from(cfg.table).delete().eq('id', it.id);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  p[cfg.arrayKey] = p[cfg.arrayKey].filter(function(x){ return x.id !== it.id; });
+  refreshTaskView();
+  showToast(cfg.label + ' deleted');
+}
+
+function toggleReqScopeDescription(kind, pid2, itemId) {
+  var key = kind + '|' + pid2 + '|' + itemId;
+  reqScopeDescOpen[key] = !reqScopeDescOpen[key];
+  refreshTaskView();
+}
+
+function toggleReqScopeComments(kind, pid2, itemId) {
+  var key = kind + '|' + pid2 + '|' + itemId;
+  reqScopeCommentsOpen[key] = !reqScopeCommentsOpen[key];
+  refreshTaskView();
+}
+
+function toggleReqScopeLog(kind, pid2, itemId) {
+  var key = kind + '|' + pid2 + '|' + itemId;
+  reqScopeLogOpen[key] = !reqScopeLogOpen[key];
+  refreshTaskView();
+}
+
+function getReqScopeItem(kind, pid2, itemId) {
+  var cfg = REQ_SCOPE_CONFIG[kind];
+  var p = D.projects.find(function(x){ return x.id === pid2; });
+  return p[cfg.arrayKey].find(function(x){ return x.id === itemId; });
+}
+
+async function addReqScopeComment(kind, pid2, itemId) {
+  var cfg = REQ_SCOPE_CONFIG[kind];
+  var it = getReqScopeItem(kind, pid2, itemId);
+  var el = document.getElementById('rs-cmt-input-' + itemId);
+  var text = el ? el.value.trim() : '';
+  if (!text) { showToast('Comment cannot be empty'); return; }
+  var insertObj = { author_id: D.currentProfile.id, author_name: D.currentProfile.display_name, body: text };
+  insertObj[cfg.fk] = itemId;
+  var result = await sb.from(cfg.commentTable).insert(insertObj).select().single();
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  it.comments = it.comments || [];
+  it.comments.push({ id: result.data.id, text: text, author: D.currentProfile.display_name, date: ymd(result.data.created_at) });
+  refreshTaskView();
+  showToast('Comment added');
+}
+
+async function openEditReqScopeComment(kind, pid2, itemId, cid) {
+  var cfg = REQ_SCOPE_CONFIG[kind];
+  var it = getReqScopeItem(kind, pid2, itemId);
+  var c = it.comments.find(function(x){ return x.id === cid; });
+  var text = prompt('Edit comment:', c.text);
+  if (text == null) return;
+  text = text.trim();
+  if (!text) { showToast('Comment cannot be empty'); return; }
+  var result = await sb.from(cfg.commentTable).update({ body: text }).eq('id', cid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  c.text = text;
+  refreshTaskView();
+  showToast('Comment updated');
+}
+
+async function deleteReqScopeComment(kind, pid2, itemId, cid) {
+  var cfg = REQ_SCOPE_CONFIG[kind];
+  var it = getReqScopeItem(kind, pid2, itemId);
+  var result = await sb.from(cfg.commentTable).delete().eq('id', cid);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  it.comments = it.comments.filter(function(x){ return x.id !== cid; });
+  refreshTaskView();
+  showToast('Comment deleted');
 }
 
 // ── Information tab: inline per-section editing ─────────────────────────────
