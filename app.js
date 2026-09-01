@@ -1895,12 +1895,15 @@ var allProjectsState = {
 var tagAdminState = { expandedId: null };
 var myTasksState = { kind:'plan', sort:'end', dir:'asc', search:'', tab:'open', fProject:[], fStatus:[], openFilter:null };
 var myProjectsPageState = { tab:'sponsor' };
-// Sponsor and Contributor are table views (search/sort/filter); Owner and
-// Completed stay as cards -- keyed separately since a search/filter/sort
-// chosen on one tab shouldn't reset when you switch to the other.
+// Sponsor, Owner: Active, Contributor, and Completed are table views
+// (search/sort/filter); Owner: Not Started stays as cards -- keyed
+// separately since a search/filter/sort chosen on one tab shouldn't reset
+// when you switch to another.
 var myProjectsTableState = {
-  sponsor:     { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
-  contributor: { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } }
+  sponsor:           { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
+  'owner-active':    { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
+  contributor:       { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } },
+  completed:         { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], owner:[] } }
 };
 var myCapacityPageState = { month:'current' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
@@ -11214,8 +11217,9 @@ function myProjectCard(p) {
   '</div>';
 }
 
-// Sponsor and Contributor tabs use this standard table (search/sort/filter)
-// instead of myProjectCard's cards -- same data points the card showed:
+// Sponsor, Owner: Active, Contributor, and Completed tabs use this standard
+// table (search/sort/filter) instead of myProjectCard's cards -- same data
+// points the card showed:
 // health, role(s), status, stage, value area, owner, due date, my task
 // progress, and blockers.
 function myProjectsTableHtml(tabKey, list, emptyMsg) {
@@ -11352,7 +11356,7 @@ function pgMyProjectsResource() {
       ' <span class="badge badge-gray" style="font-size:10px">' + t.list.length + '</span></div>';
   }).join('') + '</div>';
 
-  var isTableTab = activeTab.key === 'sponsor' || activeTab.key === 'contributor';
+  var isTableTab = activeTab.key === 'sponsor' || activeTab.key === 'owner-active' || activeTab.key === 'contributor' || activeTab.key === 'completed';
   var bodyHtml = isTableTab
     ? myProjectsTableHtml(activeTab.key, activeTab.list, activeTab.empty)
     : (activeTab.list.length
