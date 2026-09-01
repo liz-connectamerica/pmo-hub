@@ -11267,7 +11267,7 @@ function pgProgramDetail(id) {
   var upcomingMs = [];
   linkedProjects.filter(function(p){ return p.stage !== 'complete'; }).forEach(function(p) {
     p.milestones.filter(function(m){ return !m.done && m.date && m.date >= todayStr() && m.date <= msSoon; }).forEach(function(m) {
-      upcomingMs.push({ pid: p.id, project: p.name, name: m.name, date: m.date });
+      upcomingMs.push({ pid: p.id, project: p.name, owner: p.owner, name: m.name, date: m.date });
     });
   });
   upcomingMs.sort(function(a, b){ return a.date.localeCompare(b.date); });
@@ -11275,7 +11275,7 @@ function pgProgramDetail(id) {
     (upcomingMs.length
       ? upcomingMs.map(function(m) {
           return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-soft);cursor:pointer" onclick="goToProject(\'' + m.pid + '\',\'milestones\')">' +
-            '<div style="min-width:0"><div class="bold" style="font-size:13px">' + m.name + '</div><div class="text-muted" style="font-size:11.5px;margin-top:1px">' + m.project + '</div></div>' +
+            '<div style="min-width:0"><div class="bold" style="font-size:13px">' + m.name + '</div><div class="text-muted" style="font-size:11.5px;margin-top:1px">' + m.project + ' · ' + (m.owner || 'No Owner') + '</div></div>' +
             '<span class="badge badge-gray">' + fmtDate(m.date) + '</span>' +
           '</div>';
         }).join('')
