@@ -30,7 +30,7 @@ Home is what you land on after logging in — a personalized view of what needs 
 
 **Needs your attention** leads the page: any project you own that's past its target end date, tasks and to-dos assigned to you due within 3 days (or overdue), high-severity open RAID items on projects you own, and your work request status — a request sent back to you needing more detail (or, for admins, counts of project/work requests awaiting review). Click any item to jump straight to it. Below that, **Your projects** is a compact strip of the active projects you own or sponsor, and admins get a **Portfolio pulse** strip (active count, RAG split, projects missing an owner or sponsor) linking to the full [Portfolio Health](../admin-guide/#portfolio-health) page.
 
-At the bottom of the page — since it doesn't fit "needs your attention" but still needed a home — everyone sees a **Rejected proposals** list (every rejected request across the whole org, not just yours, with a date-range filter) and, if you're a project sponsor, a **Projects you sponsor** table with an inline **Edit financials** shortcut.
+If you're a project sponsor, a **Projects you sponsor** table with an inline **Edit financials** shortcut sits at the bottom of the page too, since it had no other home.
 
 ## Roadmap
 
