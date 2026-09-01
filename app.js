@@ -1908,7 +1908,6 @@ var myProjectsTableState = {
 var myCapacityPageState = { month:'current' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
-var rejectedFilterState = { range:'30' };
 
 // Capacity planning: a team member's involvement in a given project is set
 // as one of these tiers (by the project owner or an admin) rather than a
@@ -2660,9 +2659,9 @@ async function refreshPrograms() {
 
 // ── Home ────────────────────────────────────────────────────────────────────
 // A personalized "what needs you" landing page -- the default first screen,
-// replacing the old portfolio-wide Dashboard table (whose Rejected proposals
-// and sponsor-financials sections live here now too, at the bottom, since
-// they had no other home). See the Home Tab Sketch this was built from.
+// replacing the old portfolio-wide Dashboard table. The sponsor-financials
+// section lives here now too, at the bottom, since it had no other home.
+// See the Home Tab Sketch this was built from.
 
 function homeGreeting() {
   var h = new Date().getHours();
@@ -2780,23 +2779,6 @@ function pgHome() {
         '<button class="btn btn-sm" onclick="openEditProjectFinancialsModal(\'' + p.id + '\')"><i class="ti ti-edit"></i> Edit financials</button></td></tr>';
   }).join('');
 
-  var rejectedRows = '';
-  var rejectedAll = D.requests.filter(function(r){ return r.status === 'Rejected'; });
-  var rejRange = rejectedFilterState.range;
-  var rejectedList = rejectedAll.filter(function(r){
-    if (rejRange === 'all') return true;
-    var rd = r.rejectedDate || r.date;
-    if (!rd) return true;
-    var days = (Date.now() - new Date(rd).getTime()) / 86400000;
-    return days <= parseInt(rejRange);
-  });
-  rejectedList.forEach(function(r) {
-    rejectedRows += '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + r.dept + '</td>' +
-      '<td>' + bdg(r.priority) + '</td><td><span class="badge badge-purple">' + r.value + '</span></td>' +
-      '<td class="text-muted">' + (r.rejectedDate || r.date || '—') + '</td>' +
-      '<td><button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> View</button></td></tr>';
-  });
-
   document.getElementById('content').innerHTML =
     '<div class="home-greet-row"><h1>' + homeGreeting() + ', ' + firstName + '</h1><div class="home-date">' + today + '</div></div>' +
     '<div class="home-sub">Here\'s what\'s waiting on you today.</div>' +
@@ -2813,22 +2795,7 @@ function pgHome() {
       ? '<div class="home-section card"><div class="section-title">Projects you sponsor <span class="badge badge-purple" style="margin-left:6px">' + sponsoredProjects.length + '</span></div>' +
         '<div class="form-sub" style="margin-bottom:12px">You can see and edit financial detail for these, even though they\'re not otherwise admin-only.</div>' +
         '<div class="table-wrap"><table><thead><tr><th>Project</th><th>Stage</th><th>Estimated value</th><th>Cost estimate</th><th></th></tr></thead>' +
-        '<tbody>' + sponsoredRows + '</tbody></table></div></div>' : '') +
-    '<div class="home-section card"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">' +
-      '<div class="section-title" style="margin-bottom:0">Rejected proposals <span class="badge badge-gray" style="margin-left:6px">' + rejectedList.length + '</span></div>' +
-      '<select id="rej-range" onchange="setRejectedRange(this.value)" style="width:auto;max-width:170px">' +
-        '<option value="30"' + (rejRange==='30'?' selected':'') + '>Last 30 days</option>' +
-        '<option value="90"' + (rejRange==='90'?' selected':'') + '>Last 90 days</option>' +
-        '<option value="365"' + (rejRange==='365'?' selected':'') + '>Last year</option>' +
-        '<option value="all"' + (rejRange==='all'?' selected':'') + '>All time</option>' +
-      '</select></div>' +
-      (rejectedList.length
-        ? '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Submitter</th><th>Dept</th><th>Priority</th><th>Value area</th><th>Rejected</th><th></th></tr></thead>' +
-          '<tbody>' + rejectedRows + '</tbody></table></div>'
-        : '<div class="empty-state" style="padding:24px"><i class="ti ti-mood-empty"></i><p>No rejected proposals in this range</p></div>') +
-    '</div>';
-
-  window.setRejectedRange = function(val) { rejectedFilterState.range = val; pgHome(); };
+        '<tbody>' + sponsoredRows + '</tbody></table></div></div>' : '');
 }
 
 
