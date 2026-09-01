@@ -5328,6 +5328,15 @@ function pgProjectDetail(pid, tab) {
         }).join('');
       }
 
+      // "Open" = not yet at a terminal status. Assumptions carry no lifecycle
+      // status in this app (openRaidModal never gives them a status field),
+      // so every assumption on record counts as open.
+      function raidOpenCount(type) {
+        var terminal = { risks:'Closed', issues:'Closed', dependencies:'Resolved' }[type];
+        var items = p.raid[type] || [];
+        if (!terminal) return items.length;
+        return items.filter(function(item){ return item.status !== terminal; }).length;
+      }
       var raidNavItems = [
         { key:'risks',        label:'Risks',        icon:'ti-alert-triangle' },
         { key:'assumptions',  label:'Assumptions',  icon:'ti-bulb' },
@@ -5337,7 +5346,9 @@ function pgProjectDetail(pid, tab) {
       var raidSingular = { risks:'risk', assumptions:'assumption', issues:'issue', dependencies:'dependency' }[raidSub];
       var raidNavHtml = '<div style="width:180px;flex-shrink:0;display:flex;flex-direction:column;gap:2px">' +
         raidNavItems.map(function(n){
-          return '<div class="nav-item' + (raidSub===n.key?' active':'') + '" onclick="setRaidSubTab(\'' + p.id + '\',\'' + n.key + '\')"><i class="ti ' + n.icon + '"></i>' + n.label + '</div>';
+          var cnt = raidOpenCount(n.key);
+          var badge = cnt > 0 ? '<span class="nav-badge">' + cnt + '</span>' : '';
+          return '<div class="nav-item' + (raidSub===n.key?' active':'') + '" onclick="setRaidSubTab(\'' + p.id + '\',\'' + n.key + '\')"><i class="ti ' + n.icon + '"></i>' + n.label + badge + '</div>';
         }).join('') +
         '</div>';
       var raidSearchBar = '<div class="task-filter-bar"><input type="text" id="raid-search" placeholder="Search…" value="' + (raidSearchState[p.id]||'').replace(/"/g,'&quot;') + '" oninput="onRaidSearch(\'' + p.id + '\',this.value)"></div>';
@@ -5377,7 +5388,9 @@ function pgProjectDetail(pid, tab) {
       ];
       var docNavHtml = '<div style="width:180px;flex-shrink:0;display:flex;flex-direction:column;gap:2px">' +
         docNavItems.map(function(n){
-          return '<div class="nav-item' + (docSub===n.key?' active':'') + '" onclick="setDocSubTab(\'' + p.id + '\',\'' + n.key + '\')"><i class="ti ' + n.icon + '"></i>' + n.label + '</div>';
+          var cnt = REQ_SCOPE_CONFIG[n.key] ? reqScopeOpenCount(p, n.key) : 0;
+          var badge = cnt > 0 ? '<span class="nav-badge">' + cnt + '</span>' : '';
+          return '<div class="nav-item' + (docSub===n.key?' active':'') + '" onclick="setDocSubTab(\'' + p.id + '\',\'' + n.key + '\')"><i class="ti ' + n.icon + '"></i>' + n.label + badge + '</div>';
         }).join('') +
         '</div>';
       var docPanelHtml = docSub === 'attachments' ? attachmentsPanelHtml() : renderReqScopePanel(p, docSub, canEditRequirements(p));
@@ -6570,6 +6583,12 @@ function setRaidSubTab(pid2, subTab) {
 
 // ── Requirements / Scope: two identically-shaped trackable lists, driven by
 // REQ_SCOPE_CONFIG so the CRUD/comment/log code below isn't duplicated per kind.
+// "Open" = still Planned or In Progress -- Completed/Deferred/Cancelled are terminal.
+function reqScopeOpenCount(p, kind) {
+  var items = p[REQ_SCOPE_CONFIG[kind].arrayKey] || [];
+  return items.filter(function(it){ return it.status === 'Planned' || it.status === 'In Progress'; }).length;
+}
+
 function renderReqScopePanel(p, kind, editable) {
   var cfg = REQ_SCOPE_CONFIG[kind];
   var items = p[cfg.arrayKey] || [];
