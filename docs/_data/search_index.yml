@@ -36,7 +36,7 @@
   page: /user-guide/
   anchor: portfolio
   guide: User Guide
-  blurb: Card view of every non-completed project, grouped by Value Area.
+  blurb: Collapsible tables of every non-completed project, grouped by Value Area -- search, Category/Stage/Tag filters.
 
 - title: Programs
   page: /user-guide/

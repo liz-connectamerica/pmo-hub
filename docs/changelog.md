@@ -16,7 +16,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div class="changelog-entry" id="cl-2026-09-01">
   <h2>My Projects</h2>
-  <p class="changelog-date">September 1, 2026 · 8:50 AM – 10:50 AM</p>
+  <p class="changelog-date">September 1, 2026 · 8:50 AM – 11:15 AM</p>
   <ul>
     <li><strong>My Projects:</strong> Every tab (Sponsor, Owner: Active, Owner: Not Started, Contributor, Completed) is now the same searchable, sortable table instead of cards, with column filters on Status, Stage, Priority, and Owner. The Value area column was replaced with Priority.</li>
     <li><strong>Backlog, Planned, Prioritize Backlog:</strong> The description at the top of each page no longer looks like a warning — switched from a colored banner to plain text, and reworded Backlog/Planned to be informative rather than directive (e.g. "They'll move to Planned once a start date is assigned" instead of "Assign a start date"), since most readers of those pages can't take that action themselves. Portfolio Health's "how this works" note got the same banner-to-plain-text treatment.</li>
@@ -24,6 +24,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li><strong>Documentation site:</strong> The home page no longer shows an empty "On this page & search" sidebar (it had no headings to list). Added a Light/System/Dark theme toggle, matching the app's own.</li>
     <li>New <strong>Summary</strong> page under Overview, visible to everyone — a read-only, portfolio-wide "what's going on" pulse: stage funnel, active-project breakdowns by category and status, recently completed/kicked-off projects, an On Hold list, and upcoming milestones. Every component drills into a page or project any Member can already reach — no financial data, no new permissions.</li>
     <li>Scrollbars now follow <strong>dark mode</strong> too, instead of showing the browser's default light track/thumb on a dark page.</li>
+    <li><strong>Portfolio:</strong> Replaced the 2-column, description-heavy card grid with a compact, collapsible table per Value Area (health, name, category, stage, progress, owner, due) — a Collapse/Expand-all shortcut, plus new Category and Stage filters alongside the existing tag filter. Description and estimated cost are gone from the row (cost was previously visible to everyone regardless of financial-view permission).</li>
   </ul>
 </div>
 

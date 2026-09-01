@@ -50,7 +50,7 @@ Roadmap is read-only — you can change what you're looking at, but nothing here
 
 ## Portfolio
 
-A card-based view of every project that isn't yet completed (active, planned, backlog, or on hold), grouped into sections by Value Area. Each card shows a stage pill, description, progress, owner, and target end date (plus a hold reason, if applicable). Click a card to open the project. Like Roadmap, this is a browsing view — there's no inline editing here.
+Every project that isn't yet completed (active, planned, backlog, or on hold), grouped into collapsible sections by Value Area — each with a quick On Track/At Risk/Blocked pulse in its header, and a Collapse all / Expand all shortcut above the list. Each section is a compact table: health, project name, category, stage (with the hold reason inline, if on hold), progress, owner, and target end date. Search by name, and filter by Category, Stage, or Tag. Click a row to open that project. Like Roadmap, this is a browsing view — there's no inline editing here.
 
 ## Programs
 
