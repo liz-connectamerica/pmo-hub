@@ -11081,9 +11081,26 @@ function programProjects(programId) {
 }
 
 function goToProgram(id) {
+  programEditing = false;
   pgProgramDetail(id);
   var targetHash = '#/program/' + id;
   if (location.hash !== targetHash) location.hash = targetHash;
+}
+
+function personChip(name) {
+  if (!name) return '<span class="text-muted">—</span>';
+  var initials = name.split(' ').map(function(x){ return x[0]; }).join('').slice(0, 2).toUpperCase();
+  return '<span style="display:inline-flex;align-items:center"><span class="avatar av-purple" style="width:22px;height:22px;font-size:10px;margin-right:7px">' + initials + '</span>' + name + '</span>';
+}
+
+// "Worst status wins" across a program's Active-stage projects, for a quick
+// at-a-glance dot on the Programs list -- gray if there's nothing Active.
+function programRagDotColor(programId) {
+  var active = programProjects(programId).filter(function(p){ return p.stage === 'active'; });
+  if (!active.length) return 'var(--text-disabled)';
+  if (active.some(function(p){ return p.status === 'Blocked'; })) return 'var(--bad)';
+  if (active.some(function(p){ return p.status === 'At Risk'; })) return 'var(--warn)';
+  return 'var(--good)';
 }
 
 function pgPrograms() {
@@ -11114,13 +11131,14 @@ function pgPrograms() {
   function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir === 'asc' ? '▲' : '▼') + '</span>'; }
 
   var rows = programs.map(function(prog) {
+    var count = programProjects(prog.id).length;
     return '<tr>' +
       '<td class="bold">' + programLabel(prog) + '</td>' +
       '<td class="bold" style="cursor:pointer" onclick="goToProgram(\'' + prog.id + '\')">' + prog.name + '</td>' +
-      '<td>' + (prog.sponsorName || '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (prog.managerName || '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (prog.businessOwnerName || '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + programProjects(prog.id).length + '</td>' +
+      '<td>' + personChip(prog.sponsorName) + '</td>' +
+      '<td>' + personChip(prog.managerName) + '</td>' +
+      '<td>' + personChip(prog.businessOwnerName) + '</td>' +
+      '<td><span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600"><span style="width:6px;height:6px;border-radius:50%;background:' + programRagDotColor(prog.id) + ';display:inline-block"></span>' + count + '</span></td>' +
       '<td><button class="btn btn-sm" onclick="goToProgram(\'' + prog.id + '\')"><i class="ti ti-eye"></i> View</button></td>' +
     '</tr>';
   }).join('');
@@ -11200,6 +11218,8 @@ function openNewProgramModal() {
   };
 }
 
+var programEditing = false;
+
 function pgProgramDetail(id) {
   var prog = D.programs.find(function(x){ return x.id === id; });
   if (!prog) { nav('programs'); return; }
@@ -11210,21 +11230,55 @@ function pgProgramDetail(id) {
   var canEditProgram = D.role === 'admin' || isProgramManagerOf(prog);
   var canReassignRoles = D.role === 'admin';
   var linkedProjects = programProjects(prog.id);
+  var editingNow = programEditing && canEditProgram;
 
   var stageOrder = ['active','planned','backlog','hold','complete'];
   var stageLabels = { active:'Active', planned:'Planned', backlog:'Backlog', hold:'Hold', complete:'Completed' };
   var byStage = {};
   linkedProjects.forEach(function(p){ (byStage[p.stage] = byStage[p.stage] || []).push(p); });
 
+  // ── Stats strip (view mode only) ──────────────────────────────────────
+  var activeLinked = byStage.active || [];
+  var statusCounts = {};
+  activeLinked.forEach(function(p){ var s = p.status || 'Not set'; statusCounts[s] = (statusCounts[s]||0) + 1; });
+  var statusColors = { 'On Track':'var(--good)', 'At Risk':'var(--warn)', 'Blocked':'var(--bad)' };
+  var ragBarHtml = activeLinked.length
+    ? '<div style="display:flex;height:7px;border-radius:4px;overflow:hidden;margin-top:8px">' +
+        Object.keys(statusColors).filter(function(s){ return statusCounts[s]; }).map(function(s) {
+          return '<div style="width:' + (statusCounts[s] / activeLinked.length * 100) + '%;background:' + statusColors[s] + '"></div>';
+        }).join('') +
+      '</div>'
+    : '';
+  var avgProgress = activeLinked.length ? Math.round(activeLinked.reduce(function(sum, p){ return sum + (p.progress||0); }, 0) / activeLinked.length) : null;
+  var lateCount = linkedProjects.filter(isProjectLate).length;
+  var holdCount = (byStage.hold || []).length;
+  var statsHtml = '<div class="grid-4 mb-16" style="grid-template-columns:repeat(5,1fr)">' +
+    '<div class="metric"><div class="metric-label">Linked projects</div><div class="metric-value">' + linkedProjects.length + '</div></div>' +
+    '<div class="metric"><div class="metric-label">Active</div><div class="metric-value">' + activeLinked.length + '</div>' + ragBarHtml + '</div>' +
+    '<div class="metric"><div class="metric-label">Avg. progress (Active)</div><div class="metric-value">' + (avgProgress == null ? '—' : avgProgress + '%') + '</div></div>' +
+    '<div class="metric"><div class="metric-label">Late</div><div class="metric-value" style="color:' + (lateCount ? 'var(--bad)' : 'inherit') + '">' + lateCount + '</div></div>' +
+    '<div class="metric"><div class="metric-label">On Hold</div><div class="metric-value" style="color:' + (holdCount ? 'var(--warn)' : 'inherit') + '">' + holdCount + '</div></div>' +
+  '</div>';
+
+  // ── Linked projects list ────────────────────────────────────────────────
   var stageSectionsHtml = stageOrder.filter(function(s){ return byStage[s] && byStage[s].length; }).map(function(s) {
     var rows = byStage[s].map(function(p) {
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-soft)">' +
-        '<span style="font-size:13px;cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' + hdot(p.health) + p.name + '</span>' +
-        '<span style="display:flex;align-items:center;gap:12px">' +
-          '<span class="text-muted" style="font-size:12px">' + (p.owner || '—') + '</span>' +
-          lateBadgeHtml(isProjectLate(p)) +
-          (canEditProgram ? '<button class="btn btn-sm btn-danger" onclick="removeProjectFromProgram(\'' + prog.id + '\',\'' + p.id + '\')"><i class="ti ti-x"></i></button>' : '') +
-        '</span>' +
+      if (editingNow) {
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-soft)">' +
+          '<span style="font-size:13px;cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' + hdot(p.health) + p.name + '</span>' +
+          '<span style="display:flex;align-items:center;gap:12px">' +
+            '<span class="text-muted" style="font-size:12px">' + (p.owner || '—') + '</span>' +
+            lateBadgeHtml(isProjectLate(p)) +
+            '<button class="btn btn-sm btn-danger" onclick="removeProjectFromProgram(\'' + prog.id + '\',\'' + p.id + '\')"><i class="ti ti-x"></i> Remove</button>' +
+          '</span>' +
+        '</div>';
+      }
+      return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-soft);cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' +
+        '<span style="font-size:13px;flex:1;min-width:0">' + hdot(p.health) + p.name + '</span>' +
+        stagePill(p.stage) +
+        '<div style="display:flex;align-items:center;gap:6px;width:110px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div>' +
+        '<span class="text-muted" style="font-size:12px;width:100px">' + (p.owner || '—') + '</span>' +
+        lateBadgeHtml(isProjectLate(p)) +
       '</div>';
     }).join('');
     return '<div class="mt-16"><div class="form-label" style="margin-bottom:2px">' + stageLabels[s] + ' (' + byStage[s].length + ')</div>' + rows + '</div>';
@@ -11234,7 +11288,7 @@ function pgProgramDetail(id) {
   // or already manage via another program) -- matches what the update RLS
   // policy on projects will actually allow.
   var candidateProjects = D.projects.filter(function(p){ return p.programId !== prog.id && canEdit(p); });
-  var addPanelHtml = canEditProgram
+  var addPanelHtml = editingNow
     ? '<div class="card mt-16"><div class="section-title">Add a project</div>' +
       '<input type="text" id="pg-add-search" placeholder="Search projects…" oninput="filterProgramAddList(this.value)">' +
       '<div id="pg-add-list" style="max-height:220px;overflow-y:auto;margin-top:8px">' +
@@ -11250,32 +11304,58 @@ function pgProgramDetail(id) {
       '</div></div>'
     : '';
 
-  function fieldRow(label, value, inputId, isTextarea) {
-    if (!canEditProgram) return '<div class="form-group"><div class="form-label">' + label + '</div><div style="font-size:13px;color:var(--text-2)">' + (value || '—') + '</div></div>';
-    return '<div class="form-group"><div class="form-label">' + label + '</div>' +
-      (isTextarea ? '<textarea id="' + inputId + '">' + (value||'') + '</textarea>' : '<input type="text" id="' + inputId + '" value="' + (value||'').replace(/"/g,'&quot;') + '">') +
-      '</div>';
-  }
-  function roleRow(label, currentName, selectId) {
-    if (!canReassignRoles) return '<div class="form-group"><div class="form-label">' + label + '</div><div style="font-size:13px;color:var(--text-2)">' + (currentName || '—') + '</div></div>';
-    return '<div class="form-group"><div class="form-label">' + label + '</div><select id="' + selectId + '">' + programResourceOpts(currentName) + '</select></div>';
-  }
-
-  document.getElementById('content').innerHTML =
-    '<div class="card">' +
+  // ── About card: read-only view vs. edit form ────────────────────────────
+  var aboutHtml;
+  if (editingNow) {
+    function fieldRow(label, value, inputId, isTextarea) {
+      return '<div class="form-group"><div class="form-label">' + label + '</div>' +
+        (isTextarea ? '<textarea id="' + inputId + '">' + (value||'') + '</textarea>' : '<input type="text" id="' + inputId + '" value="' + (value||'').replace(/"/g,'&quot;') + '">') +
+        '</div>';
+    }
+    function roleRow(label, currentName, selectId) {
+      if (!canReassignRoles) return '<div class="form-group"><div class="form-label">' + label + '</div><div style="font-size:13px;color:var(--text-2)">' + (currentName || '—') + '</div></div>';
+      return '<div class="form-group"><div class="form-label">' + label + '</div><select id="' + selectId + '">' + programResourceOpts(currentName) + '</select></div>';
+    }
+    aboutHtml = '<div class="card">' +
       (!canReassignRoles ? '<div class="form-sub" style="margin-bottom:12px">Only a PMO Admin can reassign Sponsor, Manager, or Business Owner.</div>' : '') +
       fieldRow('Program name', prog.name, 'epg-name') +
       fieldRow('Description', prog.description, 'epg-desc', true) +
       fieldRow('Business objective', prog.businessObjective, 'epg-obj', true) +
       '<div class="grid-2">' + roleRow('Program sponsor', prog.sponsorName, 'epg-sponsor') + roleRow('Program manager', prog.managerName, 'epg-manager') + '</div>' +
       roleRow('Business owner', prog.businessOwnerName, 'epg-owner') +
-      (canEditProgram || D.role === 'admin'
-        ? '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">' +
-            (D.role === 'admin' ? '<button class="btn btn-danger" onclick="deleteProgram(\'' + prog.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
-            (canEditProgram ? '<button class="btn btn-primary" id="epg-save" onclick="saveProgramFields(\'' + prog.id + '\')"><i class="ti ti-check"></i> Save changes</button>' : '') +
-          '</div>'
-        : '') +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">' +
+        '<button class="btn" onclick="setProgramEditing(false,\'' + prog.id + '\')">Cancel</button>' +
+        '<button class="btn btn-primary" id="epg-save" onclick="saveProgramFields(\'' + prog.id + '\')"><i class="ti ti-check"></i> Save changes</button>' +
+      '</div>' +
+    '</div>';
+  } else {
+    aboutHtml = '<div class="card">' +
+      '<div class="section-title">About</div>' +
+      '<div style="font-size:13.5px;color:var(--text-2);line-height:1.6">' + (prog.description || '<span class="text-muted">No description</span>') + '</div>' +
+      '<div class="form-label" style="margin-top:14px">Business objective</div>' +
+      '<div style="font-size:13.5px;color:var(--text-2);line-height:1.6">' + (prog.businessObjective || '<span class="text-muted">Not set</span>') + '</div>' +
+      '<div class="grid-2" style="margin-top:16px">' +
+        '<div><div class="form-label">Program sponsor</div>' + personChip(prog.sponsorName) + '</div>' +
+        '<div><div class="form-label">Program manager</div>' + personChip(prog.managerName) + '</div>' +
+      '</div>' +
+      '<div style="margin-top:16px"><div class="form-label">Business owner</div>' + personChip(prog.businessOwnerName) + '</div>' +
+    '</div>';
+  }
+
+  var headerActionsHtml = !editingNow
+    ? '<div style="display:flex;gap:8px;flex-shrink:0">' +
+        (D.role === 'admin' ? '<button class="btn btn-danger" onclick="deleteProgram(\'' + prog.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
+        (canEditProgram ? '<button class="btn btn-primary" onclick="setProgramEditing(true,\'' + prog.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
+      '</div>'
+    : '';
+
+  document.getElementById('content').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
+      '<div class="text-muted" style="font-size:12px">Programs / ' + programLabel(prog) + '</div>' +
+      headerActionsHtml +
     '</div>' +
+    (!editingNow ? statsHtml : '') +
+    aboutHtml +
     '<div class="card mt-16"><div class="section-title">Linked projects (' + linkedProjects.length + ')</div>' +
       (stageSectionsHtml || '<div class="text-muted" style="font-size:13px">No projects linked yet</div>') +
     '</div>' +
@@ -11288,6 +11368,8 @@ function pgProgramDetail(id) {
     });
   };
 }
+
+window.setProgramEditing = function(val, id) { programEditing = val; pgProgramDetail(id); };
 
 async function saveProgramFields(id) {
   var prog = D.programs.find(function(x){ return x.id === id; });
