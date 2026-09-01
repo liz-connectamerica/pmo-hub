@@ -15,9 +15,10 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-01">
-  <h2>My Projects</h2>
-  <p class="changelog-date">September 1, 2026 · 8:50 AM – 11:50 AM</p>
+  <h2>My Projects &amp; Documentation</h2>
+  <p class="changelog-date">September 1, 2026 · 8:50 AM – 3:30 PM</p>
   <ul>
+    <li><strong>Documentation tab:</strong> Split into three sections behind a left-hand sub-nav, styled like the Information tab's — <strong>Requirements</strong> and <strong>Scope</strong> (new: add individual items, track status through Planned, In Progress, Completed, Deferred, or Cancelled, with an auto-tracked completed date, comments, and a change log — same interaction pattern as To-Do), and <strong>Attachments</strong> (the existing document/link structure, with the "Document type" field and the "still needed" banner removed — that list wasn't fully baked and will return with real templates later). A project's <strong>Requirements Owner</strong> can add and manage Requirements and Scope items, in addition to the project owner, admin, and program manager. Along the way, fixed a bug where To-Do change-log entries weren't actually being saved to the database.</li>
     <li><strong>My Projects:</strong> Every tab (Sponsor, Owner: Active, Owner: Not Started, Contributor, Completed) is now the same searchable, sortable table instead of cards, with column filters on Status, Stage, Priority, and Owner. The Value area column was replaced with Priority.</li>
     <li><strong>Backlog, Planned, Prioritize Backlog:</strong> The description at the top of each page no longer looks like a warning — switched from a colored banner to plain text, and reworded Backlog/Planned to be informative rather than directive (e.g. "They'll move to Planned once a start date is assigned" instead of "Assign a start date"), since most readers of those pages can't take that action themselves. Portfolio Health's "how this works" note got the same banner-to-plain-text treatment.</li>
     <li><strong>Home:</strong> Removed the Rejected proposals section — it wasn't shown anywhere else in the app, so this retires that browsing view.</li>
