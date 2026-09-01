@@ -11260,6 +11260,28 @@ function pgProgramDetail(id) {
     '<div class="metric"><div class="metric-label">On Hold</div><div class="metric-value" style="color:' + (holdCount ? 'var(--warn)' : 'inherit') + '">' + holdCount + '</div></div>' +
   '</div>';
 
+  // ── Upcoming milestones (view mode only) -- across every linked project,
+  // not just Active, since a program's Planned/Backlog projects can carry
+  // milestones too and the whole point is seeing what's coming across all of it.
+  var msSoon = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  var upcomingMs = [];
+  linkedProjects.filter(function(p){ return p.stage !== 'complete'; }).forEach(function(p) {
+    p.milestones.filter(function(m){ return !m.done && m.date && m.date >= todayStr() && m.date <= msSoon; }).forEach(function(m) {
+      upcomingMs.push({ pid: p.id, project: p.name, name: m.name, date: m.date });
+    });
+  });
+  upcomingMs.sort(function(a, b){ return a.date.localeCompare(b.date); });
+  var upcomingMsHtml = '<div class="card mt-16"><div class="section-title">Upcoming milestones — next 30 days</div>' +
+    (upcomingMs.length
+      ? upcomingMs.map(function(m) {
+          return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-soft);cursor:pointer" onclick="goToProject(\'' + m.pid + '\',\'milestones\')">' +
+            '<div style="min-width:0"><div class="bold" style="font-size:13px">' + m.name + '</div><div class="text-muted" style="font-size:11.5px;margin-top:1px">' + m.project + '</div></div>' +
+            '<span class="badge badge-gray">' + fmtDate(m.date) + '</span>' +
+          '</div>';
+        }).join('')
+      : '<div class="text-muted" style="font-size:13px">No milestones due in the next 30 days</div>') +
+  '</div>';
+
   // ── Linked projects list ────────────────────────────────────────────────
   var stageSectionsHtml = stageOrder.filter(function(s){ return byStage[s] && byStage[s].length; }).map(function(s) {
     var rows = byStage[s].map(function(p) {
@@ -11359,7 +11381,8 @@ function pgProgramDetail(id) {
     '<div class="card mt-16"><div class="section-title">Linked projects (' + linkedProjects.length + ')</div>' +
       (stageSectionsHtml || '<div class="text-muted" style="font-size:13px">No projects linked yet</div>') +
     '</div>' +
-    addPanelHtml;
+    addPanelHtml +
+    (!editingNow ? upcomingMsHtml : '');
 
   window.filterProgramAddList = function(query) {
     var q = query.trim().toLowerCase();
