@@ -518,6 +518,7 @@ async function loadAllProjects() {
       valueConfidence: pr.value_confidence, costEstimate: pr.cost_estimate, costConfidence: pr.cost_confidence,
       priorityRank: priorityInfo ? priorityInfo.rank : null,
       priorityIsOverride: priorityInfo ? !!priorityInfo.isOverride : false,
+      programPriorityRank: pr.program_priority_rank,
       milestones: milestones, tasks: tasks, todos: todos, raid: raid, baselines: baselines,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds,
       requirements: requirements, scope: scope
@@ -607,6 +608,21 @@ function programForProject(p) {
 
 function isProgramManagerOf(program) {
   return !!(program && program.managerResourceId && D.myResourceId && program.managerResourceId === D.myResourceId);
+}
+
+function isProgramSponsorOf(program) {
+  return !!(program && program.sponsorResourceId && D.myResourceId && program.sponsorResourceId === D.myResourceId);
+}
+
+function isProgramBusinessOwnerOf(program) {
+  return !!(program && program.businessOwnerResourceId && D.myResourceId && program.businessOwnerResourceId === D.myResourceId);
+}
+
+// Manager, Sponsor, and Business Owner all manage their program the same way
+// -- add/remove linked projects, set priority order, edit program fields.
+// Reassigning who holds those three roles stays admin-only (see canReassignRoles).
+function isProgramStakeholderOf(program) {
+  return isProgramManagerOf(program) || isProgramSponsorOf(program) || isProgramBusinessOwnerOf(program);
 }
 
 // Single gate for all financial detail (value/cost estimates + their confidence
@@ -11373,6 +11389,46 @@ function programProjects(programId) {
   return D.projects.filter(function(p){ return p.programId === programId; });
 }
 
+function attachProgramPriorityDragHandlers(programId, orderedProjects) {
+  var dragPid = null;
+  document.querySelectorAll('.pb-row[data-pid]').forEach(function(el) {
+    el.addEventListener('dragstart', function(ev) {
+      dragPid = el.getAttribute('data-pid');
+      el.classList.add('pb-dragging');
+      ev.dataTransfer.effectAllowed = 'move';
+    });
+    el.addEventListener('dragend', function() { el.classList.remove('pb-dragging'); });
+    el.addEventListener('dragover', function(ev) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; });
+    el.addEventListener('drop', function(ev) {
+      ev.preventDefault();
+      var fromPid = dragPid;
+      var toPid = el.getAttribute('data-pid');
+      dragPid = null;
+      if (!fromPid || fromPid === toPid) return;
+      var ids = orderedProjects.map(function(p){ return p.id; });
+      var fromIdx = ids.indexOf(fromPid);
+      var toIdx = ids.indexOf(toPid);
+      if (fromIdx < 0 || toIdx < 0) return;
+      ids.splice(fromIdx, 1);
+      ids.splice(toIdx, 0, fromPid);
+      programPersistPriorityOrder(programId, ids);
+    });
+  });
+}
+
+async function programPersistPriorityOrder(programId, orderedIds) {
+  var results = await Promise.all(orderedIds.map(function(pid, idx) {
+    return sb.from('projects').update({ program_priority_rank: idx + 1 }).eq('id', pid);
+  }));
+  var failed = results.some(function(r){ return r.error; });
+  if (failed) { showToast('Could not save priority order', 'error'); return; }
+  orderedIds.forEach(function(pid, idx) {
+    var p = D.projects.find(function(x){ return x.id === pid; });
+    if (p) p.programPriorityRank = idx + 1;
+  });
+  if (currentPage === 'programDetail') pgProgramDetail(programId);
+}
+
 function goToProgram(id) {
   programEditing = false;
   pgProgramDetail(id);
@@ -11520,9 +11576,15 @@ function pgProgramDetail(id) {
   renderNav();
   tb(programLabel(prog) + ' — ' + prog.name);
 
-  var canEditProgram = D.role === 'admin' || isProgramManagerOf(prog);
+  var canEditProgram = D.role === 'admin' || isProgramStakeholderOf(prog);
   var canReassignRoles = D.role === 'admin';
-  var linkedProjects = programProjects(prog.id);
+  var linkedProjects = programProjects(prog.id).slice().sort(function(a, b) {
+    var ar = a.programPriorityRank, br = b.programPriorityRank;
+    if (ar != null && br != null) return ar - br;
+    if (ar != null) return -1;
+    if (br != null) return 1;
+    return a.name.localeCompare(b.name);
+  });
   var editingNow = programEditing && canEditProgram;
 
   var stageOrder = ['active','planned','backlog','hold','complete'];
@@ -11577,20 +11639,14 @@ function pgProgramDetail(id) {
   '</div>';
 
   // ── Linked projects list ────────────────────────────────────────────────
+  // View mode: grouped by stage, read-only, with a rank pill for anything
+  // that's been given a priority order. Edit mode: one flat, drag-orderable
+  // list (priority order is program-wide, not scoped per stage) with Remove.
   var stageSectionsHtml = stageOrder.filter(function(s){ return byStage[s] && byStage[s].length; }).map(function(s) {
     var rows = byStage[s].map(function(p) {
-      if (editingNow) {
-        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-soft)">' +
-          '<span style="font-size:13px;cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' + hdot(p.health) + p.name + '</span>' +
-          '<span style="display:flex;align-items:center;gap:12px">' +
-            '<span class="text-muted" style="font-size:12px">' + (p.owner || '—') + '</span>' +
-            lateBadgeHtml(isProjectLate(p)) +
-            '<button class="btn btn-sm btn-danger" onclick="removeProjectFromProgram(\'' + prog.id + '\',\'' + p.id + '\')"><i class="ti ti-x"></i> Remove</button>' +
-          '</span>' +
-        '</div>';
-      }
+      var rankBadge = p.programPriorityRank != null ? '<span class="badge badge-gray" style="font-size:10px;margin-right:6px">#' + p.programPriorityRank + '</span>' : '';
       return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-soft);cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' +
-        '<span style="font-size:13px;flex:1;min-width:0">' + hdot(p.health) + p.name + '</span>' +
+        '<span style="font-size:13px;flex:1;min-width:0">' + rankBadge + hdot(p.health) + p.name + '</span>' +
         stagePill(p.stage) +
         '<div style="display:flex;align-items:center;gap:6px;width:110px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div>' +
         '<span class="text-muted" style="font-size:12px;width:100px">' + (p.owner || '—') + '</span>' +
@@ -11598,6 +11654,18 @@ function pgProgramDetail(id) {
       '</div>';
     }).join('');
     return '<div class="mt-16"><div class="form-label" style="margin-bottom:2px">' + stageLabels[s] + ' (' + byStage[s].length + ')</div>' + rows + '</div>';
+  }).join('');
+
+  var priorityOrderHtml = linkedProjects.map(function(p, idx) {
+    return '<div class="pb-row" draggable="true" data-pid="' + p.id + '">' +
+      '<span class="pb-drag-handle"><i class="ti ti-grip-vertical"></i></span>' +
+      '<span class="pb-rank">' + (idx + 1) + '</span>' +
+      '<span class="pb-name" onclick="goToProject(\'' + p.id + '\')">' + hdot(p.health) + p.name + '</span>' +
+      stagePill(p.stage) +
+      '<span class="text-muted" style="font-size:12px;width:100px">' + (p.owner || '—') + '</span>' +
+      lateBadgeHtml(isProjectLate(p)) +
+      '<button class="btn btn-sm btn-danger" onclick="removeProjectFromProgram(\'' + prog.id + '\',\'' + p.id + '\')"><i class="ti ti-x"></i> Remove</button>' +
+    '</div>';
   }).join('');
 
   // Non-admins can only pull in projects they can already edit (own, sponsor,
@@ -11673,7 +11741,9 @@ function pgProgramDetail(id) {
     (!editingNow ? statsHtml : '') +
     aboutHtml +
     '<div class="card mt-16"><div class="section-title">Linked projects (' + linkedProjects.length + ')</div>' +
-      (stageSectionsHtml || '<div class="text-muted" style="font-size:13px">No projects linked yet</div>') +
+      (editingNow
+        ? (linkedProjects.length ? '<div class="text-muted" style="font-size:12px;margin-bottom:8px">Drag to set this program\'s priority order.</div>' + priorityOrderHtml : '<div class="text-muted" style="font-size:13px">No projects linked yet</div>')
+        : (stageSectionsHtml || '<div class="text-muted" style="font-size:13px">No projects linked yet</div>')) +
     '</div>' +
     addPanelHtml +
     (!editingNow ? upcomingMsHtml : '');
@@ -11684,6 +11754,8 @@ function pgProgramDetail(id) {
       row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
     });
   };
+
+  if (editingNow) attachProgramPriorityDragHandlers(prog.id, linkedProjects);
 }
 
 window.setProgramEditing = function(val, id) { programEditing = val; pgProgramDetail(id); };
