@@ -11260,26 +11260,27 @@ function pgProgramDetail(id) {
     '<div class="metric"><div class="metric-label">On Hold</div><div class="metric-value" style="color:' + (holdCount ? 'var(--warn)' : 'inherit') + '">' + holdCount + '</div></div>' +
   '</div>';
 
-  // ── Upcoming milestones (view mode only) -- across every linked project,
-  // not just Active, since a program's Planned/Backlog projects can carry
-  // milestones too and the whole point is seeing what's coming across all of it.
+  // ── Upcoming & late milestones (view mode only) -- across every linked
+  // project, not just Active, since a program's Planned/Backlog projects can
+  // carry milestones too. Undone milestones due within 30 days, plus any
+  // undone milestone that's already overdue regardless of how overdue.
   var msSoon = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   var upcomingMs = [];
   linkedProjects.filter(function(p){ return p.stage !== 'complete'; }).forEach(function(p) {
-    p.milestones.filter(function(m){ return !m.done && m.date && m.date >= todayStr() && m.date <= msSoon; }).forEach(function(m) {
-      upcomingMs.push({ pid: p.id, project: p.name, owner: p.owner, name: m.name, date: m.date });
+    p.milestones.filter(function(m){ return !m.done && m.date && m.date <= msSoon; }).forEach(function(m) {
+      upcomingMs.push({ pid: p.id, project: p.name, owner: p.owner, name: m.name, date: m.date, late: isMilestoneLate(m) });
     });
   });
   upcomingMs.sort(function(a, b){ return a.date.localeCompare(b.date); });
-  var upcomingMsHtml = '<div class="card mt-16"><div class="section-title">Upcoming milestones — next 30 days</div>' +
+  var upcomingMsHtml = '<div class="card mt-16"><div class="section-title">Upcoming &amp; late milestones — next 30 days</div>' +
     (upcomingMs.length
       ? upcomingMs.map(function(m) {
           return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-soft);cursor:pointer" onclick="goToProject(\'' + m.pid + '\',\'milestones\')">' +
             '<div style="min-width:0"><div class="bold" style="font-size:13px">' + m.name + '</div><div class="text-muted" style="font-size:11.5px;margin-top:1px">' + m.project + ' · ' + (m.owner || 'No Owner') + '</div></div>' +
-            '<span class="badge badge-gray">' + fmtDate(m.date) + '</span>' +
+            '<span style="display:flex;align-items:center;gap:6px"><span class="badge badge-gray">' + fmtDate(m.date) + '</span>' + lateBadgeHtml(m.late) + '</span>' +
           '</div>';
         }).join('')
-      : '<div class="text-muted" style="font-size:13px">No milestones due in the next 30 days</div>') +
+      : '<div class="text-muted" style="font-size:13px">No upcoming or late milestones</div>') +
   '</div>';
 
   // ── Linked projects list ────────────────────────────────────────────────
