@@ -42,7 +42,7 @@
   page: /user-guide/
   anchor: programs
   guide: User Guide
-  blurb: A named collection of related projects with Sponsor, Manager, and Business Owner roles.
+  blurb: View/Edit modes, a linked-project stats strip, and upcoming & late milestones across the program.
 
 - title: "Projects: Active, Planned, Backlog, Hold, Completed"
   page: /user-guide/
