@@ -44,6 +44,8 @@ A month-by-month timeline (Gantt-style) of active and planned projects, grouped 
 - Filter by category tab or by tag
 - Click the eye icon on any row to jump to that project
 
+A project's timeline row normally shows a colored bar for its current phase. If its target end date has already passed, that's replaced with a red **"Late by N days"** note and the actual target end date; a project with real dates that just fall entirely outside the window you're viewing shows **"Outside this range"** instead.
+
 Below the timeline is an **Upcoming milestones** list, pulling undone milestones from active projects — Project, Milestone, Due, and Owner (the project's owner), searchable and with Project and Owner both sortable and filterable.
 
 Roadmap is read-only — you can change what you're looking at, but nothing here is editable.

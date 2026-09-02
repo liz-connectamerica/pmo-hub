@@ -15,9 +15,10 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-02">
-  <h2>Executive Summary, Programs, Data Confirmation &amp; Sponsor Permissions</h2>
-  <p class="changelog-date">September 2, 2026 · 9:15 AM – 3:20 PM</p>
+  <h2>Roadmap, Executive Summary, Programs, Data Confirmation &amp; Sponsor Permissions</h2>
+  <p class="changelog-date">September 2, 2026 · 9:15 AM – 4:10 PM</p>
   <ul>
+    <li><strong>Roadmap:</strong> An Active or Planned project whose target end date has already passed now shows a red "Late by N days — target end [date]" indicator in its timeline row, instead of the misleading "No schedule set" (it does have a schedule — it's just overdue). A project with real dates entirely in the future, outside the visible window, now says "Outside this range" instead, matching the Plan tab's own timeline wording.</li>
     <li>New admin-only <strong>Executive Summary</strong> page — lists only projects flagged for it, one focused card each (health/stage/status, owner, sponsor, target end, progress, current blocker, open RAID counts, and an optional discussion note). Flag a project from a new admin-only <strong>Executive Review</strong> section on its Information tab; nobody else can see or set the flag. A first pass while the team works out what should roll up at that level — for now it's deliberately just the flagged projects' own data, no aggregation.</li>
     <li>A project's <strong>Sponsor</strong> now gets the same edit rights its <strong>Owner</strong> already has — Milestones, Plan, RAID, To-Do, Documentation, Requirements/Scope, Team, Information tab fields, and stage changes (put on hold, resume, mark complete). Financial edit rights are unchanged, since a project's sponsor already had those.</li>
     <li>New <strong>"Confirm still accurate"</strong> action on a project's Information tab (System &amp; Audit) — logs who checked a project's data and when, with an optional note, without changing any fields. A header badge shows freshness (green if recent, amber "needs review" once it's been over 60 days, neutral if never confirmed). Editing any of the project's own fields counts as a confirmation too, since fixing something is itself a way of validating it — confirmations show up alongside real edits in the Change Log, visually distinct from a field change.</li>
