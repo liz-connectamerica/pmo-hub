@@ -595,6 +595,7 @@ function currentUser() {
 function canEdit(p) {
   if (D.role === 'admin') return true;
   if (p.ownerId && D.myResourceId && p.ownerId === D.myResourceId) return true;
+  if (p.sponsorResourceId && D.myResourceId && p.sponsorResourceId === D.myResourceId) return true;
   return isProgramManagerOf(programForProject(p));
 }
 
