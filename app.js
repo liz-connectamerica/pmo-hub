@@ -11795,6 +11795,7 @@ async function saveProgramFields(id) {
   if (ownerEl) { prog.businessOwnerResourceId = updates.business_owner_resource_id; prog.businessOwnerName = ownerResource ? ownerResource.name : ''; }
 
   showToast('Program saved');
+  programEditing = false;
   if (currentPage === 'programDetail') pgProgramDetail(id);
 }
 
