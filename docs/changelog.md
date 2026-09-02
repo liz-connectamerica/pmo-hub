@@ -15,9 +15,10 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-02">
-  <h2>Programs, Data Confirmation &amp; Sponsor Permissions</h2>
-  <p class="changelog-date">September 2, 2026 · 9:15 AM – 2:15 PM</p>
+  <h2>Executive Summary, Programs, Data Confirmation &amp; Sponsor Permissions</h2>
+  <p class="changelog-date">September 2, 2026 · 9:15 AM – 3:20 PM</p>
   <ul>
+    <li>New admin-only <strong>Executive Summary</strong> page — lists only projects flagged for it, one focused card each (health/stage/status, owner, sponsor, target end, progress, current blocker, open RAID counts, and an optional discussion note). Flag a project from a new admin-only <strong>Executive Review</strong> section on its Information tab; nobody else can see or set the flag. A first pass while the team works out what should roll up at that level — for now it's deliberately just the flagged projects' own data, no aggregation.</li>
     <li>A project's <strong>Sponsor</strong> now gets the same edit rights its <strong>Owner</strong> already has — Milestones, Plan, RAID, To-Do, Documentation, Requirements/Scope, Team, Information tab fields, and stage changes (put on hold, resume, mark complete). Financial edit rights are unchanged, since a project's sponsor already had those.</li>
     <li>New <strong>"Confirm still accurate"</strong> action on a project's Information tab (System &amp; Audit) — logs who checked a project's data and when, with an optional note, without changing any fields. A header badge shows freshness (green if recent, amber "needs review" once it's been over 60 days, neutral if never confirmed). Editing any of the project's own fields counts as a confirmation too, since fixing something is itself a way of validating it — confirmations show up alongside real edits in the Change Log, visually distinct from a field change.</li>
     <li><strong>Programs:</strong> Program Sponsor and Business Owner now get the same program-management rights Program Manager already had — adding/removing linked projects, editing program name/description/objective. Reassigning who holds Sponsor, Manager, or Business Owner stays admin-only.</li>
