@@ -3151,9 +3151,8 @@ function pgExecSummary() {
   }).join('');
 
   document.getElementById('content').innerHTML =
-    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px">' +
-      '<div class="text-muted" style="font-size:12px;max-width:640px">Projects flagged for executive discussion — nothing else. Flag a project from its Information tab (admin-only Executive Review section).</div>' +
-      '<span class="badge badge-purple" style="flex-shrink:0">' + flagged.length + ' flagged</span>' +
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:16px">' +
+      '<span class="badge badge-purple">' + flagged.length + ' flagged</span>' +
     '</div>' +
     (flagged.length ? cardsHtml : '<div class="empty-state" style="padding:40px"><i class="ti ti-flag"></i><p>No projects flagged for Executive Summary yet</p></div>');
 }
