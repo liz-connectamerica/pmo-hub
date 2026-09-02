@@ -2107,8 +2107,8 @@ function daysSinceConfirmed(p) {
 function dataConfirmedBadgeHtml(p) {
   var days = daysSinceConfirmed(p);
   if (days == null) return '<span class="badge badge-gray">Never confirmed</span>';
-  if (days > DATA_CONFIRM_STALE_DAYS) return '<span class="badge badge-amber"><i class="ti ti-alert-triangle"></i> Needs review &middot; ' + days + 'd</span>';
-  return '<span class="badge badge-teal"><i class="ti ti-circle-check"></i> ' + (days <= 0 ? 'Confirmed today' : 'Confirmed ' + days + 'd ago') + '</span>';
+  if (days > DATA_CONFIRM_STALE_DAYS) return '<span class="badge badge-amber" style="gap:4px"><i class="ti ti-alert-triangle"></i> Needs review &middot; ' + days + 'd</span>';
+  return '<span class="badge badge-teal" style="gap:4px"><i class="ti ti-circle-check"></i> ' + (days <= 0 ? 'Confirmed today' : 'Confirmed ' + days + 'd ago') + '</span>';
 }
 
 function dataConfirmedLineHtml(p) {
