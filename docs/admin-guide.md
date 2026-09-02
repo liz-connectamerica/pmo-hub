@@ -107,14 +107,6 @@ A toolbar above the cards holds three things:
 
 A snapshot is also captured automatically on the 1st of every month. A snapshot can only ever capture what the portfolio looks like *at the moment it's taken* — there's no way to reconstruct what a project's health actually was in some earlier month before its first snapshot, so the RAG trend strip starts sparse and fills in over time.
 
-## Executive Summary
-
-An admin-only page, in the **Overview** section of the sidebar, showing only the projects flagged for it — nothing else. Each shows up as a focused card: health, stage, status, priority, owner, sponsor, target end date, progress, the current blocker (if any), a one-line open-RAID count, and an optional discussion note.
-
-Flagging happens on a project's own **Information** tab, in an **Executive Review** section that only appears for admins — a checkbox plus an optional note field, with **Edit**/**Save**/**Cancel** the same as every other Information section. Nobody who isn't an admin can see whether a project is flagged, see the note, or change either — enforced in the database, not just hidden in the UI, since every other role that can otherwise edit a project (owner, sponsor, program roles) already has write access to the rest of that same row.
-
-This is a first pass: what should roll up at the executive level is still being worked out, so for now it's deliberately just each flagged project's own data, with no portfolio-wide aggregation. Expect this page to grow once those requirements are settled.
-
 ## Programs
 
 A program is a named collection of projects — each project can belong to at most one program, or none. Every program has a **Program ID** (P1, P2, P3…, assigned automatically), a name, description, and business objective, plus three resource-linked roles: **Program Sponsor**, **Program Manager**, and **Business Owner**.

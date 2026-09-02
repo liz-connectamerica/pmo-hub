@@ -116,12 +116,6 @@
   guide: Admin Guide
   blurb: Capture, browse, and PDF-export a past month's Portfolio Health dashboard.
 
-- title: Executive Summary
-  page: /admin-guide/
-  anchor: executive-summary
-  guide: Admin Guide
-  blurb: Admin-only page of flagged projects with a discussion note -- set from the project's own Information tab.
-
 - title: Programs
   page: /admin-guide/
   anchor: programs
