@@ -523,6 +523,7 @@ async function loadAllProjects() {
       priorityIsOverride: priorityInfo ? !!priorityInfo.isOverride : false,
       programPriorityRank: pr.program_priority_rank,
       dataConfirmedAt: pr.data_confirmed_at, dataConfirmedByName: pr.data_confirmed_by_name,
+      execFlagged: !!pr.is_exec_flagged, execNote: pr.exec_note,
       dataConfirmations: (confirmationsByProj[pr.id] || []).slice()
         .sort(function(a,b){ return (b.confirmed_at||'').localeCompare(a.confirmed_at||''); })
         .map(function(c){ return { date: c.confirmed_at, actor: c.confirmed_by_name, note: c.note || '' }; }),
@@ -1928,6 +1929,7 @@ var PROJECT_INFO_SUBTABS = [
   { key:'progress',      label:'Progress & Health',            icon:'ti-chart-line' },
   { key:'financials',    label:'Financials',                   icon:'ti-currency-dollar' },
   { key:'relationships', label:'Relationships',                icon:'ti-link' },
+  { key:'exec',          label:'Executive Review',             icon:'ti-flag' },
   { key:'audit',         label:'System & Audit',               icon:'ti-history' }
 ];
 var taskDescOpen = {};
@@ -2363,7 +2365,7 @@ var projectDetailReferrer = null;
 
 var NAV_DEF = {
   admin: [
-    { s:'Overview', items:[{id:'home',icon:'ti-home',label:'Home'},{id:'summary',icon:'ti-chart-bar',label:'Summary'},{id:'portfolio-health',icon:'ti-activity',label:'Portfolio Health'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
+    { s:'Overview', items:[{id:'home',icon:'ti-home',label:'Home'},{id:'summary',icon:'ti-chart-bar',label:'Summary'},{id:'exec-summary',icon:'ti-flag',label:'Executive Summary'},{id:'portfolio-health',icon:'ti-activity',label:'Portfolio Health'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
       {id:'my-requests',  icon:'ti-clock', label:'My Requests', badge:'my-requests'}
@@ -2619,7 +2621,7 @@ var PAGE_RENDERERS = {
   'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems,
   'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests, 'admin-personal-todos':pgAdminPersonalTodos,
   'my-capacity':pgMyCapacity, 'admin-capacity-weights':pgAdminCapacityWeights,
-  'portfolio-health':pgPortfolioHealth
+  'portfolio-health':pgPortfolioHealth, 'exec-summary':pgExecSummary
 };
 
 function pageAllowedForRole(page, role) {
@@ -3107,6 +3109,53 @@ function pgSummary() {
     activeProjState.filters = { tags:[], status: status === 'Not set' ? [] : [status], priority:[], phase:[], owner:[] };
     nav('projects');
   };
+}
+
+// ── Executive Summary (admin-only) ──────────────────────────────────────────
+// v1: just the flagged projects' own data, one card each -- no rollups yet,
+// since what should aggregate at this level is still being worked out.
+
+function pgExecSummary() {
+  tb('Executive Summary');
+  var flagged = D.projects.filter(function(p){ return p.execFlagged; });
+
+  function raidSummaryHtml(p) {
+    var openIssues = (p.raid.issues || []).filter(function(i){ return i.status !== 'Closed'; }).length;
+    var openRisks = (p.raid.risks || []).filter(function(r){ return r.status !== 'Closed'; }).length;
+    var openDeps = (p.raid.dependencies || []).filter(function(d){ return d.status !== 'Resolved'; }).length;
+    var parts = [];
+    if (openIssues) parts.push(openIssues + ' open issue' + (openIssues === 1 ? '' : 's'));
+    if (openRisks) parts.push(openRisks + ' open risk' + (openRisks === 1 ? '' : 's'));
+    if (openDeps) parts.push(openDeps + ' open ' + (openDeps === 1 ? 'dependency' : 'dependencies'));
+    return parts.length ? parts.join(' &middot; ') : 'No open RAID items';
+  }
+
+  function metaBox(label, valueHtml) {
+    return '<div><div class="text-muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">' + label + '</div><div style="font-size:13px">' + valueHtml + '</div></div>';
+  }
+
+  var cardsHtml = flagged.map(function(p) {
+    return '<div class="card mb-16">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">' +
+        '<div style="font-size:16px;font-weight:700;display:flex;align-items:center;cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' + hdot(p.health) + p.name + '</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + lateBadgeHtml(isProjectLate(p)) + '</div>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px 20px;margin:12px 0">' +
+        metaBox('Owner', p.owner || '—') + metaBox('Sponsor', p.sponsor || '—') + metaBox('Target end', p.end || '—') +
+        metaBox('Progress', '<div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span style="font-size:11px">' + p.progress + '%</span></div>') +
+      '</div>' +
+      (p.blockers ? '<div class="blocker-note"><i>Blocker:</i> ' + p.blockers + '</div>' : '') +
+      '<div style="font-size:12.5px;color:var(--text-2);margin-top:12px">' + raidSummaryHtml(p) + '</div>' +
+      (p.execNote ? '<div style="background:var(--accent-soft);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--text-2);margin-top:10px"><i class="ti ti-message-circle" style="color:var(--accent);margin-right:6px"></i>' + p.execNote + '</div>' : '') +
+    '</div>';
+  }).join('');
+
+  document.getElementById('content').innerHTML =
+    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px">' +
+      '<div class="text-muted" style="font-size:12px;max-width:640px">Projects flagged for executive discussion — nothing else. Flag a project from its Information tab (admin-only Executive Review section).</div>' +
+      '<span class="badge badge-purple" style="flex-shrink:0">' + flagged.length + ' flagged</span>' +
+    '</div>' +
+    (flagged.length ? cardsHtml : '<div class="empty-state" style="padding:40px"><i class="ti ti-flag"></i><p>No projects flagged for Executive Summary yet</p></div>');
 }
 
 // ── Portfolio ───────────────────────────────────────────────────────────────
@@ -4807,7 +4856,7 @@ function pgProjectDetail(pid, tab) {
       var canViewFin = canViewFinancials(p);
       var canEditFin = canEditProjectFinancials(p);
 
-      var sectionDefs = PROJECT_INFO_SUBTABS.filter(function(s){ return s.key !== 'financials' || canViewFin; });
+      var sectionDefs = PROJECT_INFO_SUBTABS.filter(function(s){ return (s.key !== 'financials' || canViewFin) && (s.key !== 'exec' || D.role === 'admin'); });
 
       function section(key, label, bodyHtml) {
         return '<div id="pinfo-' + key + '" style="scroll-margin-top:16px;padding-bottom:24px;margin-bottom:24px;border-bottom:1px solid var(--border-soft)">' +
@@ -4968,6 +5017,22 @@ function pgProjectDetail(pid, tab) {
             return linkedReq ? '<button class="btn btn-sm" onclick="reviewRequest(\'' + linkedReq.id + '\')"><i class="ti ti-eye"></i> ' + linkedReq.title + '</button>' : '<span class="text-muted">—</span>';
           })());
 
+      var execBody = D.role !== 'admin' ? '' : (function() {
+        if (projectInfoEditing === 'exec') {
+          return '<div class="form-group"><label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+              '<input type="checkbox" id="pxf-flag" style="width:16px;height:16px;flex-shrink:0"' + (p.execFlagged ? ' checked' : '') + '>' +
+              '<div><div class="bold" style="font-size:13px">Flag for Executive Summary</div><div class="text-muted">Shows this project on the admin-only Executive Summary page</div></div>' +
+            '</label></div>' +
+            '<div class="form-group"><div class="form-label">Discussion note (optional)</div><textarea id="pxf-note" rows="3" placeholder="What should come up when this project is discussed?">' + (p.execNote || '') + '</textarea></div>' +
+            saveCancelRow('saveProjectExecFlag');
+        }
+        return editBtnRow('exec', true) +
+          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:' + (p.execFlagged && p.execNote ? '10px' : '0') + '">' +
+            (p.execFlagged ? '<span class="badge badge-purple"><i class="ti ti-flag"></i> Flagged</span>' : '<span class="badge badge-gray">Not flagged</span>') +
+          '</div>' +
+          (p.execFlagged && p.execNote ? '<div style="font-size:13px;color:var(--text-2);background:var(--surface-2);padding:8px 12px;border-radius:8px">' + p.execNote + '</div>' : '');
+      })();
+
       var auditBody = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px">' +
             fieldBox('Created', fmtDate(p.createdAt)) +
             '<div id="pmeta-last-edited"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Last edited</div><span class="text-muted" style="font-size:13px">Loading…</span></div>' +
@@ -4982,7 +5047,7 @@ function pgProjectDetail(pid, tab) {
 
       var bodiesByKey = {
         identity: identityBody, schedule: scheduleBody, progress: progressBody,
-        financials: financialsBody, relationships: relationshipsBody, audit: auditBody
+        financials: financialsBody, relationships: relationshipsBody, exec: execBody, audit: auditBody
       };
       var sectionsHtml = sectionDefs.map(function(s){ return section(s.key, s.label, bodiesByKey[s.key]); }).join('') +
         section('changelog', 'Change Log', changelogBody);
@@ -7110,6 +7175,18 @@ window.saveProjectFinancials = async function(pid) {
   p.costEstimate = updates.cost_estimate; p.costConfidence = updates.cost_confidence;
   projectInfoEditing = null;
   showToast('Financial detail updated'); pgProjectDetail(pid, 'overview');
+};
+
+window.saveProjectExecFlag = async function(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var flagged = document.getElementById('pxf-flag').checked;
+  var note = document.getElementById('pxf-note').value.trim();
+  var btn = document.getElementById('pf-save'); if (btn) btn.disabled = true;
+  var result = await sb.from('projects').update({ is_exec_flagged: flagged, exec_note: note || null }).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
+  p.execFlagged = flagged; p.execNote = note || null;
+  projectInfoEditing = null;
+  showToast('Executive Review updated'); pgProjectDetail(pid, 'overview');
 };
 
 // ── Edit / New Project ─────────────────────────────────────────────────────────
