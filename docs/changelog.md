@@ -15,9 +15,10 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-02">
-  <h2>Programs &amp; Data Confirmation</h2>
-  <p class="changelog-date">September 2, 2026 · 9:15 AM – 12:05 PM</p>
+  <h2>Programs, Data Confirmation &amp; Sponsor Permissions</h2>
+  <p class="changelog-date">September 2, 2026 · 9:15 AM – 2:15 PM</p>
   <ul>
+    <li>A project's <strong>Sponsor</strong> now gets the same edit rights its <strong>Owner</strong> already has — Milestones, Plan, RAID, To-Do, Documentation, Requirements/Scope, Team, Information tab fields, and stage changes (put on hold, resume, mark complete). Financial edit rights are unchanged, since a project's sponsor already had those.</li>
     <li>New <strong>"Confirm still accurate"</strong> action on a project's Information tab (System &amp; Audit) — logs who checked a project's data and when, with an optional note, without changing any fields. A header badge shows freshness (green if recent, amber "needs review" once it's been over 60 days, neutral if never confirmed). Editing any of the project's own fields counts as a confirmation too, since fixing something is itself a way of validating it — confirmations show up alongside real edits in the Change Log, visually distinct from a field change.</li>
     <li><strong>Programs:</strong> Program Sponsor and Business Owner now get the same program-management rights Program Manager already had — adding/removing linked projects, editing program name/description/objective. Reassigning who holds Sponsor, Manager, or Business Owner stays admin-only.</li>
     <li><strong>Programs:</strong> A program's Linked projects list now supports drag-and-drop priority ordering, settable by the Sponsor, Manager, or Business Owner — a rank pill shows next to any project that's been given an order, and the edit view turns the list into a single drag-orderable list to set it.</li>
