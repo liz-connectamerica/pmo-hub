@@ -14,6 +14,15 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-02">
+  <h2>Programs</h2>
+  <p class="changelog-date">September 2, 2026 · 9:15 AM – 9:45 AM</p>
+  <ul>
+    <li><strong>Programs:</strong> Program Sponsor and Business Owner now get the same program-management rights Program Manager already had — adding/removing linked projects, editing program name/description/objective. Reassigning who holds Sponsor, Manager, or Business Owner stays admin-only.</li>
+    <li><strong>Programs:</strong> A program's Linked projects list now supports drag-and-drop priority ordering, settable by the Sponsor, Manager, or Business Owner — a rank pill shows next to any project that's been given an order, and the edit view turns the list into a single drag-orderable list to set it.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-09-01">
   <h2>My Projects, Documentation, RAID log &amp; Portfolio</h2>
   <p class="changelog-date">September 1, 2026 · 8:50 AM – 5:20 PM</p>
