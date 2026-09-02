@@ -7821,7 +7821,7 @@ function pgRoadmap() {
       // Its end date is real, just entirely before the visible window (it's
       // in the past) -- "No schedule set" would be flatly wrong here.
       var lateDays = daysLate(p);
-      barHtml = '<div class="tl-wrap" style="padding-left:8px"><span class="badge badge-red badge-late"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>Late by ' + lateDays + ' day' + (lateDays === 1 ? '' : 's') + ' — target end ' + fmtDate(p.end) + '</span></div>';
+      barHtml = '<div class="tl-wrap" style="padding-left:8px"><span style="color:var(--bad);font-size:12px;font-weight:600"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>Late by ' + lateDays + ' day' + (lateDays === 1 ? '' : 's') + ' — target end ' + fmtDate(p.end) + '</span></div>';
     } else if (p.start && p.end) {
       // Dated, just outside the visible window the other direction (fully in
       // the future) -- same wording the Plan tab's own timeline already uses.
