@@ -282,7 +282,8 @@ async function loadAllProjects() {
     sb.from('requirement_log').select('*'),
     sb.from('scope_items').select('*'),
     sb.from('scope_comments').select('*'),
-    sb.from('scope_log').select('*')
+    sb.from('scope_log').select('*'),
+    sb.from('project_confirmations').select('*')
   ]);
 
   for (var i = 0; i < results.length; i++) {
@@ -323,6 +324,7 @@ async function loadAllProjects() {
   var scopeRows          = results[24].data || [];
   var scopeCommentRows   = results[25].data || [];
   var scopeLogRows       = results[26].data || [];
+  var confirmationRows   = results[27].data || [];
   var priorityRankByProj = {};
   priorityRankRows.forEach(function(r){ priorityRankByProj[r.project_id] = { rank: r.rank, isOverride: r.is_override }; });
 
@@ -362,6 +364,7 @@ async function loadAllProjects() {
   var scopeByProj        = groupBy(scopeRows, 'project_id');
   var scopeCommentsByItem = groupBy(scopeCommentRows, 'scope_item_id');
   var scopeLogByItem     = groupBy(scopeLogRows, 'scope_item_id');
+  var confirmationsByProj = groupBy(confirmationRows, 'project_id');
   var folderNameById     = {};
   folderRows.forEach(function(f){ folderNameById[f.id] = f.name; });
 
@@ -519,6 +522,10 @@ async function loadAllProjects() {
       priorityRank: priorityInfo ? priorityInfo.rank : null,
       priorityIsOverride: priorityInfo ? !!priorityInfo.isOverride : false,
       programPriorityRank: pr.program_priority_rank,
+      dataConfirmedAt: pr.data_confirmed_at, dataConfirmedByName: pr.data_confirmed_by_name,
+      dataConfirmations: (confirmationsByProj[pr.id] || []).slice()
+        .sort(function(a,b){ return (b.confirmed_at||'').localeCompare(a.confirmed_at||''); })
+        .map(function(c){ return { date: c.confirmed_at, actor: c.confirmed_by_name, note: c.note || '' }; }),
       milestones: milestones, tasks: tasks, todos: todos, raid: raid, baselines: baselines,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds,
       requirements: requirements, scope: scope
@@ -2077,6 +2084,72 @@ async function logProjectChanges(projectId, before, after, source) {
   });
   if (!rows.length) return;
   await sb.from('project_change_log').insert(rows);
+  // Editing a project's data is itself a form of validating it's still
+  // accurate, so it counts as a confirmation too -- see confirmProjectData
+  // for the explicit "Confirm still accurate" path.
+  var confirmedAt = new Date().toISOString();
+  await sb.from('projects').update({
+    data_confirmed_at: confirmedAt, data_confirmed_by: D.currentProfile.id, data_confirmed_by_name: D.currentProfile.display_name
+  }).eq('id', projectId);
+  var p = D.projects.find(function(x){ return x.id === projectId; });
+  if (p) { p.dataConfirmedAt = confirmedAt; p.dataConfirmedByName = D.currentProfile.display_name; }
+}
+
+// Past this many days since the last confirmation (explicit or via an edit),
+// the header badge switches from quiet green to a "needs review" amber.
+var DATA_CONFIRM_STALE_DAYS = 60;
+
+function daysSinceConfirmed(p) {
+  if (!p.dataConfirmedAt) return null;
+  return Math.floor((Date.now() - new Date(p.dataConfirmedAt).getTime()) / 86400000);
+}
+
+function dataConfirmedBadgeHtml(p) {
+  var days = daysSinceConfirmed(p);
+  if (days == null) return '<span class="badge badge-gray">Never confirmed</span>';
+  if (days > DATA_CONFIRM_STALE_DAYS) return '<span class="badge badge-amber"><i class="ti ti-alert-triangle"></i> Needs review &middot; ' + days + 'd</span>';
+  return '<span class="badge badge-teal"><i class="ti ti-circle-check"></i> ' + (days <= 0 ? 'Confirmed today' : 'Confirmed ' + days + 'd ago') + '</span>';
+}
+
+function dataConfirmedLineHtml(p) {
+  if (!p.dataConfirmedAt) return '<span class="text-muted" style="font-size:13px">Not yet confirmed</span>';
+  return fmtDate(p.dataConfirmedAt) + ' <span class="text-muted">by ' + p.dataConfirmedByName + '</span>';
+}
+
+function openConfirmDataModal(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!p) return;
+  showModal('<div class="modal-title">Confirm this project is still accurate <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="text-muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">This logs that you checked the project\'s details and they\'re still correct &mdash; it won\'t change any fields.</div>' +
+    '<div class="form-group"><div class="form-label">Note (optional)</div><textarea id="cdm-note" rows="3" placeholder="Anything worth flagging for next time?"></textarea></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-success" id="cdm-save"><i class="ti ti-circle-check"></i> Confirm</button></div>');
+  document.getElementById('cdm-save').onclick = async function() {
+    var note = document.getElementById('cdm-note').value.trim();
+    var btn = document.getElementById('cdm-save'); btn.disabled = true;
+    var ok = await confirmProjectData(pid, note);
+    if (!ok) { btn.disabled = false; return; }
+    closeModal(); showToast('Marked as reviewed');
+    if (currentPage === 'projectDetail') pgProjectDetail(pid, 'overview');
+  };
+}
+
+async function confirmProjectData(pid, note) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!p) return false;
+  var insertResult = await sb.from('project_confirmations').insert({
+    project_id: pid, confirmed_by: D.currentProfile.id, confirmed_by_name: D.currentProfile.display_name, note: note || null
+  }).select().single();
+  if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); return false; }
+  var updateResult = await sb.from('projects').update({
+    data_confirmed_at: insertResult.data.confirmed_at, data_confirmed_by: D.currentProfile.id, data_confirmed_by_name: D.currentProfile.display_name
+  }).eq('id', pid);
+  if (updateResult.error) { showToast('Could not save: ' + updateResult.error.message); return false; }
+  p.dataConfirmedAt = insertResult.data.confirmed_at;
+  p.dataConfirmedByName = D.currentProfile.display_name;
+  p.dataConfirmations = p.dataConfirmations || [];
+  p.dataConfirmations.unshift({ date: insertResult.data.confirmed_at, actor: D.currentProfile.display_name, note: note || '' });
+  return true;
 }
 
 function teamPickerHtml(prefix, toggleFnName, selectedNames) {
@@ -4648,17 +4721,34 @@ async function loadAndRenderChangeLog(pid) {
     return;
   }
 
-  var entries = (result.data || []).slice().sort(function(a,b){ return (b.changed_at||'').localeCompare(a.changed_at||''); });
+  var editEntries = (result.data || []).slice().sort(function(a,b){ return (b.changed_at||'').localeCompare(a.changed_at||''); });
 
   if (lastEditedEl) {
-    lastEditedEl.innerHTML = entries.length
-      ? '<div class="form-label">Last edited</div>' + fmtDate(entries[0].changed_at) + ' <span class="text-muted">by ' + entries[0].changed_by_name + '</span>'
+    lastEditedEl.innerHTML = editEntries.length
+      ? '<div class="form-label">Last edited</div>' + fmtDate(editEntries[0].changed_at) + ' <span class="text-muted">by ' + editEntries[0].changed_by_name + '</span>'
       : '<div class="form-label">Last edited</div><span class="text-muted">No changes recorded yet</span>';
   }
 
   if (logEl) {
-    logEl.innerHTML = entries.length
-      ? entries.map(function(e) {
+    var p = D.projects.find(function(x){ return x.id === pid; });
+    // Blend explicit "Confirm still accurate" entries in with real field
+    // edits, sorted together -- a confirmation is a real event in this
+    // project's history even though it doesn't change any field.
+    var confirmEntries = (p && p.dataConfirmations || []).map(function(c) {
+      return { kind: 'confirm', changed_at: c.date, changed_by_name: c.actor, note: c.note };
+    });
+    var combined = editEntries.map(function(e){ return Object.assign({ kind: 'edit' }, e); }).concat(confirmEntries)
+      .sort(function(a,b){ return (b.changed_at||'').localeCompare(a.changed_at||''); });
+
+    logEl.innerHTML = combined.length
+      ? combined.map(function(e) {
+          if (e.kind === 'confirm') {
+            return '<div style="padding:10px 0;border-bottom:1px solid var(--border-soft);display:flex;gap:10px;align-items:flex-start">' +
+              '<span style="width:20px;height:20px;border-radius:50%;background:var(--good-soft);color:var(--good-tx);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-circle-check" style="font-size:13px"></i></span>' +
+              '<div><div style="font-size:13px;color:var(--text-2)"><span class="bold">' + e.changed_by_name + '</span> confirmed this project\'s data is still accurate' + (e.note ? '<div style="font-style:italic;margin-top:3px">&ldquo;' + e.note + '&rdquo;</div>' : '') + '</div>' +
+              '<div class="text-muted" style="font-size:11px;margin-top:2px">' + fmtDate(e.changed_at) + '</div></div>' +
+            '</div>';
+          }
           var oldDisp = e.old_value == null ? '<em style="color:var(--text-faint)">empty</em>' : e.old_value;
           var newDisp = e.new_value == null ? '<em style="color:var(--text-faint)">empty</em>' : e.new_value;
           return '<div style="padding:10px 0;border-bottom:1px solid var(--border-soft)">' +
@@ -4880,6 +4970,10 @@ function pgProjectDetail(pid, tab) {
       var auditBody = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px">' +
             fieldBox('Created', fmtDate(p.createdAt)) +
             '<div id="pmeta-last-edited"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Last edited</div><span class="text-muted" style="font-size:13px">Loading…</span></div>' +
+          '</div>' +
+          '<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border-soft);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">' +
+            '<div><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Data confirmed</div>' + dataConfirmedLineHtml(p) + '</div>' +
+            (editable ? '<button class="btn btn-sm" onclick="openConfirmDataModal(\'' + p.id + '\')"><i class="ti ti-circle-check"></i> Confirm still accurate</button>' : '') +
           '</div>';
 
       var changelogBody = '<div id="pinfo-changelog-body"><div class="text-muted" style="font-size:13px">Loading…</div></div>';
@@ -5450,7 +5544,7 @@ function pgProjectDetail(pid, tab) {
 
   document.getElementById('content').innerHTML =
     '<div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 112px);box-sizing:border-box;overflow:hidden">' +
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;flex-shrink:0">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + lateBadgeHtml(isProjectLate(p)) + '</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;flex-shrink:0">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + lateBadgeHtml(isProjectLate(p)) + ' ' + dataConfirmedBadgeHtml(p) + '</div>' +
     '<div class="tab-bar" style="flex-shrink:0">' + tabsHtml + '</div>' +
     '<div id="ptab-content" style="flex:1;overflow-y:auto">' + tabC(tab) + '</div>' +
     '</div>';
