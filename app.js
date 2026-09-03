@@ -483,7 +483,8 @@ async function loadAllProjects() {
     var decisions = (decisionByProj[pr.id] || []).map(function(d) {
       return {
         id: d.id, decision: d.decision, rationale: d.rationale || '',
-        decidedBy: d.decided_by_name || '', decidedDate: d.decided_date,
+        decidedBy: d.decided_by_name || (d.decided_by_resource_id ? (resourceNameById[d.decided_by_resource_id] || '') : ''),
+        decidedById: d.decided_by_resource_id, decidedDate: d.decided_date,
         log: mapLog(decisionLogByItem[d.id])
       };
     });
@@ -7358,12 +7359,17 @@ function openDecisionModal(pid, idx) {
   p.decisions = p.decisions || [];
   var isEdit = idx != null;
   var it = isEdit ? p.decisions[idx] : null;
+  var byPool = individualResourceNames();
+  if (it && it.decidedBy && byPool.indexOf(it.decidedBy) < 0) byPool = byPool.concat([it.decidedBy]);
+  var byOpts = '<option value="">— None —</option>' + byPool.map(function(n){
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (it && it.decidedBy===n ? ' selected' : '') + '>' + n + '</option>';
+  }).join('');
 
   showModal('<div class="modal-title">' + (isEdit ? 'Edit decision' : 'Log a decision') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Decision *</div><textarea id="dcm-decision" rows="2" placeholder="What was decided?">' + (it ? it.decision : '') + '</textarea></div>' +
     '<div class="form-group"><div class="form-label">Rationale</div><textarea id="dcm-rationale" rows="3" placeholder="Context, options considered, why this was chosen…">' + (it ? (it.rationale||'') : '') + '</textarea></div>' +
     '<div class="grid-2">' +
-      '<div class="form-group"><div class="form-label">Decided by</div><input type="text" id="dcm-by" value="' + (it ? (it.decidedBy||'') : '') + '" placeholder="Name or group, e.g. Steering Committee"></div>' +
+      '<div class="form-group"><div class="form-label">Decided by</div><select id="dcm-by">' + byOpts + '</select></div>' +
       '<div class="form-group"><div class="form-label">Date decided</div><input type="date" id="dcm-date" value="' + (it ? (it.decidedDate||'') : todayStr()) + '"></div>' +
     '</div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
@@ -7372,10 +7378,12 @@ function openDecisionModal(pid, idx) {
   document.getElementById('dcm-save').onclick = async function() {
     var decision = document.getElementById('dcm-decision').value.trim();
     if (!decision) { showToast('Decision required'); return; }
+    var decidedBy = document.getElementById('dcm-by').value;
+    var decidedByResource = decidedBy ? resolveResource(decidedBy) : null;
     var newVals = {
       decision: decision,
       rationale: document.getElementById('dcm-rationale').value.trim(),
-      decidedBy: document.getElementById('dcm-by').value.trim(),
+      decidedBy: decidedBy,
       decidedDate: document.getElementById('dcm-date').value || null
     };
     var btn = document.getElementById('dcm-save'); btn.disabled = true;
@@ -7388,21 +7396,24 @@ function openDecisionModal(pid, idx) {
       });
       var result = await sb.from('decision_items').update({
         decision: newVals.decision, rationale: newVals.rationale || null,
-        decided_by_name: newVals.decidedBy || null, decided_date: newVals.decidedDate
+        decided_by_name: newVals.decidedBy || null, decided_by_resource_id: decidedByResource ? decidedByResource.id : null,
+        decided_date: newVals.decidedDate
       }).eq('id', it.id);
       if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
-      it.decision = newVals.decision; it.rationale = newVals.rationale; it.decidedBy = newVals.decidedBy; it.decidedDate = newVals.decidedDate;
+      it.decision = newVals.decision; it.rationale = newVals.rationale; it.decidedBy = newVals.decidedBy;
+      it.decidedById = decidedByResource ? decidedByResource.id : null; it.decidedDate = newVals.decidedDate;
       it.log = it.log || [];
       if (changes.length) it.log.push(await writeLog('decision_log', 'decision_id', it.id, 'Updated', changes.join('; ')));
       showToast('Decision updated');
     } else {
       var insertResult = await sb.from('decision_items').insert({
         project_id: pid, decision: newVals.decision, rationale: newVals.rationale || null,
-        decided_by_name: newVals.decidedBy || null, decided_date: newVals.decidedDate,
+        decided_by_name: newVals.decidedBy || null, decided_by_resource_id: decidedByResource ? decidedByResource.id : null,
+        decided_date: newVals.decidedDate,
         created_by: D.currentProfile.id, created_by_name: D.currentProfile.display_name
       }).select().single();
       if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
-      var newIt = { id: insertResult.data.id, decision: newVals.decision, rationale: newVals.rationale, decidedBy: newVals.decidedBy, decidedDate: newVals.decidedDate, log: [] };
+      var newIt = { id: insertResult.data.id, decision: newVals.decision, rationale: newVals.rationale, decidedBy: newVals.decidedBy, decidedById: decidedByResource ? decidedByResource.id : null, decidedDate: newVals.decidedDate, log: [] };
       newIt.log.push(await writeLog('decision_log', 'decision_id', newIt.id, 'Created', ''));
       p.decisions.push(newIt);
       showToast('Decision logged');
