@@ -2208,19 +2208,19 @@ function buildReportHtml(p) {
   // the one spacing technique that survives every paste mode, since it's
   // text content, not styling that can be stripped.
   function badge(label, col) {
-    return '<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:bold;background-color:' + col[0] + ';color:' + col[1] + ';' + FONT + '">' + label + '</span>';
+    return '<span style="display:inline-block;padding:4px 11px;border-radius:20px;font-size:12px;font-weight:bold;background-color:' + col[0] + ';color:' + col[1] + ';' + FONT + '">' + label + '</span>';
   }
   function h2(label, extra) {
-    return '<div style="font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#3C3489;' + FONT + 'padding-bottom:10px">' + label + (extra ? ' <span style="font-weight:normal;color:#999;text-transform:none;letter-spacing:0">' + extra + '</span>' : '') + '</div>';
+    return '<div style="font-size:13px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#3C3489;' + FONT + 'padding-bottom:12px">' + label + (extra ? ' <span style="font-weight:normal;color:#999;text-transform:none;letter-spacing:0">' + extra + '</span>' : '') + '</div>';
   }
   function narrative(text, placeholder) {
-    return '<div style="font-size:13px;line-height:22px;color:#444;' + FONT + '">' + (text ? String(text).replace(/\n/g,'<br>') : '<span style="color:#999">' + placeholder + '</span>') + '</div>';
+    return '<div style="font-size:14px;line-height:24px;color:#444;' + FONT + '">' + (text ? String(text).replace(/\n/g,'<br>') : '<span style="color:#999">' + placeholder + '</span>') + '</div>';
   }
   function personBlock(label, value) {
-    return '<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#999;' + FONT + 'padding-bottom:3px">' + label + '</div><div style="font-size:13px;color:#1a1a1a;' + FONT + '">' + (value || '—') + '</div>';
+    return '<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#999;' + FONT + 'padding-bottom:5px">' + label + '</div><div style="font-size:14px;color:#1a1a1a;' + FONT + '">' + (value || '—') + '</div>';
   }
   function statBlock(label, value) {
-    return '<div style="font-size:11px;color:#777;' + FONT + 'padding-bottom:4px">' + label + '</div><div style="font-size:17px;font-weight:bold;color:#1a1a1a;' + FONT + '">' + value + '</div>';
+    return '<div style="font-size:12px;color:#777;' + FONT + 'padding-bottom:6px">' + label + '</div><div style="font-size:19px;font-weight:bold;color:#1a1a1a;' + FONT + '">' + value + '</div>';
   }
   function threeCol(a, b, c) {
     return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
@@ -2236,18 +2236,23 @@ function buildReportHtml(p) {
     '</tr></table>';
   }
   function msTable(items, emptyMsg) {
-    if (!items.length) return '<div style="font-size:12px;color:#999;' + FONT + '">' + emptyMsg + '</div>';
+    if (!items.length) return '<div style="font-size:13px;color:#999;' + FONT + '">' + emptyMsg + '</div>';
     return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">' +
       items.map(function(row) {
         return '<tr>' +
-          '<td style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:12px;color:' + (row.late?'#E24B4A':'#1a1a1a') + ';' + FONT + '">' + row.name + '</td>' +
-          '<td align="right" style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:12px;color:' + (row.late?'#E24B4A':'#999') + ';white-space:nowrap;' + FONT + '">' + row.date + '</td>' +
+          '<td style="padding:8px 0;border-bottom:1px solid #f0ede8;font-size:13px;color:' + (row.late?'#E24B4A':'#1a1a1a') + ';' + FONT + '">' + row.name + '</td>' +
+          '<td align="right" style="padding:8px 0;border-bottom:1px solid #f0ede8;font-size:13px;color:' + (row.late?'#E24B4A':'#999') + ';white-space:nowrap;' + FONT + '">' + row.date + '</td>' +
         '</tr>';
       }).join('') +
     '</table>';
   }
-  function divider() {
-    return '<div style="border-top:1px solid #f0ede8;font-size:1px;line-height:1px;padding-top:22px;margin-top:22px">&nbsp;</div>';
+  // Every section is its own table row, and vertical spacing comes from
+  // padding on that row's <td> -- not margin/padding on a plain <div>, and
+  // not a font-size:1px spacer div (both are collapsed unpredictably by
+  // Outlook's Word-based rendering, even in "Keep Source Formatting" paste
+  // mode). td padding is the one spacing mechanism Outlook reliably honors.
+  function section(html, divider) {
+    return '<tr><td style="padding-top:30px' + (divider ? ';border-top:1px solid #f0ede8' : '') + '">' + html + '</td></tr>';
   }
 
   var sc = stageColors[p.stage] || stageColors.backlog;
@@ -2262,45 +2267,45 @@ function buildReportHtml(p) {
   var upcomingItems = s.upcoming.map(function(m){ var late = isMilestoneLate(m); return { name: m.name, date: late ? 'Late, was ' + fmtDate(m.date) : fmtDate(m.date), late: late }; });
 
   var raidHtml = s.raidItems.length
-    ? s.raidItems.map(function(item){ return '<div style="padding:7px 0;border-bottom:1px solid #f0ede8;font-size:12px;' + FONT + '">' + badge(item.severity, sevColors[item.severity] || sevColors.Medium) + '&nbsp;&nbsp;<span style="color:#333">' + item.desc + '</span></div>'; }).join('')
-    : '<div style="font-size:12px;color:#999;' + FONT + '">No open risks or issues</div>';
+    ? s.raidItems.map(function(item){ return '<div style="padding:9px 0;border-bottom:1px solid #f0ede8;font-size:13px;' + FONT + '">' + badge(item.severity, sevColors[item.severity] || sevColors.Medium) + '&nbsp;&nbsp;<span style="color:#333">' + item.desc + '</span></div>'; }).join('')
+    : '<div style="font-size:13px;color:#999;' + FONT + '">No open risks or issues</div>';
 
   var metaLine = [p.value, p.businessUnit].filter(Boolean).join(' &nbsp;&middot;&nbsp; ') + (p.deliveryMethodology ? ' &nbsp;&middot;&nbsp; ' + p.deliveryMethodology + ' delivery' : '');
+
+  var headHtml =
+    '<div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:1px;' + FONT + 'padding-bottom:20px">PMO Hub &nbsp;&middot;&nbsp; Project Status Report &nbsp;&nbsp;&nbsp; As of ' + fmtDate(todayStr()) + '</div>' +
+    '<div style="font-size:25px;font-weight:bold;' + FONT + 'padding-bottom:8px">' + p.name + '</div>' +
+    '<div style="font-size:14px;color:#777;' + FONT + 'padding-bottom:16px">' + metaLine + '</div>' +
+    '<div>' + badgesHtml + '</div>';
+  var peopleHtml = threeCol(personBlock('Owner', p.owner), personBlock('Sponsor', p.sponsor), personBlock('Target end', p.end ? fmtDate(p.end) : 'TBD'));
+  var progressHtml = '<div style="font-size:13px;color:#777;' + FONT + '">Progress: <b style="color:#1a1a1a">' + (p.progress||0) + '%</b> complete</div>';
 
   // A real <table width="640"> here, not a <div style="max-width:...">, is
   // deliberate -- Outlook only reliably respects a pixel width attribute on
   // a table, not CSS max-width on a div (it'll happily stretch the div to
   // fill the compose window, dragging every nested percentage-width table
   // along with it).
-  return '<table role="presentation" align="center" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;' + FONT + 'color:#1a1a1a;background-color:#ffffff;border:1px solid #e8e8e5;border-radius:8px"><tr><td style="padding:32px">' +
-      '<div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:1px;' + FONT + 'padding-bottom:18px">PMO Hub &nbsp;&middot;&nbsp; Project Status Report &nbsp;&nbsp;&nbsp; As of ' + fmtDate(todayStr()) + '</div>' +
-      '<div style="font-size:22px;font-weight:bold;' + FONT + 'padding-bottom:6px">' + p.name + '</div>' +
-      '<div style="font-size:13px;color:#777;' + FONT + 'padding-bottom:14px">' + metaLine + '</div>' +
-      '<div style="padding-bottom:16px">' + badgesHtml + '</div>' +
-      threeCol(personBlock('Owner', p.owner), personBlock('Sponsor', p.sponsor), personBlock('Target end', p.end ? fmtDate(p.end) : 'TBD')) +
-      '<div style="padding-top:16px;font-size:12px;color:#777;' + FONT + '">Progress: <b style="color:#1a1a1a">' + (p.progress||0) + '%</b> complete</div>' +
-      divider() +
-      h2('Executive Summary') + narrative(p.summaryNarrative, 'No summary provided yet.') +
-      divider() +
-      twoCol(
+  return '<table role="presentation" align="center" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;' + FONT + 'color:#1a1a1a;background-color:#ffffff;border:1px solid #e8e8e5;border-radius:8px"><tr><td style="padding:36px 40px">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">' +
+      '<tr><td>' + headHtml + '</td></tr>' +
+      section(peopleHtml) +
+      section(progressHtml) +
+      section(h2('Executive Summary') + narrative(p.summaryNarrative, 'No summary provided yet.'), true) +
+      section(twoCol(
         h2('Recently Completed', 'since ' + fmtDate(s.sinceDate)) + msTable(recentItems, 'Nothing completed in this period'),
         h2('Upcoming Milestones') + msTable(upcomingItems, 'No upcoming milestones')
-      ) +
-      divider() +
-      h2('Progress Snapshot') +
-      threeCol(
+      ), true) +
+      section(h2('Progress Snapshot') + threeCol(
         statBlock('Plan tasks', s.tasksDone + ' of ' + s.tasksTotal + ' done'),
         statBlock('Requirements', s.reqDone + ' of ' + s.reqTotal + ' complete'),
         statBlock('Scope items', s.scopeDone + ' of ' + s.scopeTotal + ' complete')
-      ) +
-      divider() +
-      h2('Risks &amp; Issues') + raidHtml +
-      divider() +
-      h2('Asks &amp; Decisions Needed') + narrative(p.summaryAsks, 'Nothing noted.') +
-      divider() +
-      h2('What&rsquo;s Next') + narrative(p.summaryNextSteps, 'Nothing noted.') +
-      '<div style="margin-top:26px;padding-top:14px;border-top:1px solid #f0ede8;font-size:11px;color:#999;' + FONT + '">Generated from PMO Hub on ' + fmtDate(todayStr()) + '</div>' +
-    '</td></tr></table>';
+      ), true) +
+      section(h2('Risks &amp; Issues') + raidHtml, true) +
+      section(h2('Asks &amp; Decisions Needed') + narrative(p.summaryAsks, 'Nothing noted.'), true) +
+      section(h2('What&rsquo;s Next') + narrative(p.summaryNextSteps, 'Nothing noted.'), true) +
+      section('<div style="font-size:12px;color:#999;' + FONT + '">Generated from PMO Hub on ' + fmtDate(todayStr()) + '</div>', true) +
+    '</table>' +
+  '</td></tr></table>';
 }
 
 function reportPlainText(p) {
