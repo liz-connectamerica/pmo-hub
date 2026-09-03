@@ -2289,7 +2289,7 @@ function buildReportHtml(p) {
   // a table, not CSS max-width on a div (it'll happily stretch the div to
   // fill the compose window, dragging every nested percentage-width table
   // along with it).
-  return '<table role="presentation" align="center" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;' + FONT + 'color:#1a1a1a;background-color:#ffffff;border:1px solid #e8e8e5;border-radius:8px"><tr><td style="padding:36px 40px">' +
+  return '<table role="presentation" align="center" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;color-scheme:light;' + FONT + 'color:#1a1a1a;background-color:#ffffff;border:1px solid #e8e8e5;border-radius:8px"><tr><td style="padding:36px 40px">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">' +
       '<tr><td>' + headHtml + '</td></tr>' +
       section(peopleHtml) +
@@ -2358,7 +2358,7 @@ function renderSummarizeTab(p, editable) {
           '<button class="btn btn-sm" onclick="copyReportForEmail(\'' + p.id + '\')"><i class="ti ti-copy"></i> Copy for email</button>' +
           '<button class="btn btn-primary btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Download PDF</button>' +
         '</div>' +
-        '<div class="text-muted" style="margin-top:6px;max-width:320px">Start a new email yourself (so your signature comes along), then right-click in the body and choose <b>Paste Special &rarr; Keep Source Formatting</b> to paste the report in.</div>' +
+        '<div class="text-muted" style="margin-top:6px;max-width:320px">When copying into email, choose Paste Special &rarr; Keep Source Formatting to paste the report in.</div>' +
       '</div>' +
     '</div>' +
     '<div class="summarize-grid" style="display:grid;grid-template-columns:360px 1fr;gap:22px;align-items:start">' +
@@ -2373,7 +2373,7 @@ function renderSummarizeTab(p, editable) {
           '<textarea id="sm-next" rows="3" placeholder="Priorities for the coming period"' + dis + (editable ? ' onblur="saveSummaryField(\'' + p.id + '\',\'next\',this.value)"' : '') + '>' + (p.summaryNextSteps||'') + '</textarea></div>' +
         (editable ? '<div class="text-muted" style="margin-top:10px">Saves automatically when you click away from a field. This is always the current draft -- past reports aren\'t kept.</div>' : '') +
       '</div>' +
-      '<div id="sm-report-wrap">' + buildReportHtml(p) + '</div>' +
+      '<div id="sm-report-wrap" style="color-scheme:light;background:#f5f5f3;border-radius:12px;padding:20px">' + buildReportHtml(p) + '</div>' +
     '</div>';
 }
 
