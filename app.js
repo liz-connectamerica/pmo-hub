@@ -2214,7 +2214,8 @@ function buildReportHtml(p) {
     return '<span style="font-size:12px;color:#777;' + FONT + '">' + fieldLabel + ':&nbsp;</span>' + badge(value, col);
   }
   function h2(label, extra) {
-    return '<div style="font-size:13px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#3C3489;' + FONT + 'padding-bottom:12px">' + label + (extra ? ' <span style="font-weight:normal;color:#999;text-transform:none;letter-spacing:0">' + extra + '</span>' : '') + '</div>';
+    return '<div style="font-size:13px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#3C3489;' + FONT + (extra ? 'padding-bottom:2px' : 'padding-bottom:12px') + '">' + label + '</div>' +
+      (extra ? '<div style="font-size:11px;font-weight:normal;color:#999;' + FONT + 'padding-bottom:12px">' + extra + '</div>' : '');
   }
   function narrative(text, placeholder) {
     return '<div style="font-size:14px;line-height:24px;color:#444;' + FONT + '">' + (text ? String(text).replace(/\n/g,'<br>') : '<span style="color:#999">' + placeholder + '</span>') + '</div>';
