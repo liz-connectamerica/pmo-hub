@@ -4894,7 +4894,10 @@ function pgProjectDetail(pid, tab) {
             '<div class="form-group" style="margin-bottom:0"><div class="form-label">Category</div>' + catCbsI + '</div>' +
             saveCancelRow('saveProjectIdentity');
         }
-        return editBtnRow('identity') +
+        return '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px">' +
+              (editable ? '<button class="btn btn-sm" onclick="setProjectInfoEditing(\'identity\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
+              (D.role === 'admin' ? '<button class="btn btn-sm btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
+            '</div>' +
             fieldBox('Project name', p.name) +
             '<div class="form-group" style="margin:12px 0"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin:12px 0 16px">' +
@@ -5111,7 +5114,6 @@ function pgProjectDetail(pid, tab) {
             '</div>' +
             '<div style="display:flex;gap:8px">' +
               ((isAdminPeople || canEditReqOwnerOnly) ? '<button class="btn btn-sm" onclick="setPeopleEditing(true)"><i class="ti ti-edit"></i> Edit</button>' : '') +
-              (isAdminPeople ? '<button class="btn btn-sm btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
             '</div>' +
           '</div>' +
         '</div>';
