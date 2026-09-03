@@ -283,7 +283,12 @@ async function loadAllProjects() {
     sb.from('scope_items').select('*'),
     sb.from('scope_comments').select('*'),
     sb.from('scope_log').select('*'),
-    sb.from('project_confirmations').select('*')
+    sb.from('project_confirmations').select('*'),
+    sb.from('decision_items').select('*'),
+    sb.from('decision_log').select('*'),
+    sb.from('meeting_minutes').select('*'),
+    sb.from('meeting_minutes_attendees').select('*'),
+    sb.from('meeting_log').select('*')
   ]);
 
   for (var i = 0; i < results.length; i++) {
@@ -325,6 +330,11 @@ async function loadAllProjects() {
   var scopeCommentRows   = results[25].data || [];
   var scopeLogRows       = results[26].data || [];
   var confirmationRows   = results[27].data || [];
+  var decisionRows       = results[28].data || [];
+  var decisionLogRows    = results[29].data || [];
+  var meetingRows         = results[30].data || [];
+  var meetingAttendeeRows = results[31].data || [];
+  var meetingLogRows      = results[32].data || [];
   var priorityRankByProj = {};
   priorityRankRows.forEach(function(r){ priorityRankByProj[r.project_id] = { rank: r.rank, isOverride: r.is_override }; });
 
@@ -365,6 +375,11 @@ async function loadAllProjects() {
   var scopeCommentsByItem = groupBy(scopeCommentRows, 'scope_item_id');
   var scopeLogByItem     = groupBy(scopeLogRows, 'scope_item_id');
   var confirmationsByProj = groupBy(confirmationRows, 'project_id');
+  var decisionByProj      = groupBy(decisionRows, 'project_id');
+  var decisionLogByItem   = groupBy(decisionLogRows, 'decision_id');
+  var meetingByProj       = groupBy(meetingRows, 'project_id');
+  var meetingAttendeesByMeeting = groupBy(meetingAttendeeRows, 'meeting_id');
+  var meetingLogByMeeting = groupBy(meetingLogRows, 'meeting_id');
   var folderNameById     = {};
   folderRows.forEach(function(f){ folderNameById[f.id] = f.name; });
 
@@ -465,6 +480,25 @@ async function loadAllProjects() {
       };
     });
 
+    var decisions = (decisionByProj[pr.id] || []).map(function(d) {
+      return {
+        id: d.id, decision: d.decision, rationale: d.rationale || '',
+        decidedBy: d.decided_by_name || '', decidedDate: d.decided_date,
+        log: mapLog(decisionLogByItem[d.id])
+      };
+    });
+
+    var meetingMinutes = (meetingByProj[pr.id] || []).slice()
+      .sort(function(a,b){ return (b.meeting_date||'').localeCompare(a.meeting_date||'') || (b.meeting_time||'').localeCompare(a.meeting_time||''); })
+      .map(function(m) {
+        return {
+          id: m.id, title: m.title, date: m.meeting_date, time: m.meeting_time,
+          recap: m.recap || '',
+          attendees: (meetingAttendeesByMeeting[m.id] || []).map(function(a){ return { resourceId: a.resource_id, name: a.resource_name }; }),
+          log: mapLog(meetingLogByMeeting[m.id])
+        };
+      });
+
     var raid = { risks: [], assumptions: [], issues: [], dependencies: [] };
     (raidByProj[pr.id] || []).forEach(function(r) {
       var base = { id: r.id, desc: r.description, owner: r.owner_name, ownerId: r.owner_id, status: r.status, log: mapLog(raidLogByItem[r.id]) };
@@ -530,7 +564,7 @@ async function loadAllProjects() {
         .map(function(c){ return { date: c.confirmed_at, actor: c.confirmed_by_name, note: c.note || '' }; }),
       milestones: milestones, tasks: tasks, todos: todos, raid: raid, baselines: baselines,
       documents: documents, docFolders: docFolders.length ? docFolders : ['General'], docFolderIds: docFolderIds,
-      requirements: requirements, scope: scope
+      requirements: requirements, scope: scope, decisions: decisions, meetingMinutes: meetingMinutes
     };
   });
 }
@@ -1945,6 +1979,11 @@ var docSubTabState = {};
 var reqScopeLogOpen = {};
 var reqScopeCommentsOpen = {};
 var reqScopeDescOpen = {};
+var decisionLogOpen = {};
+var decisionRationaleOpen = {};
+var meetingSearchState = {};
+var meetingLogOpen = {};
+var meetingRecapOpen = {};
 var REQ_SCOPE_STATUSES = ['Planned','In Progress','Completed','Deferred','Cancelled'];
 var REQ_SCOPE_CONFIG = {
   requirements: { table: 'requirement_items', logTable: 'requirement_log', commentTable: 'requirement_comments', fk: 'requirement_id', arrayKey: 'requirements', singular: 'requirement', label: 'Requirement', addLabel: 'Add requirement' },
@@ -2524,6 +2563,15 @@ function raidOpenedDate(item) {
 function fmtDateTime(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
+}
+
+function fmtTime(t) {
+  if (!t) return '';
+  var parts = t.split(':');
+  var h = parseInt(parts[0], 10);
+  var ap = h >= 12 ? 'PM' : 'AM';
+  var h12 = h % 12 || 12;
+  return h12 + ':' + parts[1] + ' ' + ap;
 }
 
 function bdg(s) {
@@ -5841,9 +5889,11 @@ function pgProjectDetail(pid, tab) {
       }
 
       var docNavItems = [
-        { key:'requirements', label:'Requirements', icon:'ti-list-check' },
-        { key:'scope',        label:'Scope',        icon:'ti-target-arrow' },
-        { key:'attachments',  label:'Attachments',  icon:'ti-paperclip' }
+        { key:'requirements', label:'Requirements',    icon:'ti-list-check' },
+        { key:'scope',        label:'Scope',           icon:'ti-target-arrow' },
+        { key:'decisions',    label:'Decisions',       icon:'ti-gavel' },
+        { key:'minutes',      label:'Meeting Minutes', icon:'ti-calendar-event' },
+        { key:'attachments',  label:'Attachments',     icon:'ti-paperclip' }
       ];
       var docNavHtml = '<div style="width:180px;flex-shrink:0;display:flex;flex-direction:column;gap:2px">' +
         docNavItems.map(function(n){
@@ -5852,7 +5902,10 @@ function pgProjectDetail(pid, tab) {
           return '<div class="nav-item' + (docSub===n.key?' active':'') + '" onclick="setDocSubTab(\'' + p.id + '\',\'' + n.key + '\')"><i class="ti ' + n.icon + '"></i>' + n.label + badge + '</div>';
         }).join('') +
         '</div>';
-      var docPanelHtml = docSub === 'attachments' ? attachmentsPanelHtml() : renderReqScopePanel(p, docSub, canEditRequirements(p));
+      var docPanelHtml = docSub === 'attachments' ? attachmentsPanelHtml()
+        : docSub === 'decisions' ? renderDecisionsPanel(p, editable)
+        : docSub === 'minutes' ? renderMeetingMinutesPanel(p, editable)
+        : renderReqScopePanel(p, docSub, canEditRequirements(p));
       return '<div style="display:flex;gap:24px;align-items:flex-start">' + docNavHtml + '<div style="flex:1;min-width:0">' + docPanelHtml + '</div></div>';
     }
     if (t === 'summarize') {
@@ -7257,6 +7310,316 @@ async function deleteReqScopeComment(kind, pid2, itemId, cid) {
   it.comments = it.comments.filter(function(x){ return x.id !== cid; });
   refreshTaskView();
   showToast('Comment deleted');
+}
+
+// ── Decisions: a simple project decision log, no status workflow -- a
+// decision is recorded once it's made, not tracked through a lifecycle.
+function renderDecisionsPanel(p, editable) {
+  var items = (p.decisions || []).slice().sort(function(a,b){ return (b.decidedDate||'').localeCompare(a.decidedDate||''); });
+
+  var rows = items.map(function(it) {
+    var idx = p.decisions.indexOf(it);
+    var key = p.id + '|' + it.id;
+    var logOpenNow = !!decisionLogOpen[key];
+    var logRow = '';
+    if (logOpenNow) {
+      var entries = (it.log && it.log.length) ? it.log.slice().reverse().map(function(e){
+        return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+      }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+      logRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+    }
+    var rOpenNow = !!decisionRationaleOpen[key];
+    var rationaleRow = '';
+    if (rOpenNow) {
+      rationaleRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+        (it.rationale ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + it.rationale + '</div>' : '<div class="text-muted" style="font-size:12px">No rationale recorded</div>') +
+        '</div></td></tr>';
+    }
+    return '<tr><td><span style="font-size:13px">' + it.decision + '</span></td>' +
+      '<td class="text-muted">' + (it.decidedBy || '—') + '</td>' +
+      '<td class="text-muted">' + fmtDate(it.decidedDate) + '</td>' +
+      '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
+      '<button class="btn btn-sm" title="Rationale" onclick="toggleDecisionRationale(\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ' + (rOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
+      '<button class="btn btn-sm" title="Change log" onclick="toggleDecisionLog(\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+      (editable ? '<button class="btn btn-sm" onclick="openDecisionModal(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteDecisionItem(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
+      '</div></td></tr>' + rationaleRow + logRow;
+  }).join('');
+
+  var header = '<tr><th>Decision</th><th>Decided by</th><th>Decided</th><th></th></tr>';
+
+  return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openDecisionModal(\'' + p.id + '\',null)"><i class="ti ti-plus"></i> Log a decision</button>' : '') +
+    (items.length
+      ? '<table class="tasks-table"><thead>' + header + '</thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="empty-state" style="padding:30px"><i class="ti ti-gavel"></i><p>No decisions logged yet.</p></div>');
+}
+
+function openDecisionModal(pid, idx) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  p.decisions = p.decisions || [];
+  var isEdit = idx != null;
+  var it = isEdit ? p.decisions[idx] : null;
+
+  showModal('<div class="modal-title">' + (isEdit ? 'Edit decision' : 'Log a decision') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Decision *</div><textarea id="dcm-decision" rows="2" placeholder="What was decided?">' + (it ? it.decision : '') + '</textarea></div>' +
+    '<div class="form-group"><div class="form-label">Rationale</div><textarea id="dcm-rationale" rows="3" placeholder="Context, options considered, why this was chosen…">' + (it ? (it.rationale||'') : '') + '</textarea></div>' +
+    '<div class="grid-2">' +
+      '<div class="form-group"><div class="form-label">Decided by</div><input type="text" id="dcm-by" value="' + (it ? (it.decidedBy||'') : '') + '" placeholder="Name or group, e.g. Steering Committee"></div>' +
+      '<div class="form-group"><div class="form-label">Date decided</div><input type="date" id="dcm-date" value="' + (it ? (it.decidedDate||'') : todayStr()) + '"></div>' +
+    '</div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="dcm-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Log decision') + '</button></div>');
+
+  document.getElementById('dcm-save').onclick = async function() {
+    var decision = document.getElementById('dcm-decision').value.trim();
+    if (!decision) { showToast('Decision required'); return; }
+    var newVals = {
+      decision: decision,
+      rationale: document.getElementById('dcm-rationale').value.trim(),
+      decidedBy: document.getElementById('dcm-by').value.trim(),
+      decidedDate: document.getElementById('dcm-date').value || null
+    };
+    var btn = document.getElementById('dcm-save'); btn.disabled = true;
+
+    if (isEdit) {
+      var fieldLabels = { decision:'Decision', rationale:'Rationale', decidedBy:'Decided by', decidedDate:'Date decided' };
+      var changes = [];
+      ['decision','rationale','decidedBy','decidedDate'].forEach(function(f){
+        if ((it[f]||'') !== (newVals[f]||'')) changes.push(fieldLabels[f] + ': "' + (it[f]||'—') + '" → "' + (newVals[f]||'—') + '"');
+      });
+      var result = await sb.from('decision_items').update({
+        decision: newVals.decision, rationale: newVals.rationale || null,
+        decided_by_name: newVals.decidedBy || null, decided_date: newVals.decidedDate
+      }).eq('id', it.id);
+      if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+      it.decision = newVals.decision; it.rationale = newVals.rationale; it.decidedBy = newVals.decidedBy; it.decidedDate = newVals.decidedDate;
+      it.log = it.log || [];
+      if (changes.length) it.log.push(await writeLog('decision_log', 'decision_id', it.id, 'Updated', changes.join('; ')));
+      showToast('Decision updated');
+    } else {
+      var insertResult = await sb.from('decision_items').insert({
+        project_id: pid, decision: newVals.decision, rationale: newVals.rationale || null,
+        decided_by_name: newVals.decidedBy || null, decided_date: newVals.decidedDate,
+        created_by: D.currentProfile.id, created_by_name: D.currentProfile.display_name
+      }).select().single();
+      if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
+      var newIt = { id: insertResult.data.id, decision: newVals.decision, rationale: newVals.rationale, decidedBy: newVals.decidedBy, decidedDate: newVals.decidedDate, log: [] };
+      newIt.log.push(await writeLog('decision_log', 'decision_id', newIt.id, 'Created', ''));
+      p.decisions.push(newIt);
+      showToast('Decision logged');
+    }
+    closeModal(); if (window.switchPTab) window.switchPTab('documentation');
+  };
+}
+
+async function deleteDecisionItem(pid, idx) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var it = p.decisions[idx];
+  if (!confirm('Delete this decision?')) return;
+  var result = await sb.from('decision_items').delete().eq('id', it.id);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  p.decisions = p.decisions.filter(function(x){ return x.id !== it.id; });
+  refreshTaskView();
+  showToast('Decision deleted');
+}
+
+function toggleDecisionRationale(pid2, itemId) {
+  var key = pid2 + '|' + itemId;
+  decisionRationaleOpen[key] = !decisionRationaleOpen[key];
+  refreshTaskView();
+}
+
+function toggleDecisionLog(pid2, itemId) {
+  var key = pid2 + '|' + itemId;
+  decisionLogOpen[key] = !decisionLogOpen[key];
+  refreshTaskView();
+}
+
+// ── Meeting Minutes: searchable meeting notes -- date/time, attendees (picked
+// from the resource roster), and a free-form recap.
+function renderMeetingMinutesPanel(p, editable) {
+  var q = (meetingSearchState[p.id] || '').toLowerCase();
+  var all = p.meetingMinutes || [];
+  var items = !q ? all : all.filter(function(m) {
+    var hay = (m.title + ' ' + (m.recap||'') + ' ' + m.attendees.map(function(a){ return a.name; }).join(' ')).toLowerCase();
+    return hay.indexOf(q) >= 0;
+  });
+
+  var rows = items.map(function(m) {
+    var idx = p.meetingMinutes.indexOf(m);
+    var key = p.id + '|' + m.id;
+    var logOpenNow = !!meetingLogOpen[key];
+    var logRow = '';
+    if (logOpenNow) {
+      var entries = (m.log && m.log.length) ? m.log.slice().reverse().map(function(e){
+        return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+      }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+      logRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+    }
+    var rOpenNow = !!meetingRecapOpen[key];
+    var recapRow = '';
+    if (rOpenNow) {
+      recapRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+        (m.recap ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + m.recap + '</div>' : '<div class="text-muted" style="font-size:12px">No recap recorded</div>') +
+        '</div></td></tr>';
+    }
+    var attendeesLabel = m.attendees.length ? m.attendees.map(function(a){ return a.name; }).join(', ') : '—';
+    return '<tr><td><span style="font-size:13px">' + m.title + '</span></td>' +
+      '<td class="text-muted">' + fmtDate(m.date) + (m.time ? ' ' + fmtTime(m.time) : '') + '</td>' +
+      '<td class="text-muted" style="word-break:break-word">' + attendeesLabel + '</td>' +
+      '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
+      '<button class="btn btn-sm" title="Recap" onclick="toggleMeetingRecap(\'' + p.id + '\',\'' + m.id + '\')"><i class="ti ' + (rOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
+      '<button class="btn btn-sm" title="Change log" onclick="toggleMeetingLog(\'' + p.id + '\',\'' + m.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+      (editable ? '<button class="btn btn-sm" onclick="openMeetingModal(\'' + p.id + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteMeeting(\'' + p.id + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
+      '</div></td></tr>' + recapRow + logRow;
+  }).join('');
+
+  var header = '<tr><th>Meeting</th><th>Date</th><th>Attendees</th><th></th></tr>';
+  var searchBar = '<div class="task-filter-bar"><input type="text" id="mm-search" placeholder="Search meetings…" value="' + (meetingSearchState[p.id]||'').replace(/"/g,'&quot;') + '" oninput="onMeetingSearch(\'' + p.id + '\',this.value)"></div>';
+
+  return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openMeetingModal(\'' + p.id + '\',null)"><i class="ti ti-plus"></i> Add meeting minutes</button>' : '') +
+    searchBar +
+    (all.length
+      ? (items.length ? '<table class="tasks-table"><thead>' + header + '</thead><tbody>' + rows + '</tbody></table>' : '<div class="empty-state" style="padding:30px"><i class="ti ti-search"></i><p>No meetings match your search</p></div>')
+      : '<div class="empty-state" style="padding:30px"><i class="ti ti-calendar-event"></i><p>No meeting minutes logged yet.</p></div>');
+}
+
+function onMeetingSearch(pid2, val) {
+  meetingSearchState[pid2] = val;
+  refreshTaskView();
+}
+
+function openMeetingModal(pid, idx) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  p.meetingMinutes = p.meetingMinutes || [];
+  var isEdit = idx != null;
+  var m = isEdit ? p.meetingMinutes[idx] : null;
+  var selectedAttendees = m ? m.attendees.map(function(a){ return a.name; }) : [];
+  var attendeeQuery = '';
+
+  function attendeeListHtml() {
+    var q = attendeeQuery.trim().toLowerCase();
+    var pool = individualResourceNames().filter(function(n){ return n.toLowerCase().indexOf(q) >= 0; });
+    return pool.length ? pool.map(function(n){
+      var checked = selectedAttendees.indexOf(n) >= 0;
+      var esc = n.replace(/'/g,"\\'");
+      return '<label style="display:flex;align-items:center;padding:6px 0;cursor:pointer;font-size:13px"><input type="checkbox" style="margin-right:8px"' + (checked?' checked':'') + ' onchange="window.__mmAttendeeToggle(\'' + esc + '\')"> ' + n + '</label>';
+    }).join('') : '<span class="text-muted" style="font-size:13px">No matching people</span>';
+  }
+
+  function attendeeChipsHtml() {
+    return selectedAttendees.length
+      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">' + selectedAttendees.map(function(n){
+          var esc = n.replace(/'/g,"\\'");
+          return '<span class="badge badge-blue" style="display:inline-flex;align-items:center;gap:4px">' + n + ' <i class="ti ti-x" style="cursor:pointer" onclick="window.__mmAttendeeToggle(\'' + esc + '\')"></i></span>';
+        }).join('') + '</div>'
+      : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No attendees selected yet</div>';
+  }
+
+  showModal('<div class="modal-title">' + (isEdit ? 'Edit meeting' : 'Add meeting minutes') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Title *</div><input type="text" id="mm-title" value="' + (m ? m.title : '') + '" placeholder="e.g. Weekly status sync"></div>' +
+    '<div class="grid-2">' +
+      '<div class="form-group"><div class="form-label">Date *</div><input type="date" id="mm-date" value="' + (m ? (m.date||'') : todayStr()) + '"></div>' +
+      '<div class="form-group"><div class="form-label">Time</div><input type="time" id="mm-time" value="' + (m ? (m.time||'') : '') + '"></div>' +
+    '</div>' +
+    '<div class="form-group"><div class="form-label">Attendees</div><div id="mm-attendee-chips">' + attendeeChipsHtml() + '</div>' +
+      '<input type="text" id="mm-attendee-search" placeholder="Search people…" oninput="window.__mmAttendeeSearch(this.value)">' +
+      '<div id="mm-attendee-list" style="max-height:160px;overflow-y:auto;margin-top:8px">' + attendeeListHtml() + '</div></div>' +
+    '<div class="form-group"><div class="form-label">Recap</div><textarea id="mm-recap" rows="4" placeholder="What was discussed, decided, and any follow-ups…">' + (m ? (m.recap||'') : '') + '</textarea></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="mm-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':'Add meeting') + '</button></div>', true);
+
+  window.__mmAttendeeSearch = function(val) {
+    attendeeQuery = val;
+    document.getElementById('mm-attendee-list').innerHTML = attendeeListHtml();
+  };
+  window.__mmAttendeeToggle = function(name) {
+    var i = selectedAttendees.indexOf(name);
+    if (i >= 0) selectedAttendees.splice(i,1); else selectedAttendees.push(name);
+    document.getElementById('mm-attendee-chips').innerHTML = attendeeChipsHtml();
+    document.getElementById('mm-attendee-list').innerHTML = attendeeListHtml();
+    var searchEl = document.getElementById('mm-attendee-search');
+    if (searchEl) searchEl.focus();
+  };
+
+  document.getElementById('mm-save').onclick = async function() {
+    var title = document.getElementById('mm-title').value.trim();
+    var date = document.getElementById('mm-date').value;
+    if (!title) { showToast('Title required'); return; }
+    if (!date) { showToast('Date required'); return; }
+    var newVals = {
+      title: title, date: date,
+      time: document.getElementById('mm-time').value || null,
+      recap: document.getElementById('mm-recap').value.trim()
+    };
+    var btn = document.getElementById('mm-save'); btn.disabled = true;
+    var attendeeResources = selectedAttendees.map(function(n){ return resolveResource(n); }).filter(Boolean);
+
+    if (isEdit) {
+      var fieldLabels = { title:'Title', date:'Date', time:'Time', recap:'Recap' };
+      var changes = [];
+      ['title','date','time','recap'].forEach(function(f){
+        if ((m[f]||'') !== (newVals[f]||'')) changes.push(fieldLabels[f] + ': "' + (m[f]||'—') + '" → "' + (newVals[f]||'—') + '"');
+      });
+      var oldNames = m.attendees.map(function(a){ return a.name; }).sort().join(', ');
+      var newNames = selectedAttendees.slice().sort().join(', ');
+      if (oldNames !== newNames) changes.push('Attendees: "' + (oldNames||'—') + '" → "' + (newNames||'—') + '"');
+
+      var result = await sb.from('meeting_minutes').update({
+        title: newVals.title, meeting_date: newVals.date, meeting_time: newVals.time, recap: newVals.recap || null
+      }).eq('id', m.id);
+      if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+      var delResult = await sb.from('meeting_minutes_attendees').delete().eq('meeting_id', m.id);
+      if (delResult.error) { showToast('Could not save attendees: ' + delResult.error.message); btn.disabled = false; return; }
+      if (attendeeResources.length) {
+        var insAttResult = await sb.from('meeting_minutes_attendees').insert(attendeeResources.map(function(r){ return { meeting_id: m.id, resource_id: r.id, resource_name: r.name }; }));
+        if (insAttResult.error) { showToast('Could not save attendees: ' + insAttResult.error.message); btn.disabled = false; return; }
+      }
+      m.title = newVals.title; m.date = newVals.date; m.time = newVals.time; m.recap = newVals.recap;
+      m.attendees = attendeeResources.map(function(r){ return { resourceId: r.id, name: r.name }; });
+      m.log = m.log || [];
+      if (changes.length) m.log.push(await writeLog('meeting_log', 'meeting_id', m.id, 'Updated', changes.join('; ')));
+      showToast('Meeting updated');
+    } else {
+      var insertResult = await sb.from('meeting_minutes').insert({
+        project_id: pid, title: newVals.title, meeting_date: newVals.date, meeting_time: newVals.time, recap: newVals.recap || null,
+        created_by: D.currentProfile.id, created_by_name: D.currentProfile.display_name
+      }).select().single();
+      if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
+      var newM = { id: insertResult.data.id, title: newVals.title, date: newVals.date, time: newVals.time, recap: newVals.recap, attendees: [], log: [] };
+      if (attendeeResources.length) {
+        var insAtt2 = await sb.from('meeting_minutes_attendees').insert(attendeeResources.map(function(r){ return { meeting_id: newM.id, resource_id: r.id, resource_name: r.name }; }));
+        if (insAtt2.error) { showToast('Could not save attendees: ' + insAtt2.error.message); btn.disabled = false; return; }
+        newM.attendees = attendeeResources.map(function(r){ return { resourceId: r.id, name: r.name }; });
+      }
+      newM.log.push(await writeLog('meeting_log', 'meeting_id', newM.id, 'Created', ''));
+      p.meetingMinutes.push(newM);
+      showToast('Meeting minutes added');
+    }
+    closeModal(); if (window.switchPTab) window.switchPTab('documentation');
+  };
+}
+
+async function deleteMeeting(pid, idx) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  var m = p.meetingMinutes[idx];
+  if (!confirm('Delete "' + m.title + '"?')) return;
+  var result = await sb.from('meeting_minutes').delete().eq('id', m.id);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  p.meetingMinutes = p.meetingMinutes.filter(function(x){ return x.id !== m.id; });
+  refreshTaskView();
+  showToast('Meeting minutes deleted');
+}
+
+function toggleMeetingRecap(pid2, itemId) {
+  var key = pid2 + '|' + itemId;
+  meetingRecapOpen[key] = !meetingRecapOpen[key];
+  refreshTaskView();
+}
+
+function toggleMeetingLog(pid2, itemId) {
+  var key = pid2 + '|' + itemId;
+  meetingLogOpen[key] = !meetingLogOpen[key];
+  refreshTaskView();
 }
 
 // ── Information tab: inline per-section editing ─────────────────────────────
