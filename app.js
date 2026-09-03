@@ -9906,7 +9906,7 @@ function userActivityPanelHtml() {
       return '<div style="padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:13px">' +
         '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">' +
           '<span><span class="badge badge-gray" style="font-size:10px;margin-right:6px">' + e.kind + '</span>' +
-          (e.project ? '<a href="#" onclick="goToProject(\'' + e.project.id + '\');return false;">' + e.project.name + '</a> — ' : '') +
+          (e.project ? '<a href="#" style="color:var(--accent)" onclick="goToProject(\'' + e.project.id + '\');return false;">' + e.project.name + '</a> — ' : '') +
           e.label + '</span>' +
           '<span class="text-muted" style="white-space:nowrap">' + fmtDate(e.when) + '</span>' +
         '</div>' +
@@ -10966,7 +10966,7 @@ function renderPortfolioHealth() {
   '</div>';
 
   var bannerHtml = phState.viewing
-    ? '<div class="info-banner info-blue mb-16"><i class="ti ti-calendar-event"></i><span>Viewing the <strong>' + fmtMonthYear(phState.viewing.period_month) + '</strong> snapshot, captured ' + fmtDate(phState.viewing.captured_at) + (phState.viewing.captured_by_name ? ' by ' + phState.viewing.captured_by_name : ' automatically') + '. <a href="javascript:void(0)" onclick="phViewSnapshot(null)">Back to live</a></span></div>'
+    ? '<div class="info-banner info-blue mb-16"><i class="ti ti-calendar-event"></i><span>Viewing the <strong>' + fmtMonthYear(phState.viewing.period_month) + '</strong> snapshot, captured ' + fmtDate(phState.viewing.captured_at) + (phState.viewing.captured_by_name ? ' by ' + phState.viewing.captured_by_name : ' automatically') + '. <a href="javascript:void(0)" style="color:var(--blue-tx);text-decoration:underline" onclick="phViewSnapshot(null)">Back to live</a></span></div>'
     : '<div class="text-muted" style="font-size:12px;margin-bottom:16px">Computed from your live project, RAID, and change-log data. Click any bar to see which projects make it up.</div>';
 
   document.getElementById('content').innerHTML =
