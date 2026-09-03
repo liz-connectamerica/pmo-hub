@@ -3203,7 +3203,9 @@ function pgPortfolio() {
     var rows = list.map(function(p) {
       var cats = (p.categories && p.categories.length) ? p.categories.join(', ') : '—';
       return '<tr style="cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' +
-        '<td class="bold">' + hdot(p.health) + p.name + '</td>' +
+        '<td class="bold">' + hdot(p.health) + p.name +
+          (p.tags && p.tags.length ? '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
+        '</td>' +
         '<td class="text-muted">' + cats + '</td>' +
         '<td>' + stagePill(p.stage) + (p.stage === 'hold' && p.holdReason ? '<div class="text-muted" style="font-size:11px;margin-top:2px"><i class="ti ti-player-pause"></i> ' + p.holdReason + '</div>' : '') + '</td>' +
         '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
