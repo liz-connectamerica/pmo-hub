@@ -2186,88 +2186,107 @@ function summaryReportStats(p) {
   return { sinceDate: sinceDate, recentlyCompleted: recentlyCompleted, upcoming: upcoming, tasksTotal: tasksTotal, tasksDone: tasksDone, reqTotal: reqTotal, reqDone: reqDone, scopeTotal: scopeTotal, scopeDone: scopeDone, raidItems: raidItems };
 }
 
+// Table-based and fully inline-styled on purpose, even though this renders
+// inside the app itself (where flexbox/grid would work fine) -- Outlook's
+// desktop HTML rendering (Word's engine) doesn't support flexbox or CSS
+// grid at all, and silently drops the spacing they'd provide, so anything
+// meant to survive a copy-paste into an email has to use one HTML dialect
+// everywhere. Using the same table-based markup for the in-app preview,
+// the print/PDF output, and the clipboard copy guarantees they never drift.
 function buildReportHtml(p) {
   var s = summaryReportStats(p);
+  var FONT = "font-family:Arial,Helvetica,sans-serif;";
   var sevColors = { High: ['#FCEBEB','#791F1F'], Medium: ['#FAEEDA','#633806'], Low: ['#E6F1FB','#0C447C'] };
   var stageColors = { backlog:['#FAEEDA','#633806'], planned:['#E6F1FB','#0C447C'], active:['#E1F5EE','#085041'], complete:['#f0ede8','#555'], hold:['#FAECE7','#993C1D'] };
   var stageLabels = { backlog:'Backlog', planned:'Planned', active:'Active', complete:'Completed', hold:'Hold' };
   var priorityColors = { Critical:['#FCEBEB','#791F1F'], High:['#FAECE7','#712B13'], Medium:['#FAEEDA','#633806'], Low:['#E6F1FB','#0C447C'], 'Needs prioritization':['#f0ede8','#444'] };
   var statusColors = { 'On Track':['#E1F5EE','#085041'], 'At Risk':['#FAEEDA','#633806'], Blocked:['#FCEBEB','#791F1F'] };
 
-  function badgeHtml(label, col) {
-    return '<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;background:' + col[0] + ';color:' + col[1] + '">' + label + '</span>';
-  }
-  function msRow(name, dateLabel, late) {
-    var color = late ? '#E24B4A' : '#1a1a1a';
-    var dateColor = late ? '#E24B4A' : '#999';
-    return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:7px 0;border-bottom:1px solid #f0ede8"><span style="color:' + color + '">' + name + '</span><span style="color:' + dateColor + ';white-space:nowrap">' + dateLabel + '</span></div>';
-  }
-  function narrativeBlock(text, placeholder) {
-    return '<div style="font-size:13.5px;line-height:1.65;color:#555;white-space:pre-wrap">' + (text ? text : '<span style="color:#999">' + placeholder + '</span>') + '</div>';
+  function badge(label, col) {
+    return '<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:bold;background-color:' + col[0] + ';color:' + col[1] + ';' + FONT + 'margin:0 6px 6px 0">' + label + '</span>';
   }
   function h2(label, extra) {
-    return '<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#3C3489;margin-bottom:12px">' + label + (extra ? ' <span style="font-weight:400;color:#999;text-transform:none;letter-spacing:0">' + extra + '</span>' : '') + '</div>';
+    return '<div style="font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#3C3489;' + FONT + 'padding-bottom:10px">' + label + (extra ? ' <span style="font-weight:normal;color:#999;text-transform:none;letter-spacing:0">' + extra + '</span>' : '') + '</div>';
   }
-  function reportPerson(label, value) {
-    return '<div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#999;margin-bottom:3px">' + label + '</div><div style="font-size:13px">' + (value || '—') + '</div></div>';
+  function narrative(text, placeholder) {
+    return '<div style="font-size:13px;line-height:22px;color:#444;' + FONT + '">' + (text ? String(text).replace(/\n/g,'<br>') : '<span style="color:#999">' + placeholder + '</span>') + '</div>';
   }
-  function reportStat(label, value) {
-    return '<div><div style="font-size:11px;color:#777;margin-bottom:4px">' + label + '</div><div style="font-size:18px;font-weight:700">' + value + '</div></div>';
+  function personBlock(label, value) {
+    return '<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#999;' + FONT + 'padding-bottom:3px">' + label + '</div><div style="font-size:13px;color:#1a1a1a;' + FONT + '">' + (value || '—') + '</div>';
+  }
+  function statBlock(label, value) {
+    return '<div style="font-size:11px;color:#777;' + FONT + 'padding-bottom:4px">' + label + '</div><div style="font-size:17px;font-weight:bold;color:#1a1a1a;' + FONT + '">' + value + '</div>';
+  }
+  function threeCol(a, b, c) {
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
+      '<td width="34%" valign="top" style="padding-right:10px">' + a + '</td>' +
+      '<td width="33%" valign="top" style="padding-right:10px">' + b + '</td>' +
+      '<td width="33%" valign="top">' + c + '</td>' +
+    '</tr></table>';
+  }
+  function twoCol(a, b) {
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>' +
+      '<td width="50%" valign="top" style="padding-right:16px">' + a + '</td>' +
+      '<td width="50%" valign="top">' + b + '</td>' +
+    '</tr></table>';
+  }
+  function msTable(items, emptyMsg) {
+    if (!items.length) return '<div style="font-size:12px;color:#999;' + FONT + '">' + emptyMsg + '</div>';
+    return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">' +
+      items.map(function(row) {
+        return '<tr>' +
+          '<td style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:12px;color:' + (row.late?'#E24B4A':'#1a1a1a') + ';' + FONT + '">' + row.name + '</td>' +
+          '<td align="right" style="padding:6px 0;border-bottom:1px solid #f0ede8;font-size:12px;color:' + (row.late?'#E24B4A':'#999') + ';white-space:nowrap;' + FONT + '">' + row.date + '</td>' +
+        '</tr>';
+      }).join('') +
+    '</table>';
+  }
+  function divider() {
+    return '<div style="border-top:1px solid #f0ede8;font-size:1px;line-height:1px;padding-top:22px;margin-top:22px">&nbsp;</div>';
   }
 
   var sc = stageColors[p.stage] || stageColors.backlog;
   var pc = priorityColors[p.priority] || priorityColors['Needs prioritization'];
   var stc = statusColors[p.status] || null;
-  var badgesHtml = badgeHtml(stageLabels[p.stage] || p.stage, sc) +
-    (stc ? ' ' + badgeHtml(p.status, stc) : '') +
-    (p.priority ? ' ' + badgeHtml(p.priority, pc) : '');
+  var badgesHtml = badge(stageLabels[p.stage] || p.stage, sc) + (stc ? badge(p.status, stc) : '') + (p.priority ? badge(p.priority, pc) : '');
 
-  var recentHtml = s.recentlyCompleted.length
-    ? s.recentlyCompleted.map(function(m){ return msRow(m.name, fmtDate(m.completedDate)); }).join('')
-    : '<div style="font-size:12.5px;color:#999">Nothing completed in this period</div>';
-  var upcomingHtml = s.upcoming.length
-    ? s.upcoming.map(function(m){ var late = isMilestoneLate(m); return msRow(m.name, late ? 'Late &middot; was ' + fmtDate(m.date) : fmtDate(m.date), late); }).join('')
-    : '<div style="font-size:12.5px;color:#999">No upcoming milestones</div>';
+  var recentItems = s.recentlyCompleted.map(function(m){ return { name: m.name, date: fmtDate(m.completedDate), late: false }; });
+  var upcomingItems = s.upcoming.map(function(m){ var late = isMilestoneLate(m); return { name: m.name, date: late ? 'Late, was ' + fmtDate(m.date) : fmtDate(m.date), late: late }; });
+
   var raidHtml = s.raidItems.length
-    ? s.raidItems.map(function(item){ return '<div style="display:flex;gap:10px;align-items:flex-start;font-size:12.5px;padding:8px 0;border-bottom:1px solid #f0ede8">' + badgeHtml(item.severity, sevColors[item.severity] || sevColors.Medium) + '<span>' + item.desc + '</span></div>'; }).join('')
-    : '<div style="font-size:12.5px;color:#999">No open risks or issues</div>';
-  var divider = '<div style="height:1px;background:#f0ede8;margin:26px 0"></div>';
+    ? s.raidItems.map(function(item){ return '<div style="padding:7px 0;border-bottom:1px solid #f0ede8;font-size:12px;' + FONT + '">' + badge(item.severity, sevColors[item.severity] || sevColors.Medium) + '<span style="color:#333">' + item.desc + '</span></div>'; }).join('')
+    : '<div style="font-size:12px;color:#999;' + FONT + '">No open risks or issues</div>';
 
-  return '<div style="background:#fff;border:1px solid #e8e8e5;border-radius:10px;padding:40px 44px;max-width:720px;margin:0 auto;color:#1a1a1a;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#999;letter-spacing:.04em;text-transform:uppercase;margin-bottom:22px"><span>PMO Hub &middot; Project Status Report</span><span>As of ' + fmtDate(todayStr()) + '</span></div>' +
-      '<div style="font-size:24px;font-weight:700;margin-bottom:4px">' + p.name + '</div>' +
-      '<div style="font-size:13px;color:#777;margin-bottom:16px">' + [p.value, p.businessUnit].filter(Boolean).join(' &middot; ') + (p.deliveryMethodology ? ' &middot; ' + p.deliveryMethodology + ' delivery' : '') + '</div>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px">' + badgesHtml + '</div>' +
-      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:8px">' +
-        reportPerson('Owner', p.owner) + reportPerson('Sponsor', p.sponsor) + reportPerson('Target end', p.end ? fmtDate(p.end) : 'TBD') +
-      '</div>' +
-      '<div style="display:flex;align-items:center;gap:10px;margin:18px 0 4px">' +
-        '<div style="height:7px;background:#f0ede8;border-radius:4px;overflow:hidden;flex:1"><div style="height:100%;border-radius:4px;background:#534AB7;width:' + (p.progress||0) + '%"></div></div>' +
-        '<span style="font-size:12px;color:#777;white-space:nowrap">' + (p.progress||0) + '% complete</span>' +
-      '</div>' +
-      divider +
-      h2('Executive Summary') + narrativeBlock(p.summaryNarrative, 'No summary provided yet.') +
-      divider +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:28px">' +
-        '<div>' + h2('Recently Completed', 'since ' + fmtDate(s.sinceDate)) + recentHtml + '</div>' +
-        '<div>' + h2('Upcoming Milestones') + upcomingHtml + '</div>' +
-      '</div>' +
-      divider +
+  var metaLine = [p.value, p.businessUnit].filter(Boolean).join(' &nbsp;&middot;&nbsp; ') + (p.deliveryMethodology ? ' &nbsp;&middot;&nbsp; ' + p.deliveryMethodology + ' delivery' : '');
+
+  return '<div style="max-width:640px;margin:0 auto;' + FONT + 'color:#1a1a1a;background-color:#ffffff;border:1px solid #e8e8e5;border-radius:8px;padding:32px">' +
+      '<div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:1px;' + FONT + 'padding-bottom:18px">PMO Hub &nbsp;&middot;&nbsp; Project Status Report &nbsp;&nbsp;&nbsp; As of ' + fmtDate(todayStr()) + '</div>' +
+      '<div style="font-size:22px;font-weight:bold;' + FONT + 'padding-bottom:6px">' + p.name + '</div>' +
+      '<div style="font-size:13px;color:#777;' + FONT + 'padding-bottom:14px">' + metaLine + '</div>' +
+      '<div style="padding-bottom:16px">' + badgesHtml + '</div>' +
+      threeCol(personBlock('Owner', p.owner), personBlock('Sponsor', p.sponsor), personBlock('Target end', p.end ? fmtDate(p.end) : 'TBD')) +
+      '<div style="padding-top:16px;font-size:12px;color:#777;' + FONT + '">Progress: <b style="color:#1a1a1a">' + (p.progress||0) + '%</b> complete</div>' +
+      divider() +
+      h2('Executive Summary') + narrative(p.summaryNarrative, 'No summary provided yet.') +
+      divider() +
+      twoCol(
+        h2('Recently Completed', 'since ' + fmtDate(s.sinceDate)) + msTable(recentItems, 'Nothing completed in this period'),
+        h2('Upcoming Milestones') + msTable(upcomingItems, 'No upcoming milestones')
+      ) +
+      divider() +
       h2('Progress Snapshot') +
-      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">' +
-        reportStat('Plan tasks', s.tasksDone + ' of ' + s.tasksTotal + ' done') +
-        reportStat('Requirements', s.reqDone + ' of ' + s.reqTotal + ' complete') +
-        reportStat('Scope items', s.scopeDone + ' of ' + s.scopeTotal + ' complete') +
-      '</div>' +
-      divider +
+      threeCol(
+        statBlock('Plan tasks', s.tasksDone + ' of ' + s.tasksTotal + ' done'),
+        statBlock('Requirements', s.reqDone + ' of ' + s.reqTotal + ' complete'),
+        statBlock('Scope items', s.scopeDone + ' of ' + s.scopeTotal + ' complete')
+      ) +
+      divider() +
       h2('Risks &amp; Issues') + raidHtml +
-      divider +
-      h2('Asks &amp; Decisions Needed') + narrativeBlock(p.summaryAsks, 'Nothing noted.') +
-      divider +
-      h2('What&rsquo;s Next') + narrativeBlock(p.summaryNextSteps, 'Nothing noted.') +
-      '<div style="margin-top:30px;padding-top:14px;border-top:1px solid #f0ede8;font-size:11px;color:#999;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">' +
-        '<span>Generated from PMO Hub on ' + fmtDate(todayStr()) + '</span>' +
-      '</div>' +
+      divider() +
+      h2('Asks &amp; Decisions Needed') + narrative(p.summaryAsks, 'Nothing noted.') +
+      divider() +
+      h2('What&rsquo;s Next') + narrative(p.summaryNextSteps, 'Nothing noted.') +
+      '<div style="margin-top:26px;padding-top:14px;border-top:1px solid #f0ede8;font-size:11px;color:#999;' + FONT + '">Generated from PMO Hub on ' + fmtDate(todayStr()) + '</div>' +
     '</div>';
 }
 
@@ -2318,7 +2337,7 @@ function renderSummarizeTab(p, editable) {
         '<button class="btn btn-primary btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Download PDF</button>' +
       '</div>' +
     '</div>' +
-    '<div style="display:grid;grid-template-columns:360px 1fr;gap:22px;align-items:start">' +
+    '<div class="summarize-grid" style="display:grid;grid-template-columns:360px 1fr;gap:22px;align-items:start">' +
       '<div class="no-print">' +
         '<div class="form-group"><div class="form-label">Reporting period since <span class="text-muted" style="font-weight:400">affects "Recently completed"</span></div>' +
           '<input type="date" id="sm-since" value="' + sinceVal + '"' + dis + (editable ? ' onchange="saveSummaryField(\'' + p.id + '\',\'since\',this.value)"' : '') + '></div>' +
@@ -5834,8 +5853,8 @@ function pgProjectDetail(pid, tab) {
 
   document.getElementById('content').innerHTML =
     '<div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 112px);box-sizing:border-box;overflow:hidden">' +
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;flex-shrink:0">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + lateBadgeHtml(isProjectLate(p)) + ' ' + dataConfirmedBadgeHtml(p) + '</div>' +
-    '<div class="tab-bar" style="flex-shrink:0">' + tabsHtml + '</div>' +
+    '<div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;flex-shrink:0">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + lateBadgeHtml(isProjectLate(p)) + ' ' + dataConfirmedBadgeHtml(p) + '</div>' +
+    '<div class="tab-bar no-print" style="flex-shrink:0">' + tabsHtml + '</div>' +
     '<div id="ptab-content" style="flex:1;overflow-y:auto">' + tabC(tab) + '</div>' +
     '</div>';
   if (tab === 'tasks') attachTaskDragHandlers();
