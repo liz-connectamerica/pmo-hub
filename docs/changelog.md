@@ -15,12 +15,13 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-03">
-  <h2>Portfolio, Project Detail &amp; Summarize</h2>
-  <p class="changelog-date">September 3, 2026 · 9:40 AM – 3:15 PM</p>
+  <h2>Portfolio, Project Detail, Summarize &amp; Documentation</h2>
+  <p class="changelog-date">September 3, 2026 · 9:40 AM – 4:40 PM</p>
   <ul>
     <li><strong>Portfolio:</strong> Project tags now show as chips under the project name, same as the Completed projects page.</li>
     <li>The admin-only <strong>Delete</strong> project button moved from the People tab to Information → Identity &amp; Classification, next to that section's Edit button.</li>
     <li>New <strong>Summarize</strong> tab on the project detail page — generates a live, stakeholder-ready status report from the project's current data (stage/status/priority, owner/sponsor/target end, progress, recently-completed and upcoming milestones, Requirements/Scope/Plan completion, open RAID risks/issues by severity), with three optional narrative fields (Executive Summary, Asks &amp; Decisions Needed, What's Next) that autosave with no history kept. No financial data is included. <strong>Copy for email</strong> copies a formatted version that pastes cleanly into Outlook via Paste Special → Keep Source Formatting, and <strong>Download PDF</strong> uses the browser's print dialog.</li>
+    <li><strong>Documentation:</strong> Two new sections — <strong>Decisions</strong>, a simple log (decision, optional rationale, who decided it, and the date, with no status workflow), and <strong>Meeting Minutes</strong>, a searchable list of meeting notes (title, date/time, attendees picked from the resource roster, and a recap). "Decided by" on a decision is an optional picker over the resource roster, not free text.</li>
   </ul>
 </div>
 

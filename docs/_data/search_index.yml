@@ -54,7 +54,7 @@
   page: /user-guide/
   anchor: project-detail-page
   guide: User Guide
-  blurb: Information, People, Milestones, Plan, To-Do, RAID log, Documentation, Summarize tabs.
+  blurb: Information, People, Milestones, Plan, To-Do, RAID log, Documentation (Requirements, Scope, Decisions, Meeting Minutes, Attachments), Summarize tabs.
 
 - title: Submitting a request
   page: /user-guide/
