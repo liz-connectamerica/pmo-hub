@@ -243,6 +243,7 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
   .app, .main { display: block; height: auto; overflow: visible; }
   .card { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; height: auto !important; overflow: visible !important; }
   #ptab-content { overflow: visible !important; }
+  .summarize-grid { display: block !important; }
   .ph-bar-row { cursor: default; }
 }
 
