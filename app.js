@@ -2202,8 +2202,13 @@ function buildReportHtml(p) {
   var priorityColors = { Critical:['#FCEBEB','#791F1F'], High:['#FAECE7','#712B13'], Medium:['#FAEEDA','#633806'], Low:['#E6F1FB','#0C447C'], 'Needs prioritization':['#f0ede8','#444'] };
   var statusColors = { 'On Track':['#E1F5EE','#085041'], 'At Risk':['#FAEEDA','#633806'], Blocked:['#FCEBEB','#791F1F'] };
 
+  // No margin here on purpose -- Outlook's paste sanitizer (even in "Keep
+  // Source Formatting" mode) strips margin from inline/inline-block spans
+  // unpredictably. Literal &nbsp; between badges at the call sites below is
+  // the one spacing technique that survives every paste mode, since it's
+  // text content, not styling that can be stripped.
   function badge(label, col) {
-    return '<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:bold;background-color:' + col[0] + ';color:' + col[1] + ';' + FONT + 'margin:0 6px 6px 0">' + label + '</span>';
+    return '<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:bold;background-color:' + col[0] + ';color:' + col[1] + ';' + FONT + '">' + label + '</span>';
   }
   function h2(label, extra) {
     return '<div style="font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#3C3489;' + FONT + 'padding-bottom:10px">' + label + (extra ? ' <span style="font-weight:normal;color:#999;text-transform:none;letter-spacing:0">' + extra + '</span>' : '') + '</div>';
@@ -2248,18 +2253,26 @@ function buildReportHtml(p) {
   var sc = stageColors[p.stage] || stageColors.backlog;
   var pc = priorityColors[p.priority] || priorityColors['Needs prioritization'];
   var stc = statusColors[p.status] || null;
-  var badgesHtml = badge(stageLabels[p.stage] || p.stage, sc) + (stc ? badge(p.status, stc) : '') + (p.priority ? badge(p.priority, pc) : '');
+  var badgeList = [badge(stageLabels[p.stage] || p.stage, sc)];
+  if (stc) badgeList.push(badge(p.status, stc));
+  if (p.priority) badgeList.push(badge(p.priority, pc));
+  var badgesHtml = badgeList.join('&nbsp;&nbsp;');
 
   var recentItems = s.recentlyCompleted.map(function(m){ return { name: m.name, date: fmtDate(m.completedDate), late: false }; });
   var upcomingItems = s.upcoming.map(function(m){ var late = isMilestoneLate(m); return { name: m.name, date: late ? 'Late, was ' + fmtDate(m.date) : fmtDate(m.date), late: late }; });
 
   var raidHtml = s.raidItems.length
-    ? s.raidItems.map(function(item){ return '<div style="padding:7px 0;border-bottom:1px solid #f0ede8;font-size:12px;' + FONT + '">' + badge(item.severity, sevColors[item.severity] || sevColors.Medium) + '<span style="color:#333">' + item.desc + '</span></div>'; }).join('')
+    ? s.raidItems.map(function(item){ return '<div style="padding:7px 0;border-bottom:1px solid #f0ede8;font-size:12px;' + FONT + '">' + badge(item.severity, sevColors[item.severity] || sevColors.Medium) + '&nbsp;&nbsp;<span style="color:#333">' + item.desc + '</span></div>'; }).join('')
     : '<div style="font-size:12px;color:#999;' + FONT + '">No open risks or issues</div>';
 
   var metaLine = [p.value, p.businessUnit].filter(Boolean).join(' &nbsp;&middot;&nbsp; ') + (p.deliveryMethodology ? ' &nbsp;&middot;&nbsp; ' + p.deliveryMethodology + ' delivery' : '');
 
-  return '<div style="max-width:640px;margin:0 auto;' + FONT + 'color:#1a1a1a;background-color:#ffffff;border:1px solid #e8e8e5;border-radius:8px;padding:32px">' +
+  // A real <table width="640"> here, not a <div style="max-width:...">, is
+  // deliberate -- Outlook only reliably respects a pixel width attribute on
+  // a table, not CSS max-width on a div (it'll happily stretch the div to
+  // fill the compose window, dragging every nested percentage-width table
+  // along with it).
+  return '<table role="presentation" align="center" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;' + FONT + 'color:#1a1a1a;background-color:#ffffff;border:1px solid #e8e8e5;border-radius:8px"><tr><td style="padding:32px">' +
       '<div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:1px;' + FONT + 'padding-bottom:18px">PMO Hub &nbsp;&middot;&nbsp; Project Status Report &nbsp;&nbsp;&nbsp; As of ' + fmtDate(todayStr()) + '</div>' +
       '<div style="font-size:22px;font-weight:bold;' + FONT + 'padding-bottom:6px">' + p.name + '</div>' +
       '<div style="font-size:13px;color:#777;' + FONT + 'padding-bottom:14px">' + metaLine + '</div>' +
@@ -2287,7 +2300,7 @@ function buildReportHtml(p) {
       divider() +
       h2('What&rsquo;s Next') + narrative(p.summaryNextSteps, 'Nothing noted.') +
       '<div style="margin-top:26px;padding-top:14px;border-top:1px solid #f0ede8;font-size:11px;color:#999;' + FONT + '">Generated from PMO Hub on ' + fmtDate(todayStr()) + '</div>' +
-    '</div>';
+    '</td></tr></table>';
 }
 
 function reportPlainText(p) {
