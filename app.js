@@ -2351,12 +2351,14 @@ function reportPlainText(p) {
 function renderSummarizeTab(p, editable) {
   var sinceVal = p.summarySince || defaultSummarySince();
   var dis = editable ? '' : ' disabled';
-  return '<div class="no-print" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap">' +
+  return '<div class="no-print" style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap">' +
       '<div><div class="section-title" style="margin-bottom:2px">Summarize</div><div class="text-muted">Generates a stakeholder-ready status report from this project\'s current data.</div></div>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-        '<button class="btn btn-sm" onclick="copyReportForEmail(\'' + p.id + '\')"><i class="ti ti-copy"></i> Copy for email</button>' +
-        '<button class="btn btn-sm" onclick="composeReportEmail(\'' + p.id + '\')"><i class="ti ti-mail"></i> Compose email</button>' +
-        '<button class="btn btn-primary btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Download PDF</button>' +
+      '<div style="text-align:right">' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">' +
+          '<button class="btn btn-sm" onclick="copyReportForEmail(\'' + p.id + '\')"><i class="ti ti-copy"></i> Copy for email</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Download PDF</button>' +
+        '</div>' +
+        '<div class="text-muted" style="margin-top:6px;max-width:320px">Start a new email yourself (so your signature comes along), then right-click in the body and choose <b>Paste Special &rarr; Keep Source Formatting</b> to paste the report in.</div>' +
       '</div>' +
     '</div>' +
     '<div class="summarize-grid" style="display:grid;grid-template-columns:360px 1fr;gap:22px;align-items:start">' +
@@ -2400,18 +2402,10 @@ async function copyReportForEmail(pid) {
         'text/plain': new Blob([reportPlainText(p)], { type: 'text/plain' })
       })
     ]);
-    showToast('Report copied — paste it into your email');
+    showToast('Report copied — in your email, use Paste Special → Keep Source Formatting');
   } catch (err) {
     showToast('Could not copy: ' + err.message);
   }
-}
-
-function composeReportEmail(pid) {
-  var p = D.projects.find(function(x){ return x.id === pid; });
-  if (!p) return;
-  var subject = encodeURIComponent(p.name + ' — Status Update (' + fmtDate(todayStr()) + ')');
-  var body = encodeURIComponent('Paste the report below (use "Copy for email" on the Summarize tab first):\n\n');
-  window.location.href = 'mailto:?subject=' + subject + '&body=' + body;
 }
 
 function teamPickerHtml(prefix, toggleFnName, selectedNames) {
