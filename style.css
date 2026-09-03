@@ -236,12 +236,13 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
 .ph-chip button { border: none; background: var(--border); color: var(--text-2); width: 16px; height: 16px; border-radius: 50%; font-size: 11px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .ph-chip button:hover { background: var(--border-input); }
 
-/* Portfolio Health -- print / "Download PDF" (window.print()) */
+/* Portfolio Health & Summarize tab -- print / "Download PDF" (window.print()) */
 @media print {
-  .sidebar, .topbar, .ph-toolbar, .ph-chip button { display: none !important; }
+  .sidebar, .topbar, .ph-toolbar, .ph-chip button, .no-print { display: none !important; }
   .content { overflow: visible; padding: 0; }
   .app, .main { display: block; height: auto; overflow: visible; }
-  .card { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; }
+  .card { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; height: auto !important; overflow: visible !important; }
+  #ptab-content { overflow: visible !important; }
   .ph-bar-row { cursor: default; }
 }
 

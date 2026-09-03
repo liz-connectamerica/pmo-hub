@@ -524,6 +524,7 @@ async function loadAllProjects() {
       programPriorityRank: pr.program_priority_rank,
       dataConfirmedAt: pr.data_confirmed_at, dataConfirmedByName: pr.data_confirmed_by_name,
       execFlagged: !!pr.is_exec_flagged, execNote: pr.exec_note,
+      summarySince: pr.summary_since, summaryNarrative: pr.summary_narrative, summaryAsks: pr.summary_asks, summaryNextSteps: pr.summary_next_steps,
       dataConfirmations: (confirmationsByProj[pr.id] || []).slice()
         .sort(function(a,b){ return (b.confirmed_at||'').localeCompare(a.confirmed_at||''); })
         .map(function(c){ return { date: c.confirmed_at, actor: c.confirmed_by_name, note: c.note || '' }; }),
@@ -2153,6 +2154,223 @@ async function confirmProjectData(pid, note) {
   p.dataConfirmations = p.dataConfirmations || [];
   p.dataConfirmations.unshift({ date: insertResult.data.confirmed_at, actor: D.currentProfile.display_name, note: note || '' });
   return true;
+}
+
+// ── Summarize tab: an ad-hoc stakeholder status report, generated live from
+// the project's current data. Nothing here is saved as a generated report --
+// only the narrative inputs persist (as plain project fields, overwritten in
+// place), so there's no history of past reports to browse. The report itself
+// always renders as a fixed light "paper" look, in literal colors rather than
+// the app's --tokens, since it has to look right pasted into an email or
+// printed -- neither carries the app's dark mode setting with it.
+
+function defaultSummarySince() {
+  var d = new Date();
+  d.setDate(d.getDate() - 30);
+  return d.toISOString().slice(0, 10);
+}
+
+function summaryReportStats(p) {
+  var sinceDate = p.summarySince || defaultSummarySince();
+  var recentlyCompleted = p.milestones.filter(function(m){ return m.done && m.completedDate && m.completedDate >= sinceDate; })
+    .sort(function(a,b){ return (a.completedDate||'').localeCompare(b.completedDate||''); });
+  var upcoming = p.milestones.filter(function(m){ return !m.done; })
+    .sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); }).slice(0, 6);
+  var tasksTotal = p.tasks.length, tasksDone = p.tasks.filter(function(t){ return t.status === 'Done'; }).length;
+  var reqTotal = p.requirements.length, reqDone = p.requirements.filter(function(r){ return r.status === 'Completed'; }).length;
+  var scopeTotal = p.scope.length, scopeDone = p.scope.filter(function(s){ return s.status === 'Completed'; }).length;
+  var sevRank = { High: 0, Medium: 1, Low: 2 };
+  var raidItems = p.raid.risks.filter(function(r){ return r.status !== 'Closed'; }).map(function(r){ return { severity: riskEffectiveSeverity(r) || 'Medium', desc: r.desc }; })
+    .concat(p.raid.issues.filter(function(i){ return i.status !== 'Closed'; }).map(function(i){ return { severity: i.severity || 'Medium', desc: i.desc }; }));
+  raidItems.sort(function(a,b){ return (sevRank[a.severity] != null ? sevRank[a.severity] : 1) - (sevRank[b.severity] != null ? sevRank[b.severity] : 1); });
+  return { sinceDate: sinceDate, recentlyCompleted: recentlyCompleted, upcoming: upcoming, tasksTotal: tasksTotal, tasksDone: tasksDone, reqTotal: reqTotal, reqDone: reqDone, scopeTotal: scopeTotal, scopeDone: scopeDone, raidItems: raidItems };
+}
+
+function buildReportHtml(p) {
+  var s = summaryReportStats(p);
+  var sevColors = { High: ['#FCEBEB','#791F1F'], Medium: ['#FAEEDA','#633806'], Low: ['#E6F1FB','#0C447C'] };
+  var stageColors = { backlog:['#FAEEDA','#633806'], planned:['#E6F1FB','#0C447C'], active:['#E1F5EE','#085041'], complete:['#f0ede8','#555'], hold:['#FAECE7','#993C1D'] };
+  var stageLabels = { backlog:'Backlog', planned:'Planned', active:'Active', complete:'Completed', hold:'Hold' };
+  var priorityColors = { Critical:['#FCEBEB','#791F1F'], High:['#FAECE7','#712B13'], Medium:['#FAEEDA','#633806'], Low:['#E6F1FB','#0C447C'], 'Needs prioritization':['#f0ede8','#444'] };
+  var statusColors = { 'On Track':['#E1F5EE','#085041'], 'At Risk':['#FAEEDA','#633806'], Blocked:['#FCEBEB','#791F1F'] };
+
+  function badgeHtml(label, col) {
+    return '<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;background:' + col[0] + ';color:' + col[1] + '">' + label + '</span>';
+  }
+  function msRow(name, dateLabel, late) {
+    var color = late ? '#E24B4A' : '#1a1a1a';
+    var dateColor = late ? '#E24B4A' : '#999';
+    return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:7px 0;border-bottom:1px solid #f0ede8"><span style="color:' + color + '">' + name + '</span><span style="color:' + dateColor + ';white-space:nowrap">' + dateLabel + '</span></div>';
+  }
+  function narrativeBlock(text, placeholder) {
+    return '<div style="font-size:13.5px;line-height:1.65;color:#555;white-space:pre-wrap">' + (text ? text : '<span style="color:#999">' + placeholder + '</span>') + '</div>';
+  }
+  function h2(label, extra) {
+    return '<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#3C3489;margin-bottom:12px">' + label + (extra ? ' <span style="font-weight:400;color:#999;text-transform:none;letter-spacing:0">' + extra + '</span>' : '') + '</div>';
+  }
+  function reportPerson(label, value) {
+    return '<div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#999;margin-bottom:3px">' + label + '</div><div style="font-size:13px">' + (value || '—') + '</div></div>';
+  }
+  function reportStat(label, value) {
+    return '<div><div style="font-size:11px;color:#777;margin-bottom:4px">' + label + '</div><div style="font-size:18px;font-weight:700">' + value + '</div></div>';
+  }
+
+  var sc = stageColors[p.stage] || stageColors.backlog;
+  var pc = priorityColors[p.priority] || priorityColors['Needs prioritization'];
+  var stc = statusColors[p.status] || null;
+  var badgesHtml = badgeHtml(stageLabels[p.stage] || p.stage, sc) +
+    (stc ? ' ' + badgeHtml(p.status, stc) : '') +
+    (p.priority ? ' ' + badgeHtml(p.priority, pc) : '');
+
+  var recentHtml = s.recentlyCompleted.length
+    ? s.recentlyCompleted.map(function(m){ return msRow(m.name, fmtDate(m.completedDate)); }).join('')
+    : '<div style="font-size:12.5px;color:#999">Nothing completed in this period</div>';
+  var upcomingHtml = s.upcoming.length
+    ? s.upcoming.map(function(m){ var late = isMilestoneLate(m); return msRow(m.name, late ? 'Late &middot; was ' + fmtDate(m.date) : fmtDate(m.date), late); }).join('')
+    : '<div style="font-size:12.5px;color:#999">No upcoming milestones</div>';
+  var raidHtml = s.raidItems.length
+    ? s.raidItems.map(function(item){ return '<div style="display:flex;gap:10px;align-items:flex-start;font-size:12.5px;padding:8px 0;border-bottom:1px solid #f0ede8">' + badgeHtml(item.severity, sevColors[item.severity] || sevColors.Medium) + '<span>' + item.desc + '</span></div>'; }).join('')
+    : '<div style="font-size:12.5px;color:#999">No open risks or issues</div>';
+  var divider = '<div style="height:1px;background:#f0ede8;margin:26px 0"></div>';
+
+  return '<div style="background:#fff;border:1px solid #e8e8e5;border-radius:10px;padding:40px 44px;max-width:720px;margin:0 auto;color:#1a1a1a;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#999;letter-spacing:.04em;text-transform:uppercase;margin-bottom:22px"><span>PMO Hub &middot; Project Status Report</span><span>As of ' + fmtDate(todayStr()) + '</span></div>' +
+      '<div style="font-size:24px;font-weight:700;margin-bottom:4px">' + p.name + '</div>' +
+      '<div style="font-size:13px;color:#777;margin-bottom:16px">' + [p.value, p.businessUnit].filter(Boolean).join(' &middot; ') + (p.deliveryMethodology ? ' &middot; ' + p.deliveryMethodology + ' delivery' : '') + '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px">' + badgesHtml + '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:8px">' +
+        reportPerson('Owner', p.owner) + reportPerson('Sponsor', p.sponsor) + reportPerson('Target end', p.end ? fmtDate(p.end) : 'TBD') +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:10px;margin:18px 0 4px">' +
+        '<div style="height:7px;background:#f0ede8;border-radius:4px;overflow:hidden;flex:1"><div style="height:100%;border-radius:4px;background:#534AB7;width:' + (p.progress||0) + '%"></div></div>' +
+        '<span style="font-size:12px;color:#777;white-space:nowrap">' + (p.progress||0) + '% complete</span>' +
+      '</div>' +
+      divider +
+      h2('Executive Summary') + narrativeBlock(p.summaryNarrative, 'No summary provided yet.') +
+      divider +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:28px">' +
+        '<div>' + h2('Recently Completed', 'since ' + fmtDate(s.sinceDate)) + recentHtml + '</div>' +
+        '<div>' + h2('Upcoming Milestones') + upcomingHtml + '</div>' +
+      '</div>' +
+      divider +
+      h2('Progress Snapshot') +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">' +
+        reportStat('Plan tasks', s.tasksDone + ' of ' + s.tasksTotal + ' done') +
+        reportStat('Requirements', s.reqDone + ' of ' + s.reqTotal + ' complete') +
+        reportStat('Scope items', s.scopeDone + ' of ' + s.scopeTotal + ' complete') +
+      '</div>' +
+      divider +
+      h2('Risks &amp; Issues') + raidHtml +
+      divider +
+      h2('Asks &amp; Decisions Needed') + narrativeBlock(p.summaryAsks, 'Nothing noted.') +
+      divider +
+      h2('What&rsquo;s Next') + narrativeBlock(p.summaryNextSteps, 'Nothing noted.') +
+      '<div style="margin-top:30px;padding-top:14px;border-top:1px solid #f0ede8;font-size:11px;color:#999;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">' +
+        '<span>Generated from PMO Hub on ' + fmtDate(todayStr()) + '</span><span>Financial data not included</span>' +
+      '</div>' +
+    '</div>';
+}
+
+function reportPlainText(p) {
+  var s = summaryReportStats(p);
+  var lines = [];
+  lines.push(p.name + ' — Status Report (as of ' + fmtDate(todayStr()) + ')');
+  lines.push('');
+  lines.push('Stage: ' + (p.stage||'—') + '   Status: ' + (p.status||'—') + '   Priority: ' + (p.priority||'—'));
+  lines.push('Owner: ' + (p.owner||'—') + '   Sponsor: ' + (p.sponsor||'—') + '   Target end: ' + (p.end ? fmtDate(p.end) : 'TBD'));
+  lines.push('Progress: ' + (p.progress||0) + '%');
+  lines.push('');
+  lines.push('EXECUTIVE SUMMARY');
+  lines.push(p.summaryNarrative || 'No summary provided yet.');
+  lines.push('');
+  lines.push('RECENTLY COMPLETED (since ' + fmtDate(s.sinceDate) + ')');
+  lines.push(s.recentlyCompleted.length ? s.recentlyCompleted.map(function(m){ return '- ' + m.name + ' (' + fmtDate(m.completedDate) + ')'; }).join('\n') : 'Nothing completed in this period');
+  lines.push('');
+  lines.push('UPCOMING MILESTONES');
+  lines.push(s.upcoming.length ? s.upcoming.map(function(m){ return '- ' + m.name + ' (' + (isMilestoneLate(m) ? 'Late, was ' + fmtDate(m.date) : fmtDate(m.date)) + ')'; }).join('\n') : 'No upcoming milestones');
+  lines.push('');
+  lines.push('PROGRESS SNAPSHOT');
+  lines.push('Plan tasks: ' + s.tasksDone + ' of ' + s.tasksTotal + ' done');
+  lines.push('Requirements: ' + s.reqDone + ' of ' + s.reqTotal + ' complete');
+  lines.push('Scope items: ' + s.scopeDone + ' of ' + s.scopeTotal + ' complete');
+  lines.push('');
+  lines.push('RISKS & ISSUES');
+  lines.push(s.raidItems.length ? s.raidItems.map(function(i){ return '- [' + i.severity + '] ' + i.desc; }).join('\n') : 'No open risks or issues');
+  lines.push('');
+  lines.push('ASKS & DECISIONS NEEDED');
+  lines.push(p.summaryAsks || 'Nothing noted.');
+  lines.push('');
+  lines.push('WHAT\'S NEXT');
+  lines.push(p.summaryNextSteps || 'Nothing noted.');
+  lines.push('');
+  lines.push('Generated from PMO Hub on ' + fmtDate(todayStr()) + ' — financial data not included.');
+  return lines.join('\n');
+}
+
+function renderSummarizeTab(p, editable) {
+  var sinceVal = p.summarySince || defaultSummarySince();
+  var dis = editable ? '' : ' disabled';
+  return '<div class="no-print" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap">' +
+      '<div><div class="section-title" style="margin-bottom:2px">Summarize</div><div class="text-muted">Generates a stakeholder-ready status report from this project\'s current data.</div></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn btn-sm" onclick="copyReportForEmail(\'' + p.id + '\')"><i class="ti ti-copy"></i> Copy for email</button>' +
+        '<button class="btn btn-sm" onclick="composeReportEmail(\'' + p.id + '\')"><i class="ti ti-mail"></i> Compose email</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Download PDF</button>' +
+      '</div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:360px 1fr;gap:22px;align-items:start">' +
+      '<div class="no-print">' +
+        '<div class="form-group"><div class="form-label">Reporting period since <span class="text-muted" style="font-weight:400">affects "Recently completed"</span></div>' +
+          '<input type="date" id="sm-since" value="' + sinceVal + '"' + dis + (editable ? ' onchange="saveSummaryField(\'' + p.id + '\',\'since\',this.value)"' : '') + '></div>' +
+        '<div class="form-group"><div class="form-label">Executive summary</div>' +
+          '<textarea id="sm-narrative" rows="6" placeholder="What happened this period, and why"' + dis + (editable ? ' onblur="saveSummaryField(\'' + p.id + '\',\'narrative\',this.value)"' : '') + '>' + (p.summaryNarrative||'') + '</textarea></div>' +
+        '<div class="form-group"><div class="form-label">Asks &amp; decisions needed</div>' +
+          '<textarea id="sm-asks" rows="3" placeholder="Anything you need from stakeholders?"' + dis + (editable ? ' onblur="saveSummaryField(\'' + p.id + '\',\'asks\',this.value)"' : '') + '>' + (p.summaryAsks||'') + '</textarea></div>' +
+        '<div class="form-group" style="margin-bottom:0"><div class="form-label">What\'s next</div>' +
+          '<textarea id="sm-next" rows="3" placeholder="Priorities for the coming period"' + dis + (editable ? ' onblur="saveSummaryField(\'' + p.id + '\',\'next\',this.value)"' : '') + '>' + (p.summaryNextSteps||'') + '</textarea></div>' +
+        (editable ? '<div class="text-muted" style="margin-top:10px">Saves automatically when you click away from a field. This is always the current draft -- past reports aren\'t kept.</div>' : '') +
+      '</div>' +
+      '<div id="sm-report-wrap">' + buildReportHtml(p) + '</div>' +
+    '</div>';
+}
+
+async function saveSummaryField(pid, field, value) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!p) return;
+  var colMap = { since:'summary_since', narrative:'summary_narrative', asks:'summary_asks', next:'summary_next_steps' };
+  var propMap = { since:'summarySince', narrative:'summaryNarrative', asks:'summaryAsks', next:'summaryNextSteps' };
+  var col = colMap[field];
+  if (!col) return;
+  var payload = {}; payload[col] = value || null;
+  var result = await sb.from('projects').update(payload).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  p[propMap[field]] = value || null;
+  var wrap = document.getElementById('sm-report-wrap');
+  if (wrap) wrap.innerHTML = buildReportHtml(p);
+}
+
+async function copyReportForEmail(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!p) return;
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html': new Blob([buildReportHtml(p)], { type: 'text/html' }),
+        'text/plain': new Blob([reportPlainText(p)], { type: 'text/plain' })
+      })
+    ]);
+    showToast('Report copied — paste it into your email');
+  } catch (err) {
+    showToast('Could not copy: ' + err.message);
+  }
+}
+
+function composeReportEmail(pid) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!p) return;
+  var subject = encodeURIComponent(p.name + ' — Status Update (' + fmtDate(todayStr()) + ')');
+  var body = encodeURIComponent('Paste the report below (use "Copy for email" on the Summarize tab first):\n\n');
+  window.location.href = 'mailto:?subject=' + subject + '&body=' + body;
 }
 
 function teamPickerHtml(prefix, toggleFnName, selectedNames) {
@@ -4823,7 +5041,7 @@ function pgProjectDetail(pid, tab) {
   renderNav();
   var editable = canEdit(p);
   var isComplete = p.stage === 'complete';
-  var tbs = ['overview','team','milestones','tasks','todos','raid','documentation'];
+  var tbs = ['overview','team','milestones','tasks','todos','raid','documentation','summarize'];
 
   function sortedMilestones() {
     return p.milestones.slice().sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
@@ -5602,11 +5820,14 @@ function pgProjectDetail(pid, tab) {
       var docPanelHtml = docSub === 'attachments' ? attachmentsPanelHtml() : renderReqScopePanel(p, docSub, canEditRequirements(p));
       return '<div style="display:flex;gap:24px;align-items:flex-start">' + docNavHtml + '<div style="flex:1;min-width:0">' + docPanelHtml + '</div></div>';
     }
+    if (t === 'summarize') {
+      return renderSummarizeTab(p, editable);
+    }
     return '';
   }
 
   var tabsHtml = tbs.map(function(t) {
-    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'overview' ? 'Information' : t === 'team' ? 'People' : t === 'tasks' ? 'Plan' : t === 'todos' ? 'To-Do' : t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t) + '</div>';
+    return '<div class="tab' + (t === tab ? ' active' : '') + '" id="ptab-' + t + '" onclick="switchPTab(\'' + t + '\')" style="text-transform:capitalize">' + (t === 'overview' ? 'Information' : t === 'team' ? 'People' : t === 'tasks' ? 'Plan' : t === 'todos' ? 'To-Do' : t === 'raid' ? 'RAID log' : t === 'documentation' ? 'Documentation' : t === 'summarize' ? 'Summarize' : t) + '</div>';
   }).join('');
 
   tb(p.name);
