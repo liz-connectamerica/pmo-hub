@@ -14,6 +14,15 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-03">
+  <h2>Portfolio &amp; Project Detail</h2>
+  <p class="changelog-date">September 3, 2026 · 9:40 AM – 10:00 AM</p>
+  <ul>
+    <li><strong>Portfolio:</strong> Project tags now show as chips under the project name, same as the Completed projects page.</li>
+    <li>The admin-only <strong>Delete</strong> project button moved from the People tab to Information → Identity &amp; Classification, next to that section's Edit button.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-09-02">
   <h2>Roadmap, Executive Summary, Programs, Data Confirmation &amp; Sponsor Permissions</h2>
   <p class="changelog-date">September 2, 2026 · 9:15 AM – 4:10 PM</p>
