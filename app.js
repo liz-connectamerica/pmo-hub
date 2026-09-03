@@ -2266,7 +2266,7 @@ function buildReportHtml(p) {
       divider +
       h2('What&rsquo;s Next') + narrativeBlock(p.summaryNextSteps, 'Nothing noted.') +
       '<div style="margin-top:30px;padding-top:14px;border-top:1px solid #f0ede8;font-size:11px;color:#999;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">' +
-        '<span>Generated from PMO Hub on ' + fmtDate(todayStr()) + '</span><span>Financial data not included</span>' +
+        '<span>Generated from PMO Hub on ' + fmtDate(todayStr()) + '</span>' +
       '</div>' +
     '</div>';
 }
@@ -2303,7 +2303,7 @@ function reportPlainText(p) {
   lines.push('WHAT\'S NEXT');
   lines.push(p.summaryNextSteps || 'Nothing noted.');
   lines.push('');
-  lines.push('Generated from PMO Hub on ' + fmtDate(todayStr()) + ' — financial data not included.');
+  lines.push('Generated from PMO Hub on ' + fmtDate(todayStr()) + '.');
   return lines.join('\n');
 }
 
