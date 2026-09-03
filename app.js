@@ -2210,6 +2210,9 @@ function buildReportHtml(p) {
   function badge(label, col) {
     return '<span style="display:inline-block;padding:4px 11px;border-radius:20px;font-size:12px;font-weight:bold;background-color:' + col[0] + ';color:' + col[1] + ';' + FONT + '">' + label + '</span>';
   }
+  function labeledBadge(fieldLabel, value, col) {
+    return '<span style="font-size:12px;color:#777;' + FONT + '">' + fieldLabel + ':&nbsp;</span>' + badge(value, col);
+  }
   function h2(label, extra) {
     return '<div style="font-size:13px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#3C3489;' + FONT + 'padding-bottom:12px">' + label + (extra ? ' <span style="font-weight:normal;color:#999;text-transform:none;letter-spacing:0">' + extra + '</span>' : '') + '</div>';
   }
@@ -2258,10 +2261,10 @@ function buildReportHtml(p) {
   var sc = stageColors[p.stage] || stageColors.backlog;
   var pc = priorityColors[p.priority] || priorityColors['Needs prioritization'];
   var stc = statusColors[p.status] || null;
-  var badgeList = [badge(stageLabels[p.stage] || p.stage, sc)];
-  if (stc) badgeList.push(badge(p.status, stc));
-  if (p.priority) badgeList.push(badge(p.priority, pc));
-  var badgesHtml = badgeList.join('&nbsp;&nbsp;');
+  var badgeList = [labeledBadge('Stage', stageLabels[p.stage] || p.stage, sc)];
+  if (stc) badgeList.push(labeledBadge('Status', p.status, stc));
+  if (p.priority) badgeList.push(labeledBadge('Priority', p.priority, pc));
+  var badgesHtml = badgeList.join('&nbsp;&nbsp;&nbsp;');
 
   var recentItems = s.recentlyCompleted.map(function(m){ return { name: m.name, date: fmtDate(m.completedDate), late: false }; });
   var upcomingItems = s.upcoming.map(function(m){ var late = isMilestoneLate(m); return { name: m.name, date: late ? 'Late, was ' + fmtDate(m.date) : fmtDate(m.date), late: late }; });
