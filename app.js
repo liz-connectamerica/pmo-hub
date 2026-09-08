@@ -8632,9 +8632,19 @@ function validateImportRow(row, profilesByEmail) {
   var name = String(row['Project Name'] || '').trim();
   if (!name) errors.push('Missing Project Name');
 
-  var stageRaw = row['Stage'];
-  var stage = stageRaw ? matchOneOf(stageRaw, ['Backlog','Planned','Active','Complete','Hold']) : 'Backlog';
-  if (stage === undefined) errors.push('Stage "' + stageRaw + '" is not one of Backlog/Planned/Active/Complete/Hold');
+  var startDate = formatDateCell(row['Start Date']);
+  if (row['Start Date'] && !startDate) errors.push('Start Date "' + row['Start Date'] + '" could not be read');
+  var endDate = formatDateCell(row['Target End Date']);
+  if (row['Target End Date'] && !endDate) errors.push('Target End Date "' + row['Target End Date'] + '" could not be read');
+
+  // Stage is normally derived from the dates, same as the rest of the app
+  // (see computeStageFromDates) -- Hold and Complete are the only stages
+  // that aren't inferable from dates alone, so they're the only values this
+  // column accepts as an explicit override. Leave it blank otherwise.
+  var stageRaw = String(row['Stage'] || '').trim();
+  var stageOverride = stageRaw ? matchOneOf(stageRaw, ['Hold','Complete']) : null;
+  if (stageRaw && stageOverride === undefined) errors.push('Stage "' + stageRaw + '" is not Hold or Complete -- leave it blank to derive Backlog/Planned/Active from the dates');
+  var stage = stageOverride ? stageOverride.toLowerCase() : computeStageFromDates(startDate, endDate);
 
   var priorityRaw = row['Priority'];
   var priority = priorityRaw ? matchOneOf(priorityRaw, PRIORITIES) : null;
@@ -8657,14 +8667,13 @@ function validateImportRow(row, profilesByEmail) {
   var phase = phaseRaw ? matchOneOf(phaseRaw, PHASES) : null;
   if (phase === undefined) errors.push('Phase "' + phaseRaw + '" is not a recognized phase');
 
-  var startDate = formatDateCell(row['Start Date']);
-  if (row['Start Date'] && !startDate) errors.push('Start Date "' + row['Start Date'] + '" could not be read');
-  var endDate = formatDateCell(row['Target End Date']);
-  if (row['Target End Date'] && !endDate) errors.push('Target End Date "' + row['Target End Date'] + '" could not be read');
-
   var progress = row['Progress %'] !== '' && row['Progress %'] != null ? parseInt(row['Progress %']) : 0;
   if (isNaN(progress)) progress = 0;
   progress = Math.max(0, Math.min(100, progress));
+  // Match markComplete()'s own behavior so an imported Complete row shows up
+  // everywhere a real "Mark complete" click would put it (Completed page's
+  // date column, Summary's recently-completed feed, etc).
+  if (stage === 'complete') progress = 100;
 
   var ownerEmail = String(row['Owner Email'] || '').trim().toLowerCase();
   var ownerResource = ownerEmail ? profilesByEmail[ownerEmail] : null;
@@ -8686,7 +8695,7 @@ function validateImportRow(row, profilesByEmail) {
       owner_id: ownerResource ? ownerResource.id : null,
       owner_name: ownerResource ? ownerResource.name : (ownerEmail || null),
       business_unit: row['Business Unit'] || null,
-      stage: (stage || 'Backlog').toLowerCase(),
+      stage: stage,
       status: status || null,
       phase: phase || null,
       priority: priority || null,
@@ -8696,7 +8705,8 @@ function validateImportRow(row, profilesByEmail) {
       progress: progress,
       description: row['Description'] || null,
       blockers: row['Current Blockers'] || null,
-      health: null
+      health: null,
+      completed_at: stage === 'complete' ? new Date().toISOString() : null
     }
   };
 }
