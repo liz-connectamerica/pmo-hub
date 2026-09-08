@@ -14,6 +14,15 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-08">
+  <h2>Plan tab fixes</h2>
+  <p class="changelog-date">September 8, 2026</p>
+  <ul>
+    <li>Toggling a task's action menu (or its comments, description, or change log) on the project detail page no longer jumps you back to the top of the tab — your scroll position is preserved.</li>
+    <li>Fixed <strong>Demote</strong> on Plan tasks: it now moves a task exactly one level deeper, becoming a child of the nearest task at its own level, instead of sometimes attaching it as a child of a task that was already nested deeper.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-09-03">
   <h2>Portfolio, Project Detail, Summarize &amp; Documentation</h2>
   <p class="changelog-date">September 3, 2026 · 9:40 AM – 4:40 PM</p>
