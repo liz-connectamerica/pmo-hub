@@ -938,7 +938,14 @@ function refreshTaskView() {
   var m = location.hash.match(/^#\/project\/([^\/]+)/);
   if (m && document.getElementById('ptab-content')) {
     var activeTabEl = document.querySelector('[id^="ptab-"].tab.active');
+    // pgProjectDetail rebuilds #ptab-content wholesale, which resets its
+    // scroll to the top -- fine for navigating tabs, disruptive for something
+    // like toggling a row's action menu deep in a long list. Save/restore it.
+    var scrollEl = document.getElementById('ptab-content');
+    var scrollY = scrollEl ? scrollEl.scrollTop : 0;
     pgProjectDetail(m[1], activeTabEl ? activeTabEl.id.slice(5) : 'tasks');
+    scrollEl = document.getElementById('ptab-content');
+    if (scrollEl) scrollEl.scrollTop = scrollY;
   } else if (currentPage === 'my-tasks') {
     pgMyTasks();
   } else if (currentPage === 'admin-personal-todos') {
