@@ -1618,11 +1618,15 @@ async function reassignTaskPositions(orderedTasks) {
 async function demoteTask(pid2, taskId) {
   taskActionMenuOpen = null;
   var pr = D.projects.find(function(x){ return x.id === pid2; });
-  var outline = buildTaskOutline(pr.tasks);
-  var idx = outline.findIndex(function(row){ return row.task.id === taskId; });
-  if (idx <= 0) { showToast('Cannot demote the first task'); return; }
-  var task = outline[idx].task;
-  var newParent = outline[idx - 1].task;
+  var task = pr.tasks.find(function(x){ return x.id === taskId; });
+  // The new parent must be the immediately preceding SIBLING (same level),
+  // not whatever row happens to print right before this one in the outline
+  // -- that row could already be nested a level or more deeper, which would
+  // skip this task down more than the one level a single demote should move it.
+  var siblings = taskSiblings(pr.tasks, task.parentTaskId || null);
+  var idx = siblings.indexOf(task);
+  if (idx <= 0) { showToast('Cannot demote — already the first task at this level'); return; }
+  var newParent = siblings[idx - 1];
   var result = await sb.from('tasks').update({ parent_task_id: newParent.id }).eq('id', taskId);
   if (result.error) { showToast('Could not save: ' + result.error.message); return; }
   task.parentTaskId = newParent.id;
