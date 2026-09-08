@@ -150,7 +150,7 @@ A single admin-only table of every project regardless of stage, with the full se
 
 ## Import Projects
 
-Download the template, fill it in, and upload it. Expected columns: Project Name (required), Sponsor, Owner Email, Business Unit, Stage, Status, Phase, Priority, Category (comma-separated), Value Area, Start Date, Target End Date, Progress %, Description, Current Blockers, Tags (comma-separated — new tags are created automatically), Target Quarter, Target Year.
+Download the template, fill it in, and upload it. Expected columns: Project Name (required), Sponsor Email, Owner Email, Business Unit, Stage, Status, Phase, Priority, Category (comma-separated), Value Area, Start Date, Target End Date, Progress %, Description, Current Blockers, Tags (comma-separated — new tags are created automatically), Target Quarter, Target Year. Sponsor Email and Owner Email each get linked to that person's resource record when they match one already set up in PMO Hub — same as picking them from the People tab — otherwise the name is stored as plain text with no linkage (no edit access, won't show up in their My Projects/My Capacity).
 
 Every row is validated before you commit anything — you'll see a green check or a red alert with a specific error message per row (bad stage/priority/category values, unparseable dates, or a target quarter on a non-Backlog row). Only valid rows get imported; fix errors in the spreadsheet and re-upload rather than editing inline.
 

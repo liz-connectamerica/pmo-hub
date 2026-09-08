@@ -8637,8 +8637,8 @@ function validateImportRow(row, profilesByEmail) {
   if (stage === undefined) errors.push('Stage "' + stageRaw + '" is not one of Backlog/Planned/Active/Complete/Hold');
 
   var priorityRaw = row['Priority'];
-  var priority = priorityRaw ? matchOneOf(priorityRaw, ['Critical','High','Medium','Low']) : null;
-  if (priority === undefined) errors.push('Priority "' + priorityRaw + '" is not one of Critical/High/Medium/Low');
+  var priority = priorityRaw ? matchOneOf(priorityRaw, PRIORITIES) : null;
+  if (priority === undefined) errors.push('Priority "' + priorityRaw + '" is not one of ' + PRIORITIES.join('/'));
 
   var categoryRaw = String(row['Category'] || '').trim();
   var categoryPieces = categoryRaw ? categoryRaw.split(',').map(function(c){ return c.trim(); }).filter(Boolean) : [];
@@ -8669,6 +8669,9 @@ function validateImportRow(row, profilesByEmail) {
   var ownerEmail = String(row['Owner Email'] || '').trim().toLowerCase();
   var ownerResource = ownerEmail ? profilesByEmail[ownerEmail] : null;
 
+  var sponsorEmail = String(row['Sponsor Email'] || '').trim().toLowerCase();
+  var sponsorResource = sponsorEmail ? profilesByEmail[sponsorEmail] : null;
+
   var tagNames = String(row['Tags'] || '').split(',').map(function(t){ return t.trim(); }).filter(Boolean);
 
   var quarterRaw = String(row['Target Quarter'] || '').trim();
@@ -8698,7 +8701,8 @@ function validateImportRow(row, profilesByEmail) {
     categories: categories,
     record: {
       name: name,
-      sponsor: row['Sponsor'] || null,
+      sponsor: sponsorResource ? sponsorResource.name : (sponsorEmail || null),
+      sponsor_resource_id: sponsorResource ? sponsorResource.id : null,
       owner_id: ownerResource ? ownerResource.id : null,
       owner_name: ownerResource ? ownerResource.name : (ownerEmail || null),
       business_unit: row['Business Unit'] || null,
@@ -8730,6 +8734,7 @@ function renderImportPreview() {
       '<td>' + (v.record.name || '<span class="text-muted">(missing)</span>') + '</td>' +
       '<td>' + (v.record.stage || '') + '</td>' +
       '<td>' + (v.record.owner_name || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (v.record.sponsor || '<span class="text-muted">—</span>') + (v.record.sponsor_resource_id ? '' : (v.record.sponsor ? ' <span class="text-muted" style="font-size:11px">(not linked)</span>' : '')) + '</td>' +
       '<td>' + (v.categories.length ? v.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (v.tags.length ? v.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (v.record.target_quarter && v.record.target_year ? '<span class="badge badge-amber">Q' + v.record.target_quarter + ' ' + v.record.target_year + '</span>' : '<span class="text-muted">—</span>') + '</td>' +
@@ -8742,7 +8747,7 @@ function renderImportPreview() {
       '<i class="ti ti-info-circle"></i><div>' + validCount + ' of ' + rows.length + ' rows are ready to import' +
       (validCount < rows.length ? '. Rows with errors will be skipped — fix them in your spreadsheet and re-upload if you want them included.' : '.') +
       '</div></div>' +
-    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>Owner</th><th>Categories</th><th>Tags</th><th>Target Quarter</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
+    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>Owner</th><th>Sponsor</th><th>Categories</th><th>Tags</th><th>Target Quarter</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
     (validCount > 0 ? '<button class="btn btn-primary mt-12" id="confirm-import-btn"><i class="ti ti-upload"></i> Import ' + validCount + ' project' + (validCount===1?'':'s') + '</button>' : '');
 
   if (validCount > 0) {
