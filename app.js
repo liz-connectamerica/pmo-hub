@@ -8674,26 +8674,6 @@ function validateImportRow(row, profilesByEmail) {
 
   var tagNames = String(row['Tags'] || '').split(',').map(function(t){ return t.trim(); }).filter(Boolean);
 
-  var quarterRaw = String(row['Target Quarter'] || '').trim();
-  var yearRaw = String(row['Target Year'] || '').trim();
-  var targetQuarter = null, targetYear = null;
-  if (quarterRaw || yearRaw) {
-    var qMatch = quarterRaw.match(/^Q?([1-4])$/i);
-    if (!qMatch) {
-      errors.push('Target Quarter "' + quarterRaw + '" should be Q1, Q2, Q3, or Q4');
-    } else {
-      targetQuarter = parseInt(qMatch[1]);
-    }
-    if (!/^\d{4}$/.test(yearRaw)) {
-      errors.push('Target Year "' + yearRaw + '" should be a 4-digit year');
-    } else {
-      targetYear = parseInt(yearRaw);
-    }
-    if ((stage || 'Backlog').toLowerCase() !== 'backlog') {
-      errors.push('Target Quarter/Year can only be set on Backlog-stage projects');
-    }
-  }
-
   return {
     valid: errors.length === 0,
     errors: errors,
@@ -8716,9 +8696,7 @@ function validateImportRow(row, profilesByEmail) {
       progress: progress,
       description: row['Description'] || null,
       blockers: row['Current Blockers'] || null,
-      health: null,
-      target_quarter: targetQuarter,
-      target_year: targetYear
+      health: null
     }
   };
 }
@@ -8737,7 +8715,6 @@ function renderImportPreview() {
       '<td>' + (v.record.sponsor || '<span class="text-muted">—</span>') + (v.record.sponsor_resource_id ? '' : (v.record.sponsor ? ' <span class="text-muted" style="font-size:11px">(not linked)</span>' : '')) + '</td>' +
       '<td>' + (v.categories.length ? v.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (v.tags.length ? v.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (v.record.target_quarter && v.record.target_year ? '<span class="badge badge-amber">Q' + v.record.target_quarter + ' ' + v.record.target_year + '</span>' : '<span class="text-muted">—</span>') + '</td>' +
       '<td style="color:var(--danger);font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
       '</tr>';
   }).join('');
@@ -8747,7 +8724,7 @@ function renderImportPreview() {
       '<i class="ti ti-info-circle"></i><div>' + validCount + ' of ' + rows.length + ' rows are ready to import' +
       (validCount < rows.length ? '. Rows with errors will be skipped — fix them in your spreadsheet and re-upload if you want them included.' : '.') +
       '</div></div>' +
-    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>Owner</th><th>Sponsor</th><th>Categories</th><th>Tags</th><th>Target Quarter</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
+    '<div class="table-wrap"><table><thead><tr><th></th><th>Project Name</th><th>Stage</th><th>Owner</th><th>Sponsor</th><th>Categories</th><th>Tags</th><th>Issues</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
     (validCount > 0 ? '<button class="btn btn-primary mt-12" id="confirm-import-btn"><i class="ti ti-upload"></i> Import ' + validCount + ' project' + (validCount===1?'':'s') + '</button>' : '');
 
   if (validCount > 0) {
