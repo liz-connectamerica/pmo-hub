@@ -15,11 +15,12 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-08">
-  <h2>Plan tab fixes</h2>
+  <h2>Plan tab fixes &amp; Import Projects cleanup</h2>
   <p class="changelog-date">September 8, 2026</p>
   <ul>
     <li>Toggling a task's action menu (or its comments, description, or change log) on the project detail page no longer jumps you back to the top of the tab — your scroll position is preserved.</li>
     <li>Fixed <strong>Demote</strong> on Plan tasks: it now moves a task exactly one level deeper, becoming a child of the nearest task at its own level, instead of sometimes attaching it as a child of a task that was already nested deeper.</li>
+    <li><strong>Import Projects:</strong> Sponsor is now a "Sponsor Email" column that links to a resource on match, the same as Owner Email already did, instead of storing a free-text name with no linkage. Priority validation now recognizes "Needs prioritization." The Business Unit dropdown was updated to the current Manage Values list. Target Quarter/Target Year are no longer part of the import — set those afterward from Future Planning if needed. Stage is now derived from Start Date/Target End Date like the rest of the app; the column only accepts an explicit Hold or Complete override, and a Complete row gets its progress and completed date set automatically, matching Mark complete.</li>
   </ul>
 </div>
 
