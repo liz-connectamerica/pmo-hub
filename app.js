@@ -579,8 +579,11 @@ function myOpenTasksCount() {
   if (!myId) return 0;
   var count = 0;
   D.projects.forEach(function(p){
-    p.tasks.forEach(function(t){ if (t.assigneeId === myId && t.status !== 'Done') count++; });
-    p.todos.forEach(function(td){ if (td.assigneeId === myId && td.status !== 'Done') count++; });
+    // Guard against a malformed project object (e.g. missing an array this
+    // release added) -- this runs inside renderNav() on every navigation,
+    // so a single bad project here would otherwise take down the whole app.
+    (p.tasks || []).forEach(function(t){ if (t.assigneeId === myId && t.status !== 'Done') count++; });
+    (p.todos || []).forEach(function(td){ if (td.assigneeId === myId && td.status !== 'Done') count++; });
   });
   (D.personalTodos || []).forEach(function(td){ if (td.assigneeId === myId && td.status !== 'Done') count++; });
   return count;
@@ -4271,19 +4274,13 @@ async function decideReq(id, decision) {
     }).eq('id', id);
     if (reqResult.error) { showToast('Could not update request: ' + reqResult.error.message); return; }
 
-    D.projects.push({
-      id: projResult.data.id, name: r.title, owner:'', ownerId:null, sponsor: r.sponsor || '', categories: selectedCategories, businessUnit:businessUnit,
-      team: r.team ? r.team.slice() : [], teamIds: teamIds, status: projectRecord.status, phase:'Not Started', progress:0,
-      start: startDate, end: endDate, plannedStart: startDate,
-      value: valueArea, priority: priority, description: r.description, blockers:'', health:null, tshirtSize: tshirtSize,
-      stage: newStage, requestId:r.id, tags: r.tags ? r.tags.slice() : [], dependencies:[],
-      estimatedAmount: r.estimatedAmount, estimatedFrequency: r.estimatedFrequency, estimatedType: r.estimatedType,
-      valueConfidence: r.valueConfidence, costEstimate: r.costEstimate, costConfidence: r.costConfidence,
-      targetQuarter: targetQuarter, targetYear: targetYear, targetEndQuarter: targetEndQuarter, targetEndYear: targetEndYear,
-      holdReason:null, preHoldStage:null, heldAt:null, completedAt:null,
-      deliveryMethodology: deliveryMethodology, projectNumber: projResult.data.project_number, createdAt: projResult.data.created_at,
-      milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]}, documents:[], docFolders:['General'], docFolderIds:{}
-    });
+    // Reload from the DB instead of hand-building a client-side project
+    // object -- see the same fix in openNewProjectModal() for why: a
+    // hand-built object drifts out of sync with the real shape (missing
+    // fields like todos/requirements/decisions/etc), and renderNav(),
+    // called right below, throws on the first missing array it touches
+    // while counting badges across every project.
+    await refreshProjects();
     r.status = reqStatus; r.linkedProject = projResult.data.id; r.feedback = feedbackVal;
     r.priority = priority; r.value = valueArea; r.businessUnit = businessUnit; r.startDate = startDate; r.targetEndDate = endDate;
     delete reviewFinalizeDrafts[id];
@@ -8078,19 +8075,15 @@ function openNewProjectModal() {
       deliveryMethodology: record.delivery_methodology, start: startDate, end: endDate
     }, 'edit');
 
-    var newProject = {
-      id: result.data.id, name:name, owner:ownerName, ownerId: ownerResource?ownerResource.id:null,
-      sponsor:sponsorName, sponsorResourceId: sponsorResource?sponsorResource.id:null,
-      requirementsOwner: reqOwnerName, requirementsOwnerId: reqOwnerResource?reqOwnerResource.id:null, programId: programId,
-      categories:selectedCats, businessUnit:record.business_unit, team:[], teamIds:[], teamTiers:{}, teamOverrides:{},
-      status:record.status, phase:'Not Started', progress:0, start:startDate||'', end:endDate||'',
-      value:record.value_area, priority:record.priority, description:record.description,
-      blockers:'', health:null, stage:newStage, plannedStart:record.planned_start||'', requestId:'',
-      deliveryMethodology: record.delivery_methodology, projectNumber: result.data.project_number, createdAt: result.data.created_at,
-      milestones:[], tasks:[], raid:{risks:[],assumptions:[],issues:[],dependencies:[]},
-      documents:[], docFolders:['General'], docFolderIds:{}
-    };
-    D.projects.push(newProject);
+    // Reload from the DB instead of hand-building a client-side project
+    // object -- a hand-built object drifts out of sync with the real shape
+    // (missing fields like todos/requirements/decisions/etc that get added
+    // over time) and something as central as renderNav(), which iterates
+    // every project on every navigation, will throw on the first missing
+    // array it touches. Reloading guarantees the same shape loadAllProjects
+    // gives every other project, same pattern runImport() already uses.
+    await refreshProjects();
+    var newProject = D.projects.find(function(x){ return x.id === result.data.id; });
     await applyOwnerAsLead(newProject);
     closeModal(); showToast('Project created');
     nav(currentPage);
