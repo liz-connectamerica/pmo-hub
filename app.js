@@ -10614,9 +10614,9 @@ function renderRemindersPage() {
     '</div>' +
 
     (unlinked.length ? (
-      '<div class="card mb-16">' +
-        '<div class="section-title" style="margin-bottom:14px"><i class="ti ti-link-off"></i> Has flags, but no linked account</div>' +
-        '<div class="table-wrap"><table><thead><tr><th style="width:36px"></th><th>Person</th><th>Role</th><th>Flags</th><th>Last reminded</th><th style="width:150px"></th></tr></thead><tbody>' + unlinkedRows + '</tbody></table></div>' +
+      '<div class="section-title" style="margin-bottom:8px"><i class="ti ti-link-off"></i> Has flags, but no linked account</div>' +
+      '<div class="card mb-16" style="padding:0;overflow:hidden">' +
+        '<div class="table-wrap"><table><thead><tr><th style="width:26px"></th><th>Person</th><th>Role</th><th>Flags</th><th>Last reminded</th><th style="width:150px"></th></tr></thead><tbody>' + unlinkedRows + '</tbody></table></div>' +
       '</div>'
     ) : '') +
 
