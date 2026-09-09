@@ -10542,14 +10542,15 @@ function renderRemindersPage() {
   }
 
   var q = st.search.trim().toLowerCase();
-  var filtered = linked.filter(function(e) {
+  function matchesReminderFilter(e) {
     var types = reminderFlagTypes(e);
     if (st.chip === 'nudge') { if (!isDueForNudge(e)) return false; }
     else if (st.chip !== 'all' && types.indexOf(st.chip) < 0) return false;
     if (q && e.resource.name.toLowerCase().indexOf(q) < 0) return false;
     return true;
-  });
-  filtered = sortEntries(filtered);
+  }
+  var filtered = sortEntries(linked.filter(matchesReminderFilter));
+  var unlinkedFiltered = sortEntries(unlinked.filter(matchesReminderFilter));
 
   function rowHtml(e) {
     var isOpen = !!st.expanded[e.resource.id];
@@ -10580,7 +10581,8 @@ function renderRemindersPage() {
     if (isOpen) html += '<tr><td></td><td colspan="5">' + reminderDetailHtml(e) + '</td></tr>';
     return html;
   }
-  var unlinkedRows = unlinked.map(unlinkedRowHtml).join('');
+  var unlinkedRows = unlinkedFiltered.length ? unlinkedFiltered.map(unlinkedRowHtml).join('')
+    : '<tr><td colspan="6"><div class="empty-state" style="padding:30px"><i class="ti ti-mood-check"></i><p>No one matches this filter.</p></div></td></tr>';
 
   var totalIndividuals = D.resources.filter(function(r){ return r.type === 'individual'; }).length;
   var flaglessCount = Math.max(0, totalIndividuals - roster.length);
