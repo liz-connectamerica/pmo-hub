@@ -2155,7 +2155,28 @@ async function logProjectChanges(projectId, before, after, source) {
 
 // Past this many days since the last confirmation (explicit or via an edit),
 // the header badge switches from quiet green to a "needs review" amber.
+// Overwritten by loadReminderSettings() once the DB row loads -- this is
+// just the pre-load default. Configurable from the Reminders page.
 var DATA_CONFIRM_STALE_DAYS = 60;
+// Same idea for the Reminders page's own "who hasn't been nudged in a
+// while" prioritization -- unrelated to the confirmation staleness above.
+var REMINDER_NUDGE_DAYS = 7;
+
+async function loadReminderSettings() {
+  var result = await sb.from('reminder_settings').select('*').eq('id', 'default');
+  var row = result.data && result.data[0];
+  if (!row) return;
+  if (row.data_confirm_stale_days) DATA_CONFIRM_STALE_DAYS = row.data_confirm_stale_days;
+  if (row.nudge_days) REMINDER_NUDGE_DAYS = row.nudge_days;
+}
+
+async function loadReminderLog() {
+  var result = await sb.from('reminder_log').select('*');
+  if (result.error) { console.error('Could not load reminder log:', result.error); D.reminderLog = []; return; }
+  D.reminderLog = result.data.map(function(r) {
+    return { id: r.id, resourceId: r.resource_id, channel: r.channel, note: r.note || '', sentBy: r.sent_by, sentByName: r.sent_by_name, sentAt: r.sent_at };
+  }).sort(function(a, b){ return a.sentAt.localeCompare(b.sentAt); });
+}
 
 function daysSinceConfirmed(p) {
   if (!p.dataConfirmedAt) return null;
@@ -2705,6 +2726,7 @@ var NAV_DEF = {
     ]},
     { s:'Administration', items:[
       {id:'admin-users', icon:'ti-users-group', label:'Manage Users'},
+      {id:'reminders', icon:'ti-bell', label:'Reminders', badge:'reminders'},
       {id:'admin-tags', icon:'ti-tag', label:'Manage Tags'},
       {id:'admin-values', icon:'ti-list-details', label:'Manage Values'},
       {id:'all-projects', icon:'ti-table', label:'All Projects'},
@@ -2772,7 +2794,7 @@ function renderNav() {
       '<span>' + sec.s + '</span><i class="ti ti-chevron-' + (collapsed ? 'right' : 'down') + '"></i></div>';
     if (!collapsed) {
       sec.items.forEach(function(item) {
-        var cnt = item.badge === 'pending' ? pendingCount() : item.badge === 'backlog' ? backlogCount() : item.badge === 'my-tasks' ? myOpenTasksCount() : item.badge === 'my-work-requests' ? myAssignedWorkRequestsNewCount() : item.badge === 'my-requests' ? mySubmittedWorkRequestsNeedsInfoCount() : 0;
+        var cnt = item.badge === 'pending' ? pendingCount() : item.badge === 'backlog' ? backlogCount() : item.badge === 'my-tasks' ? myOpenTasksCount() : item.badge === 'my-work-requests' ? myAssignedWorkRequestsNewCount() : item.badge === 'my-requests' ? mySubmittedWorkRequestsNeedsInfoCount() : item.badge === 'reminders' ? remindersDueCount() : 0;
         var badge = cnt > 0 ? '<span class="nav-badge">' + cnt + '</span>' : '';
         h += '<div class="nav-item' + (currentPage === item.id ? ' active' : '') + '" onclick="nav(\'' + item.id + '\')">' +
              '<i class="ti ' + item.icon + '"></i>' + item.label + badge + '</div>';
@@ -2937,7 +2959,7 @@ var PAGE_RENDERERS = {
   'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems,
   'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests, 'admin-personal-todos':pgAdminPersonalTodos,
   'my-capacity':pgMyCapacity, 'admin-capacity-weights':pgAdminCapacityWeights,
-  'portfolio-health':pgPortfolioHealth, 'exec-summary':pgExecSummary
+  'portfolio-health':pgPortfolioHealth, 'exec-summary':pgExecSummary, reminders:pgReminders
 };
 
 function pageAllowedForRole(page, role) {
@@ -3009,7 +3031,12 @@ async function bootAppForUser(skipReload) {
 
   if (!skipReload) {
     document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading your projects…</p></div>';
-    var loaded = await Promise.all([loadAllProjects(), loadResources(), loadRequests(), loadTags(), loadFieldOptions(), loadPrograms(), loadWorkRequests(), loadCapacityWeights()]);
+    var loaderCalls = [loadAllProjects(), loadResources(), loadRequests(), loadTags(), loadFieldOptions(), loadPrograms(), loadWorkRequests(), loadCapacityWeights(), loadReminderSettings()];
+    // Reminder log is admin-only data (RLS blocks everyone else anyway) --
+    // loaded eagerly just for admins so the sidebar badge is accurate from
+    // the first render, not only after visiting the Reminders page once.
+    if (realRole === 'admin') loaderCalls.push(loadReminderLog());
+    var loaded = await Promise.all(loaderCalls);
     D.projects = loaded[0];
     D.resources = loaded[1];
     D.requests = loaded[2];
@@ -10342,6 +10369,304 @@ window.saveCapacityWeights = async function() {
   pgAdminCapacityWeights();
 };
 
+// ── Reminders: who needs a nudge to log in and confirm/finish something ────
+// The roster is computed entirely from data already loaded (D.projects,
+// D.workRequests) -- no separate query. Grouped by resource, since that's
+// the one identity every flagged person has, linked to a PMO Hub account
+// or not. Only a resource's OWNED projects count toward late-project/
+// stale-confirmation flags (matches "confirm THEIR projects"); tasks and
+// work requests count wherever they're the assignee, regardless of who
+// owns the project.
+function computeReminderRoster() {
+  var byResource = {};
+  function entryFor(resId) {
+    if (!byResource[resId]) {
+      var res = D.resources.find(function(r){ return r.id === resId; });
+      if (!res) return null;
+      byResource[resId] = { resource: res, lateProjects: [], lateTasks: [], lateWR: [], staleProjects: [] };
+    }
+    return byResource[resId];
+  }
+  D.projects.forEach(function(p) {
+    if (p.ownerId) {
+      var e = entryFor(p.ownerId);
+      if (e) {
+        if (isProjectLate(p)) e.lateProjects.push(p.name);
+        var days = daysSinceConfirmed(p);
+        if (days != null && days > DATA_CONFIRM_STALE_DAYS) e.staleProjects.push({ name: p.name, days: days });
+      }
+    }
+    (p.tasks || []).forEach(function(t) {
+      if (t.assigneeId && isTaskLate(t)) {
+        var te = entryFor(t.assigneeId);
+        if (te) te.lateTasks.push({ name: t.title, project: p.name });
+      }
+    });
+  });
+  (D.workRequests || []).forEach(function(w) {
+    if (w.resourceId && isWorkRequestLate(w)) {
+      var we = entryFor(w.resourceId);
+      if (we) we.lateWR.push(w.title);
+    }
+  });
+  return Object.keys(byResource).map(function(id){ return byResource[id]; }).filter(function(e){
+    return e.lateProjects.length || e.lateTasks.length || e.lateWR.length || e.staleProjects.length;
+  });
+}
+
+function reminderFlagTypes(e) {
+  var t = [];
+  if (e.lateProjects.length) t.push('project');
+  if (e.lateTasks.length) t.push('task');
+  if (e.lateWR.length) t.push('wr');
+  if (e.staleProjects.length) t.push('confirm');
+  return t;
+}
+
+function reminderFlagBadgesHtml(e) {
+  var b = '';
+  if (e.lateProjects.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle"></i> ' + e.lateProjects.length + ' late project' + (e.lateProjects.length>1?'s':'') + '</span> ';
+  if (e.lateTasks.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle"></i> ' + e.lateTasks.length + ' late task' + (e.lateTasks.length>1?'s':'') + '</span> ';
+  if (e.lateWR.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle"></i> ' + e.lateWR.length + ' late request' + (e.lateWR.length>1?'s':'') + '</span> ';
+  if (e.staleProjects.length) b += '<span class="badge badge-amber"><i class="ti ti-alert-triangle"></i> ' + e.staleProjects.length + ' unconfirmed ' + (e.staleProjects.length>1?'projects':'project') + '</span> ';
+  if (!b) b = '<span class="badge badge-teal"><i class="ti ti-circle-check"></i> All clear</span>';
+  return b;
+}
+
+function reminderDetailHtml(e) {
+  var rows = [];
+  function row(icon, name, tag) {
+    return '<div class="raid-log-entry" style="display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border-soft)"><i class="ti ' + icon + '" style="flex:none"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + name + '</span><span class="badge badge-gray" style="margin-left:auto;flex:none">' + tag + '</span></div>';
+  }
+  e.lateProjects.forEach(function(n){ rows.push(row('ti-alert-triangle', n, 'Project')); });
+  e.lateTasks.forEach(function(t){ rows.push(row('ti-alert-triangle', t.name, t.project)); });
+  e.lateWR.forEach(function(n){ rows.push(row('ti-alert-triangle', n, 'Work request')); });
+  e.staleProjects.forEach(function(sp){ rows.push(row('ti-alert-triangle', sp.name, sp.days + 'd since confirmed')); });
+  if (!rows.length) rows.push('<div class="text-muted" style="padding:4px 0">Nothing outstanding.</div>');
+  return '<div class="raid-log" style="margin:0 0 10px">' + rows.join('') + '</div>';
+}
+
+function remindersForResource(resId) {
+  return (D.reminderLog || []).filter(function(r){ return r.resourceId === resId; });
+}
+
+function daysSinceLastReminder(resId) {
+  var list = remindersForResource(resId);
+  if (!list.length) return Infinity;
+  return Math.floor((Date.now() - new Date(list[list.length-1].sentAt).getTime()) / 86400000);
+}
+
+function isDueForNudge(e) {
+  return reminderFlagTypes(e).length > 0 && daysSinceLastReminder(e.resource.id) >= REMINDER_NUDGE_DAYS;
+}
+
+function lastReminderHtml(e) {
+  var due = isDueForNudge(e);
+  var list = remindersForResource(e.resource.id);
+  if (!list.length) return '<span class="badge ' + (due?'badge-red':'badge-gray') + '">Never reminded</span>';
+  var last = list[list.length-1];
+  return '<div style="font-size:12.5px' + (due?';color:var(--danger);font-weight:600':'') + '">' + fmtDateTime(last.sentAt) + (due?' &middot; due for a nudge':'') + '</div>' +
+    '<div class="text-muted" style="font-size:11.5px;margin-top:1px">by ' + last.sentByName + ' &middot; ' + last.channel + '</div>';
+}
+
+function lastReminderShortLabel(resId) {
+  var list = remindersForResource(resId);
+  if (!list.length) return 'Never reminded';
+  var days = daysSinceLastReminder(resId);
+  return days <= 0 ? 'Reminded today' : 'Reminded ' + days + 'd ago';
+}
+
+function remindersDueCount() {
+  if (!D.reminderLog) return 0;
+  return computeReminderRoster().filter(isDueForNudge).length;
+}
+
+var reminderPageState = { search:'', chip:'all', sortCol:'lastReminded', sortDir:'desc', expanded:{} };
+
+async function pgReminders() {
+  tb('Reminders');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can view Reminders.</p></div>';
+    return;
+  }
+  if (!D.reminderLog) {
+    document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>';
+    await loadReminderLog();
+    if (currentPage !== 'reminders') return;
+  }
+  renderRemindersPage();
+}
+
+function renderRemindersPage() {
+  var st = reminderPageState;
+  var roster = computeReminderRoster();
+  var unlinked = roster.filter(function(e){ return !e.resource.userId; });
+  var linked = roster.filter(function(e){ return !!e.resource.userId; });
+
+  function sortArrow(col) { if (st.sortCol !== col) return ''; return '<span class="sort-arrow">' + (st.sortDir==='asc'?'▲':'▼') + '</span>'; }
+
+  function sortEntries(list) {
+    var dir = st.sortDir === 'asc' ? 1 : -1;
+    return list.slice().sort(function(a, b) {
+      var av, bv;
+      if (st.sortCol === 'name') { av = a.resource.name.toLowerCase(); bv = b.resource.name.toLowerCase(); }
+      else { av = daysSinceLastReminder(a.resource.id); bv = daysSinceLastReminder(b.resource.id); }
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return a.resource.name.localeCompare(b.resource.name);
+    });
+  }
+
+  function countFor(key) {
+    if (key === 'all') return linked.length;
+    if (key === 'nudge') return linked.filter(isDueForNudge).length;
+    return linked.filter(function(e){ return reminderFlagTypes(e).indexOf(key) >= 0; }).length;
+  }
+  function chip(key, label) {
+    return '<span class="chip-filter' + (st.chip===key?' on':'') + '" onclick="setReminderChip(\'' + key + '\')">' + label + ' <span class="n">' + countFor(key) + '</span></span>';
+  }
+
+  var q = st.search.trim().toLowerCase();
+  var filtered = linked.filter(function(e) {
+    var types = reminderFlagTypes(e);
+    if (st.chip === 'nudge') { if (!isDueForNudge(e)) return false; }
+    else if (st.chip !== 'all' && types.indexOf(st.chip) < 0) return false;
+    if (q && e.resource.name.toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+  filtered = sortEntries(filtered);
+
+  function rowHtml(e) {
+    var isOpen = !!st.expanded[e.resource.id];
+    var html = '<tr>' +
+      '<td><button class="btn btn-sm" onclick="toggleReminderExpand(\'' + e.resource.id + '\')"><i class="ti ' + (isOpen?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
+      '<td class="bold">' + e.resource.name + '</td>' +
+      '<td><div style="display:flex;flex-wrap:wrap;gap:5px">' + reminderFlagBadgesHtml(e) + '</div></td>' +
+      '<td>' + lastReminderHtml(e) + '</td>' +
+      '<td><button class="btn btn-sm btn-primary" onclick="openReminderModal(\'' + e.resource.id + '\')"><i class="ti ti-send"></i> Log reminder</button></td>' +
+      '</tr>';
+    if (isOpen) html += '<tr><td></td><td colspan="4">' + reminderDetailHtml(e) + '</td></tr>';
+    return html;
+  }
+
+  var bodyHtml = filtered.length ? filtered.map(rowHtml).join('')
+    : '<tr><td colspan="5"><div class="empty-state" style="padding:30px"><i class="ti ti-mood-check"></i><p>No one matches this filter.</p></div></td></tr>';
+
+  var unlinkedRows = unlinked.map(function(e) {
+    return '<tr><td class="bold">' + e.resource.name + '<div class="text-muted" style="font-size:10.5px;font-weight:700;margin-top:2px"><i class="ti ti-link-off"></i> Not linked yet</div></td>' +
+      '<td class="text-muted">' + (e.resource.role || '—') + '</td>' +
+      '<td><div style="display:flex;flex-wrap:wrap;gap:5px">' + reminderFlagBadgesHtml(e) + '</div></td>' +
+      '<td>' + lastReminderHtml(e) + '</td>' +
+      '<td><button class="btn btn-sm btn-primary" onclick="openReminderModal(\'' + e.resource.id + '\')"><i class="ti ti-send"></i> Log reminder</button></td></tr>';
+  }).join('');
+
+  var totalIndividuals = D.resources.filter(function(r){ return r.type === 'individual'; }).length;
+  var flaglessCount = Math.max(0, totalIndividuals - roster.length);
+
+  document.getElementById('content').innerHTML =
+    '<div class="card mb-16">' +
+      '<div class="section-title" style="margin-bottom:4px">Thresholds</div>' +
+      '<div class="text-muted" style="font-size:12.5px;margin-bottom:14px;max-width:70ch">Both apply portfolio-wide. The confirmation one also drives the "Needs review" badge on every project\'s Information tab.</div>' +
+      '<div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">' +
+        '<div class="form-group" style="margin-bottom:0"><div class="form-label">Flag if data isn\'t confirmed in</div><input type="number" id="rs-confirm-days" value="' + DATA_CONFIRM_STALE_DAYS + '" min="1" style="width:88px"></div>' +
+        '<span class="text-muted" style="padding-bottom:9px">days</span>' +
+        '<div class="form-group" style="margin-bottom:0;margin-left:22px"><div class="form-label">Prioritize people not reminded in</div><input type="number" id="rs-nudge-days" value="' + REMINDER_NUDGE_DAYS + '" min="1" style="width:88px"></div>' +
+        '<span class="text-muted" style="padding-bottom:9px">days</span>' +
+        '<button class="btn btn-primary btn-sm" style="margin-left:6px" onclick="saveReminderThresholds()"><i class="ti ti-device-floppy"></i> Save</button>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="task-filter-bar">' +
+      '<input type="text" id="rem-search" placeholder="Search people…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onReminderSearch(this.value)">' +
+      chip('all','All flagged') + chip('nudge','Due for a nudge') + chip('project','Late projects') + chip('task','Late tasks') + chip('wr','Late work requests') + chip('confirm','Stale confirmation') +
+    '</div>' +
+
+    '<div class="card mb-16" style="padding:0;overflow:hidden">' +
+      '<div class="table-wrap"><table><thead><tr>' +
+        '<th style="width:36px"></th>' +
+        '<th class="sortable-th" onclick="setReminderSort(\'name\')">Person' + sortArrow('name') + '</th>' +
+        '<th>Flags</th>' +
+        '<th class="sortable-th" onclick="setReminderSort(\'lastReminded\')">Last reminded' + sortArrow('lastReminded') + '</th>' +
+        '<th style="width:150px"></th>' +
+      '</tr></thead><tbody>' + bodyHtml + '</tbody></table></div>' +
+    '</div>' +
+
+    (unlinked.length ? (
+      '<div class="card mb-16">' +
+        '<div class="section-title" style="margin-bottom:4px"><i class="ti ti-link-off"></i> Has flags, but no linked account</div>' +
+        '<div class="text-muted" style="font-size:12.5px;margin-bottom:14px;max-width:70ch">These are resources — often a project\'s owner — who don\'t have a PMO Hub login, so they can\'t confirm anything or see these items themselves. Reminders here are logged for your own tracking (an email, a Slack DM, asking their manager), not sent through the app.</div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Person</th><th>Role</th><th>Flags</th><th>Last reminded</th><th style="width:150px"></th></tr></thead><tbody>' + unlinkedRows + '</tbody></table></div>' +
+      '</div>'
+    ) : '') +
+
+    '<div class="text-muted" style="font-size:12px;text-align:center;padding:4px 0 20px">' + flaglessCount + ' other resource' + (flaglessCount===1?'':'s') + ' currently ' + (flaglessCount===1?'has':'have') + ' no flags.</div>';
+}
+
+window.setReminderChip = function(key) { reminderPageState.chip = key; renderRemindersPage(); };
+window.onReminderSearch = function(val) {
+  reminderPageState.search = val; renderRemindersPage();
+  var el = document.getElementById('rem-search');
+  if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+};
+window.setReminderSort = function(col) {
+  if (reminderPageState.sortCol === col) reminderPageState.sortDir = (reminderPageState.sortDir === 'asc' ? 'desc' : 'asc');
+  else { reminderPageState.sortCol = col; reminderPageState.sortDir = (col === 'lastReminded' ? 'desc' : 'asc'); }
+  renderRemindersPage();
+};
+window.toggleReminderExpand = function(resId) { reminderPageState.expanded[resId] = !reminderPageState.expanded[resId]; renderRemindersPage(); };
+
+window.saveReminderThresholds = async function() {
+  var confirmDays = parseInt(document.getElementById('rs-confirm-days').value, 10);
+  var nudgeDays = parseInt(document.getElementById('rs-nudge-days').value, 10);
+  if (!confirmDays || confirmDays < 1 || !nudgeDays || nudgeDays < 1) { showToast('Enter a whole number of days for both'); return; }
+  var result = await sb.from('reminder_settings').update({
+    data_confirm_stale_days: confirmDays, nudge_days: nudgeDays,
+    updated_at: new Date().toISOString(), updated_by: D.currentProfile.id, updated_by_name: D.currentProfile.display_name
+  }).eq('id', 'default');
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  DATA_CONFIRM_STALE_DAYS = confirmDays;
+  REMINDER_NUDGE_DAYS = nudgeDays;
+  showToast('Thresholds updated');
+  renderRemindersPage();
+};
+
+window.openReminderModal = function(resourceId) {
+  var res = D.resources.find(function(r){ return r.id === resourceId; });
+  if (!res) return;
+  var history = remindersForResource(resourceId).slice().reverse();
+  var histHtml = history.length
+    ? history.map(function(r) {
+        return '<div class="raid-log-entry" style="display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border-soft)"><span>' + fmtDateTime(r.sentAt) + (r.note ? ' <span class="text-muted">— ' + r.note + '</span>' : '') + '</span><span class="text-muted" style="flex:none">' + r.sentByName + ' &middot; ' + r.channel + '</span></div>';
+      }).join('')
+    : '<div class="text-muted" style="font-size:12.5px;padding:4px 0">No reminders logged yet.</div>';
+
+  showModal('<div class="modal-title">Log a reminder — ' + res.name + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    (!res.userId ? '<div class="text-muted" style="background:var(--warn-soft);color:var(--warn-tx);padding:8px 10px;border-radius:8px;margin-bottom:14px;font-size:12.5px">No PMO Hub login — this just logs that <em>you</em> reached out some other way.</div>' : '') +
+    '<div class="form-group"><div class="form-label">Channel</div><select id="rm-channel"><option>Email</option><option>Slack</option><option>Phone</option><option>In person</option><option>Other</option></select></div>' +
+    '<div class="form-group"><div class="form-label">Note (optional)</div><textarea id="rm-note" rows="3" placeholder="What did you remind them about?"></textarea></div>' +
+    '<div class="form-label" style="margin-top:4px">Previous reminders</div>' +
+    '<div class="raid-log" style="margin:6px 0 0">' + histHtml + '</div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="rm-save"><i class="ti ti-check"></i> Log reminder</button></div>');
+
+  document.getElementById('rm-save').onclick = async function() {
+    var channel = document.getElementById('rm-channel').value;
+    var note = document.getElementById('rm-note').value.trim();
+    var btn = document.getElementById('rm-save'); btn.disabled = true;
+    var insertResult = await sb.from('reminder_log').insert({
+      resource_id: resourceId, channel: channel, note: note || null,
+      sent_by: D.currentProfile.id, sent_by_name: D.currentProfile.display_name
+    }).select().single();
+    if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
+    D.reminderLog = D.reminderLog || [];
+    D.reminderLog.push({ id: insertResult.data.id, resourceId: resourceId, channel: channel, note: note, sentBy: D.currentProfile.id, sentByName: D.currentProfile.display_name, sentAt: insertResult.data.sent_at });
+    closeModal();
+    showToast('Reminder logged');
+    if (currentPage === 'reminders') renderRemindersPage();
+    renderNav();
+  };
+};
+
 function pgAdminPersonalTodos() {
   tb('Personal To-Dos');
   if (D.role !== 'admin') {
@@ -10540,7 +10865,7 @@ function userActivityPanelHtml() {
       '</div>';
     }).join('');
   }
-  return '<tr><td colspan="5" style="padding:16px;background:var(--surface-3)">' +
+  return '<tr><td colspan="6" style="padding:16px;background:var(--surface-3)">' +
     '<div class="tab-bar" style="margin-bottom:12px">' + rangeTabs + '</div>' + body +
     '</td></tr>';
 }
@@ -10570,15 +10895,26 @@ function renderUsersTable() {
 
   function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
 
+  var reminderRosterByResourceId = {};
+  computeReminderRoster().forEach(function(e){ reminderRosterByResourceId[e.resource.id] = e; });
+
   var rows = list.map(function(u) {
     var isMe = D.currentProfile.id === u.id;
     var active = u.is_active !== false;
     var expanded = userActivityState.expandedId === u.id;
+    var res = D.resources.find(function(r){ return r.userId === u.id; });
+    var entry = res ? reminderRosterByResourceId[res.id] : null;
+    var remindersCell = !res
+      ? '<span class="text-muted">—</span>'
+      : (entry
+        ? '<div style="display:flex;flex-wrap:wrap;gap:4px">' + reminderFlagBadgesHtml(entry) + '</div><div class="text-muted" style="font-size:11px;margin-top:3px">' + lastReminderShortLabel(res.id) + '</div>'
+        : '<span class="badge badge-teal">All clear</span>');
     var mainRow = '<tr>' +
       '<td>' + (u.display_name||u.email) + (isMe ? ' <span class="text-muted">(you)</span>' : '') + '</td>' +
       '<td class="text-muted">' + u.email + '</td>' +
       '<td>' + bdg(roleLabel(u.role)) + '</td>' +
       '<td class="text-muted">' + (u.last_active_at ? fmtDateTime(u.last_active_at) : 'Never') + '</td>' +
+      '<td>' + remindersCell + '</td>' +
       '<td><div style="display:flex;gap:4px">' +
         '<button class="btn btn-sm" title="Activity history" onclick="toggleUserActivityExpand(\'' + u.id + '\')"><i class="ti ' + (expanded?'ti-chevron-up':'ti-history') + '"></i></button>' +
         '<button class="btn btn-sm" title="Edit" onclick="openEditUserModal(\'' + u.id + '\')"><i class="ti ti-edit"></i></button>' +
@@ -10599,6 +10935,7 @@ function renderUsersTable() {
     '<th class="sortable-th" onclick="setManageUsersSort(\'email\')">Email ' + arrow('email') + '</th>' +
     '<th class="sortable-th" onclick="setManageUsersSort(\'role\')">Role ' + arrow('role') + '</th>' +
     '<th class="sortable-th" onclick="setManageUsersSort(\'last_active_at\')">Last active ' + arrow('last_active_at') + '</th>' +
+    '<th>Reminders</th>' +
     '<th></th></tr>';
 
   document.getElementById('content').innerHTML =
@@ -10821,6 +11158,20 @@ function resourceLateTaskCount(r) {
   return count;
 }
 
+// Late/unconfirmed projects this resource OWNS -- the one Reminders flag
+// not already visible elsewhere on this page (Open tasks/Work requests
+// already cover the assignee side, regardless of account linkage).
+function resourceOwnedFlagCount(r) {
+  var count = 0;
+  D.projects.forEach(function(p) {
+    if (p.ownerId !== r.id) return;
+    if (isProjectLate(p)) count++;
+    var days = daysSinceConfirmed(p);
+    if (days != null && days > DATA_CONFIRM_STALE_DAYS) count++;
+  });
+  return count;
+}
+
 // "Open" here means still active in some form -- New/Needs Info/Accepted --
 // as opposed to Complete/Declined/Withdrawn.
 function resourceOpenWorkRequests(r) {
@@ -10942,6 +11293,8 @@ function pgResources() {
       var taskCount = resourceOpenTaskCount(r);
       var combinedCount = resourceCombinedProjectIds(r).allIds.length;
       var linkIcon = r.userId ? '<i class="ti ti-link" title="Linked to a real account" style="color:var(--good)"></i>' : '<i class="ti ti-link-off" title="Not linked yet" style="color:var(--text-disabled)"></i>';
+      var ownedFlags = resourceOwnedFlagCount(r);
+      if (ownedFlags > 0) linkIcon += ' <span class="badge badge-red" title="Owns a late or unconfirmed project — see Reminders" style="margin-left:2px">' + ownedFlags + '</span>';
       return '<tr>' +
         '<td class="bold">' + (r.firstName||'') + '</td>' +
         '<td class="bold">' + (r.lastName||'') + '</td>' +
