@@ -504,7 +504,7 @@ async function loadAllProjects() {
     (raidByProj[pr.id] || []).forEach(function(r) {
       var base = { id: r.id, desc: r.description, owner: r.owner_name, ownerId: r.owner_id, status: r.status, log: mapLog(raidLogByItem[r.id]) };
       if (r.type === 'risk') {
-        raid.risks.push(Object.assign(base, { probability: r.probability, impact: r.impact, mitigation: r.mitigation }));
+        raid.risks.push(Object.assign(base, { probability: r.probability, impact: r.impact, impactDescription: r.impact_description, mitigation: r.mitigation }));
       } else if (r.type === 'assumption') {
         raid.assumptions.push(base);
       } else if (r.type === 'issue') {
@@ -5844,13 +5844,14 @@ function pgProjectDetail(pid, tab) {
           return '<div class="empty-state" style="padding:30px"><i class="ti ti-list-search"></i><p>' + msg + '</p></div>';
         }
         if (type === 'risks') {
-          return '<div class="raid-grid-risks raid-grid-hdr"><div>Probability</div><div>Impact</div><div>Description &amp; Mitigation</div><div>Owner</div><div>Status</div><div></div></div>' +
+          return '<div class="raid-grid-risks raid-grid-hdr"><div>Probability</div><div>Impact</div><div>Description, Impact &amp; Mitigation</div><div>Owner</div><div>Status</div><div></div></div>' +
             items.map(function(item) {
               var idx = idxOf(item);
               return '<div class="raid-grid-risks raid-grid-row">' +
                 '<div style="font-size:13px">' + (item.probability != null ? item.probability + '%' : '—') + '</div>' +
                 '<div>' + (item.impact ? bdg(item.impact) : '—') + '</div>' +
                 '<div><div style="font-size:13px;word-break:break-word;white-space:normal;margin-bottom:4px">' + item.desc + '</div>' +
+                (item.impactDescription ? '<div style="font-size:12px;color:var(--text-muted);word-break:break-word;white-space:normal;margin-bottom:4px"><strong>Impact:</strong> ' + item.impactDescription + '</div>' : '') +
                 '<div style="font-size:12px;color:var(--text-2);word-break:break-word;white-space:normal;background:var(--surface-2);padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.mitigation||'—') + '</div></div>' +
                 '<div style="font-size:12px;color:var(--text-muted);word-break:break-word">' + item.owner + '</div>' +
                 '<div>' + (item.status ? bdg(item.status) : '—') + '</div>' +
@@ -6878,6 +6879,7 @@ function openRaidModal(pid, type, idx) {
       '<div class="form-group"><div class="form-label">Probability (%)</div><input type="number" id="rd-prob" min="0" max="100" value="' + (item ? item.probability : 50) + '"></div>' +
       '<div class="form-group"><div class="form-label">Impact</div><select id="rd-impact">' + IMPACTS.map(function(s){ return '<option' + (item && item.impact===s ? ' selected' : (!item && s==='Medium' ? ' selected':'')) + '>' + s + '</option>'; }).join('') + '</select></div>' +
       '</div>' +
+      '<div class="form-group"><div class="form-label">Impact description</div><textarea id="rd-risk-impact" placeholder="Describe the impact if this risk materializes…" rows="2">' + (item ? (item.impactDescription||'') : '') + '</textarea></div>' +
       '<div class="form-group"><div class="form-label">Status</div><select id="rd-status">' + RISK_STATUSES.map(function(s){ return '<option' + (item && item.status===s ? ' selected' : (!item && s==='Open' ? ' selected':'')) + '>' + s + '</option>'; }).join('') + '</select></div>' +
       '<div class="form-group"><div class="form-label">Mitigation</div><textarea id="rd-mit" placeholder="Describe mitigation plan…" rows="3">' + (item ? (item.mitigation||'') : '') + '</textarea></div>';
   }
@@ -6969,9 +6971,9 @@ function openRaidModal(pid, type, idx) {
     var dbType = { risks:'risk', assumptions:'assumption', issues:'issue', dependencies:'dependency' }[type];
 
     if (isEdit) {
-      var fieldLabels = { desc:'Description', owner:'Owner', probability:'Probability', impact:'Impact', status:'Status', mitigation:'Mitigation', severity:'Severity', solution:'Solution', impactDescription:'Impact' };
+      var fieldLabels = { desc:'Description', owner:'Owner', probability:'Probability', impact:'Impact', status:'Status', mitigation:'Mitigation', severity:'Severity', solution:'Solution', impactDescription:'Impact description' };
       var newVals = { desc:desc, owner:owner };
-      if (type==='risks') { newVals.probability = parseInt(document.getElementById('rd-prob').value)||0; newVals.impact = document.getElementById('rd-impact').value; newVals.status = document.getElementById('rd-status').value; newVals.mitigation = document.getElementById('rd-mit').value; }
+      if (type==='risks') { newVals.probability = parseInt(document.getElementById('rd-prob').value)||0; newVals.impact = document.getElementById('rd-impact').value; newVals.impactDescription = document.getElementById('rd-risk-impact').value.trim(); newVals.status = document.getElementById('rd-status').value; newVals.mitigation = document.getElementById('rd-mit').value; }
       else if (type==='issues') { newVals.severity = document.getElementById('rd-sev').value; newVals.impactDescription = document.getElementById('rd-issue-impact').value.trim(); newVals.status = document.getElementById('rd-issuest').value; newVals.solution = document.getElementById('rd-sol').value; }
       else if (type==='dependencies') { newVals.status = document.getElementById('rd-depst').value; }
 
@@ -6999,14 +7001,14 @@ function openRaidModal(pid, type, idx) {
       showToast(label + ' updated');
     } else {
       var record = { project_id: pid, type: dbType, description: desc, owner_name: owner || null, owner_id: ownerResource ? ownerResource.id : null };
-      if (type==='risks')   { record.probability = parseInt(document.getElementById('rd-prob').value)||0; record.impact = document.getElementById('rd-impact').value; record.status = document.getElementById('rd-status').value; record.mitigation = document.getElementById('rd-mit').value; }
+      if (type==='risks')   { record.probability = parseInt(document.getElementById('rd-prob').value)||0; record.impact = document.getElementById('rd-impact').value; record.impact_description = document.getElementById('rd-risk-impact').value.trim(); record.status = document.getElementById('rd-status').value; record.mitigation = document.getElementById('rd-mit').value; }
       else if (type==='issues')       { record.severity = document.getElementById('rd-sev').value; record.impact_description = document.getElementById('rd-issue-impact').value.trim(); record.status = document.getElementById('rd-issuest').value; record.solution = document.getElementById('rd-sol').value; }
       else if (type==='dependencies') { record.status = document.getElementById('rd-depst').value; }
 
       var insertResult = await sb.from('raid_items').insert(record).select().single();
       if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
       var n = { id: insertResult.data.id, desc: desc, owner: owner, ownerId: ownerResource ? ownerResource.id : null, log: [] };
-      if (type==='risks')        { n.probability = record.probability; n.impact = record.impact; n.status = record.status; n.mitigation = record.mitigation; }
+      if (type==='risks')        { n.probability = record.probability; n.impact = record.impact; n.impactDescription = record.impact_description; n.status = record.status; n.mitigation = record.mitigation; }
       else if (type==='issues')       { n.severity = record.severity; n.impactDescription = record.impact_description; n.status = record.status; n.solution = record.solution; }
       else if (type==='dependencies') { n.status = record.status; }
       n.log.push(await writeLog('raid_log', 'raid_item_id', n.id, 'Created', ''));
