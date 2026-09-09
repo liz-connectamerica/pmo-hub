@@ -136,7 +136,7 @@ Manage the roster of **individuals** and **teams** (tabs at the top). For an ind
 
 A team can be assigned to a project directly (separately from its individual members each being assigned) — this matters for how the Capacity page reads team workload, below. On the Teams tab, the **Members** count is itself a button — click it to expand an alphabetical roster of that team's members, each with a quick edit shortcut, without leaving the page.
 
-An individual's row also shows a **Work requests** column — a plain-text count of their open (New, Needs Info, or Accepted) work requests, with total estimated hours for any that have been given one. Teams don't get this column, since work requests are always assigned to an individual, never a team. The **Open tasks** and **Work requests** columns each flag how many are Late in a small red badge, same concept covered in the [User Guide](../user-guide/#late-items).
+An individual's row also shows a **Work requests** column — a plain-text count of their open (New, Needs Info, or Accepted) work requests, with total estimated hours for any that have been given one. Teams don't get this column, since work requests are always assigned to an individual, never a team. The **Open tasks** and **Work requests** columns each flag how many are Late in a small red badge, same concept covered in the [User Guide](../user-guide/#late-items). If that individual owns a project that's late or hasn't had its data confirmed in a while, a small red count shows next to their linked/not-linked icon — see [Reminders](#reminders) below for the full picture, including anyone this applies to who has no login at all.
 
 A **Current Load** column shows this month's overall capacity load (see [Capacity](#capacity) below for what feeds into that number) as a colored %, and links straight into the Capacity page. For an individual who hasn't self-reported a BAU % yet, editing their resource record has a **BAU (non-project) %** field so you can set or override it on their behalf — normally this is self-reported from their own My Tasks page. **Work requests** and **Current Load** are both sortable column headers, same as the other columns.
 
@@ -217,7 +217,20 @@ Split into two tabs, **Active** and **Deactivated**, each with its own count. Se
 
 Each row also shows **Last active** — updated every time that person opens or reloads the app, not just when they type in a password, so it reflects real usage rather than sitting frozen at whenever their browser session happened to start ("Never" if they haven't opened the app at all yet). A history icon opens that user's **activity** — everything they've logged across every project (task/milestone/RAID changes, field edits) — filterable to the last 7, 30, or 90 days, each entry linking back to its project.
 
-This is separate from **Resources**: an account's role lives on the `profiles` record managed here, while a person's project-staffing record lives on Resources. The two link automatically when the email addresses match — there's no manual "link account" button.
+This is separate from **Resources**: an account's role lives on the `profiles` record managed here, while a person's project-staffing record lives on Resources. The two link automatically when the email addresses match — there's no manual "link account" button. A **Reminders** column shows each user's current flags from the [Reminders](#reminders) page and when they were last reminded, so you don't need to jump over to check.
+
+## Reminders
+
+A roster of who needs a nudge to log in and take care of something — anyone with a **late project** they own, a **late task** or **late work request** assigned to them, or a project they own that hasn't had its data confirmed in a while. Nothing here is a new data source; it's all computed live from the same Late and [data confirmation](../user-guide/#project-detail-page) concepts used everywhere else in the app.
+
+Two thresholds at the top, both portfolio-wide and admin-editable:
+
+- **Flag if data isn't confirmed in ___ days** — the same number that drives the "Needs review" badge on every project's Information tab.
+- **Prioritize people not reminded in ___ days** — only affects this page: it's what "due for a nudge" and the default sort mean.
+
+The main table lists everyone with at least one flag who has a PMO Hub login. **Person** and **Last reminded** are both sortable — the table opens sorted by Last reminded, oldest (or never-reminded) first, so whoever's gone longest without a nudge is already at the top. Filter chips narrow it to one flag type, or to **Due for a nudge** specifically. Expanding a row lists the actual late projects/tasks/work requests, each one a link straight to it — a late task's project is shown too, since a task isn't always on a project this person owns.
+
+**Log reminder** records that you reached out — a channel (Email, Teams, Phone, In person, Other), an optional note, and the date/time — without sending anything itself. Every person's history is visible before you log another one, so you can tell at a glance whether they've already been nudged recently. A separate section below the main table lists anyone with the same kind of flags but **no linked account** — typically a project owner who was never set up with a login. They can't confirm anything or see these items themselves, so a reminder logged for them is just your own record of having reached out some other way (an email, asking their manager, etc.), not something sent through the app.
 
 ## Manage Tags
 

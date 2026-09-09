@@ -188,6 +188,12 @@
   guide: Admin Guide
   blurb: Accounts, roles, passwords, deactivation, and activity history.
 
+- title: Reminders
+  page: /admin-guide/
+  anchor: reminders
+  guide: Admin Guide
+  blurb: Who needs a nudge for a late project/task/work request or stale data confirmation, with reminder logging.
+
 - title: Manage Tags
   page: /admin-guide/
   anchor: manage-tags
