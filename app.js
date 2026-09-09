@@ -2543,9 +2543,16 @@ function fmtCost(n) {
   return '$' + Number(n).toLocaleString();
 }
 
+// A bare YYYY-MM-DD string is parsed by `new Date()` as UTC midnight, then
+// toLocaleDateString renders it in the viewer's local timezone -- anyone west
+// of UTC (all of the US) sees the previous calendar day. Building the Date
+// from its Y/M/D parts directly (interpreted as local time by the 3-arg
+// Date constructor) keeps the displayed date matching the stored one.
 function fmtDate(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+  var parts = iso.slice(0, 10).split('-');
+  var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  return d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
 }
 
 // ── Late ─────────────────────────────────────────────────────────────────
@@ -5049,8 +5056,6 @@ function pgCompleted() {
     var cmp = av < bv ? -1 : av > bv ? 1 : 0;
     return st.dir === 'asc' ? cmp : -cmp;
   });
-
-  function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—'; }
 
   var rows = cp.map(function(p) {
     return '<tr><td class="bold">' + p.name +
