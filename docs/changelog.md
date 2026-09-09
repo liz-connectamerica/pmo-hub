@@ -15,12 +15,14 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-09">
-  <h2>Reminders</h2>
+  <h2>Reminders, Home &amp; RAID</h2>
   <p class="changelog-date">September 9, 2026</p>
   <ul>
-    <li>New admin-only <strong>Reminders</strong> page — flags anyone with a late project they own, a late task or work request assigned to them, or an owned project whose data hasn't been confirmed in a while. Sortable by person or by how long since their last reminder, defaulting to the most overdue first, with filter chips including a "Due for a nudge" shortcut. Expanding a row shows the actual late items, each one a link straight to it. Two thresholds (days since confirmed, days since last reminded) are now admin-editable from the page instead of hardcoded.</li>
+    <li>New admin-only <strong>Reminders</strong> page — flags anyone with a late project they own, a late task or work request assigned to them, or an owned project whose data hasn't been confirmed in a while. Sortable by person or by how long since their last reminder, defaulting to the most overdue first, with filter chips including a "Due for a nudge" shortcut — the same search and filters also narrow the no-linked-account section below. Expanding a row shows the actual late items, each one a link straight to it. Two thresholds (days since confirmed, days since last reminded) are now admin-editable from the page instead of hardcoded.</li>
     <li><strong>Log reminder</strong> records who you reached out to, when, and how (Email, Teams, Phone, In person, Other) — every person's history is shown before you log another, so it's easy to avoid double-reminding. Resources with the same flags but no PMO Hub login get their own section, since a reminder for them is just your own record of reaching out some other way.</li>
     <li><strong>Manage Users:</strong> new Reminders column showing each user's current flags and when they were last reminded. <strong>Resources:</strong> a small flags badge next to the existing linked/unlinked icon for any project they own that's late or unconfirmed.</li>
+    <li><strong>Home:</strong> Needs your attention now also surfaces open <strong>Risks</strong> and <strong>Dependencies</strong> assigned to you personally on any project, not just Issues (Assumptions are skipped — they have no real "open" state).</li>
+    <li><strong>RAID:</strong> Risks now have an optional free-form <strong>Impact description</strong> field, the same idea as the one Issues already had — separate from a Risk's existing High/Medium/Low Impact rating.</li>
   </ul>
 </div>
 
