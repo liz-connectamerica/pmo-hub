@@ -10424,12 +10424,15 @@ function reminderFlagTypes(e) {
 }
 
 function reminderFlagBadgesHtml(e) {
+  // .badge is display:inline-flex with no gap, so a plain text-node space
+  // between the icon and the label collapses -- margin-right on the icon
+  // itself is the pattern the rest of the app uses (see lateBadgeHtml).
   var b = '';
-  if (e.lateProjects.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle"></i> ' + e.lateProjects.length + ' late project' + (e.lateProjects.length>1?'s':'') + '</span> ';
-  if (e.lateTasks.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle"></i> ' + e.lateTasks.length + ' late task' + (e.lateTasks.length>1?'s':'') + '</span> ';
-  if (e.lateWR.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle"></i> ' + e.lateWR.length + ' late request' + (e.lateWR.length>1?'s':'') + '</span> ';
-  if (e.staleProjects.length) b += '<span class="badge badge-amber"><i class="ti ti-alert-triangle"></i> ' + e.staleProjects.length + ' unconfirmed ' + (e.staleProjects.length>1?'projects':'project') + '</span> ';
-  if (!b) b = '<span class="badge badge-teal"><i class="ti ti-circle-check"></i> All clear</span>';
+  if (e.lateProjects.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.lateProjects.length + ' late project' + (e.lateProjects.length>1?'s':'') + '</span> ';
+  if (e.lateTasks.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.lateTasks.length + ' late task' + (e.lateTasks.length>1?'s':'') + '</span> ';
+  if (e.lateWR.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.lateWR.length + ' late request' + (e.lateWR.length>1?'s':'') + '</span> ';
+  if (e.staleProjects.length) b += '<span class="badge badge-amber"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.staleProjects.length + ' unconfirmed ' + (e.staleProjects.length>1?'projects':'project') + '</span> ';
+  if (!b) b = '<span class="badge badge-teal"><i class="ti ti-circle-check" style="margin-right:4px"></i>All clear</span>';
   return b;
 }
 
