@@ -10391,22 +10391,22 @@ function computeReminderRoster() {
     if (p.ownerId) {
       var e = entryFor(p.ownerId);
       if (e) {
-        if (isProjectLate(p)) e.lateProjects.push(p.name);
+        if (isProjectLate(p)) e.lateProjects.push({ id: p.id, name: p.name });
         var days = daysSinceConfirmed(p);
-        if (days != null && days > DATA_CONFIRM_STALE_DAYS) e.staleProjects.push({ name: p.name, days: days });
+        if (days != null && days > DATA_CONFIRM_STALE_DAYS) e.staleProjects.push({ id: p.id, name: p.name, days: days });
       }
     }
     (p.tasks || []).forEach(function(t) {
       if (t.assigneeId && isTaskLate(t)) {
         var te = entryFor(t.assigneeId);
-        if (te) te.lateTasks.push({ name: t.title, project: p.name });
+        if (te) te.lateTasks.push({ name: t.title, project: p.name, projectId: p.id });
       }
     });
   });
   (D.workRequests || []).forEach(function(w) {
     if (w.resourceId && isWorkRequestLate(w)) {
       var we = entryFor(w.resourceId);
-      if (we) we.lateWR.push(w.title);
+      if (we) we.lateWR.push({ id: w.id, title: w.title });
     }
   });
   return Object.keys(byResource).map(function(id){ return byResource[id]; }).filter(function(e){
@@ -10435,13 +10435,24 @@ function reminderFlagBadgesHtml(e) {
 
 function reminderDetailHtml(e) {
   var rows = [];
-  function row(icon, name, tag) {
-    return '<div class="raid-log-entry" style="display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border-soft)"><i class="ti ' + icon + '" style="flex:none"></i><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + name + '</span><span class="badge badge-gray" style="margin-left:auto;flex:none">' + tag + '</span></div>';
+  function row(nameHtml, tag) {
+    return '<div class="raid-log-entry" style="display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border-soft)"><i class="ti ti-alert-triangle" style="flex:none"></i> <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + nameHtml + '</span><span class="badge badge-gray" style="margin-left:auto;flex:none">' + tag + '</span></div>';
   }
-  e.lateProjects.forEach(function(n){ rows.push(row('ti-alert-triangle', n, 'Project')); });
-  e.lateTasks.forEach(function(t){ rows.push(row('ti-alert-triangle', t.name, t.project)); });
-  e.lateWR.forEach(function(n){ rows.push(row('ti-alert-triangle', n, 'Work request')); });
-  e.staleProjects.forEach(function(sp){ rows.push(row('ti-alert-triangle', sp.name, sp.days + 'd since confirmed')); });
+  function link(onclick, label) {
+    return '<a href="#" style="color:var(--accent)" onclick="' + onclick + ';return false;">' + label + '</a>';
+  }
+  e.lateProjects.forEach(function(p){
+    rows.push(row(link('goToProject(\'' + p.id + '\')', p.name), 'Project'));
+  });
+  e.lateTasks.forEach(function(t){
+    rows.push(row(link('goToProject(\'' + t.projectId + '\',\'tasks\')', t.name), t.project));
+  });
+  e.lateWR.forEach(function(w){
+    rows.push(row(link('globalSearchGoWorkRequest(\'' + w.id + '\')', w.title), 'Work request'));
+  });
+  e.staleProjects.forEach(function(sp){
+    rows.push(row(link('goToProject(\'' + sp.id + '\')', sp.name), sp.days + 'd since confirmed'));
+  });
   if (!rows.length) rows.push('<div class="text-muted" style="padding:4px 0">Nothing outstanding.</div>');
   return '<div class="raid-log" style="margin:0 0 10px">' + rows.join('') + '</div>';
 }
@@ -10594,8 +10605,7 @@ function renderRemindersPage() {
 
     (unlinked.length ? (
       '<div class="card mb-16">' +
-        '<div class="section-title" style="margin-bottom:4px"><i class="ti ti-link-off"></i> Has flags, but no linked account</div>' +
-        '<div class="text-muted" style="font-size:12.5px;margin-bottom:14px;max-width:70ch">These are resources — often a project\'s owner — who don\'t have a PMO Hub login, so they can\'t confirm anything or see these items themselves. Reminders here are logged for your own tracking (an email, a Slack DM, asking their manager), not sent through the app.</div>' +
+        '<div class="section-title" style="margin-bottom:14px"><i class="ti ti-link-off"></i> Has flags, but no linked account</div>' +
         '<div class="table-wrap"><table><thead><tr><th>Person</th><th>Role</th><th>Flags</th><th>Last reminded</th><th style="width:150px"></th></tr></thead><tbody>' + unlinkedRows + '</tbody></table></div>' +
       '</div>'
     ) : '') +
