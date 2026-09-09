@@ -10567,13 +10567,20 @@ function renderRemindersPage() {
   var bodyHtml = filtered.length ? filtered.map(rowHtml).join('')
     : '<tr><td colspan="5"><div class="empty-state" style="padding:30px"><i class="ti ti-mood-check"></i><p>No one matches this filter.</p></div></td></tr>';
 
-  var unlinkedRows = unlinked.map(function(e) {
-    return '<tr><td class="bold">' + e.resource.name + '<div class="text-muted" style="font-size:10.5px;font-weight:700;margin-top:2px"><i class="ti ti-link-off"></i> Not linked yet</div></td>' +
+  function unlinkedRowHtml(e) {
+    var isOpen = !!st.expanded[e.resource.id];
+    var html = '<tr>' +
+      '<td><button class="btn btn-sm" onclick="toggleReminderExpand(\'' + e.resource.id + '\')"><i class="ti ' + (isOpen?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
+      '<td class="bold">' + e.resource.name + '<div class="text-muted" style="font-size:10.5px;font-weight:700;margin-top:2px"><i class="ti ti-link-off"></i> Not linked yet</div></td>' +
       '<td class="text-muted">' + (e.resource.role || '—') + '</td>' +
       '<td><div style="display:flex;flex-wrap:wrap;gap:5px">' + reminderFlagBadgesHtml(e) + '</div></td>' +
       '<td>' + lastReminderHtml(e) + '</td>' +
-      '<td><button class="btn btn-sm btn-primary" onclick="openReminderModal(\'' + e.resource.id + '\')"><i class="ti ti-send"></i> Log reminder</button></td></tr>';
-  }).join('');
+      '<td><button class="btn btn-sm btn-primary" onclick="openReminderModal(\'' + e.resource.id + '\')"><i class="ti ti-send"></i> Log reminder</button></td>' +
+      '</tr>';
+    if (isOpen) html += '<tr><td></td><td></td><td colspan="3">' + reminderDetailHtml(e) + '</td></tr>';
+    return html;
+  }
+  var unlinkedRows = unlinked.map(unlinkedRowHtml).join('');
 
   var totalIndividuals = D.resources.filter(function(r){ return r.type === 'individual'; }).length;
   var flaglessCount = Math.max(0, totalIndividuals - roster.length);
@@ -10609,7 +10616,7 @@ function renderRemindersPage() {
     (unlinked.length ? (
       '<div class="card mb-16">' +
         '<div class="section-title" style="margin-bottom:14px"><i class="ti ti-link-off"></i> Has flags, but no linked account</div>' +
-        '<div class="table-wrap"><table><thead><tr><th>Person</th><th>Role</th><th>Flags</th><th>Last reminded</th><th style="width:150px"></th></tr></thead><tbody>' + unlinkedRows + '</tbody></table></div>' +
+        '<div class="table-wrap"><table><thead><tr><th style="width:36px"></th><th>Person</th><th>Role</th><th>Flags</th><th>Last reminded</th><th style="width:150px"></th></tr></thead><tbody>' + unlinkedRows + '</tbody></table></div>' +
       '</div>'
     ) : '') +
 
