@@ -10643,7 +10643,7 @@ window.openReminderModal = function(resourceId) {
 
   showModal('<div class="modal-title">Log a reminder — ' + res.name + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     (!res.userId ? '<div class="text-muted" style="background:var(--warn-soft);color:var(--warn-tx);padding:8px 10px;border-radius:8px;margin-bottom:14px;font-size:12.5px">No PMO Hub login — this just logs that <em>you</em> reached out some other way.</div>' : '') +
-    '<div class="form-group"><div class="form-label">Channel</div><select id="rm-channel"><option>Email</option><option>Slack</option><option>Phone</option><option>In person</option><option>Other</option></select></div>' +
+    '<div class="form-group"><div class="form-label">Channel</div><select id="rm-channel"><option>Email</option><option>Teams</option><option>Phone</option><option>In person</option><option>Other</option></select></div>' +
     '<div class="form-group"><div class="form-label">Note (optional)</div><textarea id="rm-note" rows="3" placeholder="What did you remind them about?"></textarea></div>' +
     '<div class="form-label" style="margin-top:4px">Previous reminders</div>' +
     '<div class="raid-log" style="margin:6px 0 0">' + histHtml + '</div>' +
