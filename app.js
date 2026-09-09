@@ -3174,7 +3174,7 @@ function pgHome() {
 
   var attn = [];
   function addAttn(sev, icon, title, sub, onclick) { attn.push({ sev:sev, icon:icon, title:title, sub:sub, onclick:onclick }); }
-  var attnIssueIds = {};
+  var attnRaidIds = {};
 
   var myOwned = D.projects.filter(isMyOwnedProject);
   myOwned.forEach(function(p) {
@@ -3202,11 +3202,12 @@ function pgHome() {
 
   myOwned.forEach(function(p) {
     p.raid.risks.filter(function(r){ return r.status === 'Open' && riskEffectiveSeverity(r) === 'High'; }).forEach(function(r) {
+      attnRaidIds['risks|' + r.id] = true;
       var opened = raidOpenedDate(r);
       addAttn('bad', 'ti-alert-circle', 'Open risk: "' + r.desc + '"', p.name + (opened ? ' · logged ' + daysSince(opened) + 'd ago' : ''), 'goToProject(\'' + p.id + '\',\'raid\')');
     });
     p.raid.issues.filter(function(i){ return i.status === 'Open' && i.severity === 'High'; }).forEach(function(i) {
-      attnIssueIds[i.id] = true;
+      attnRaidIds['issues|' + i.id] = true;
       var opened = raidOpenedDate(i);
       addAttn('bad', 'ti-alert-circle', 'Open issue: "' + i.desc + '"', p.name + (opened ? ' · logged ' + daysSince(opened) + 'd ago' : ''), 'goToProject(\'' + p.id + '\',\'raid\')');
     });
@@ -3215,14 +3216,23 @@ function pgHome() {
     });
   });
 
-  // Issues assigned to you personally, on any project -- not just ones you
-  // own. The owned-project loop above already covers high-severity issues on
+  // Open RAID items (risks, issues, dependencies) assigned to you
+  // personally, on any project -- not just ones you own. Assumptions are
+  // skipped: the app treats every assumption as permanently "open" (no
+  // lifecycle status), so there's no real signal to act on there. The
+  // owned-project loop above already covers high-severity risks/issues on
   // your own projects, so skip anything it already added.
+  var RAID_OPEN_TERMINAL = { risks: 'Closed', issues: 'Closed', dependencies: 'Resolved' };
+  var RAID_KIND_LABEL = { risks: 'Risk', issues: 'Issue', dependencies: 'Dependency' };
   if (myId) {
     D.projects.forEach(function(p) {
-      p.raid.issues.filter(function(i){ return i.ownerId === myId && i.status === 'Open' && !attnIssueIds[i.id]; }).forEach(function(i) {
-        var opened = raidOpenedDate(i);
-        addAttn(i.severity === 'High' ? 'bad' : 'warn', 'ti-alert-circle', 'Issue assigned to you: "' + i.desc + '"', p.name + (opened ? ' · logged ' + daysSince(opened) + 'd ago' : ''), 'goToProject(\'' + p.id + '\',\'raid\')');
+      ['risks', 'issues', 'dependencies'].forEach(function(kind) {
+        var terminal = RAID_OPEN_TERMINAL[kind];
+        (p.raid[kind] || []).filter(function(it){ return it.ownerId === myId && it.status !== terminal && !attnRaidIds[kind + '|' + it.id]; }).forEach(function(it) {
+          var opened = raidOpenedDate(it);
+          var isHigh = it.severity === 'High' || (kind === 'risks' && riskEffectiveSeverity(it) === 'High');
+          addAttn(isHigh ? 'bad' : 'warn', 'ti-alert-circle', RAID_KIND_LABEL[kind] + ' assigned to you: "' + it.desc + '"', p.name + (opened ? ' · logged ' + daysSince(opened) + 'd ago' : ''), 'goToProject(\'' + p.id + '\',\'raid\')');
+        });
       });
     });
   }
