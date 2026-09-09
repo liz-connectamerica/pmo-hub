@@ -10577,7 +10577,7 @@ function renderRemindersPage() {
       '<td>' + lastReminderHtml(e) + '</td>' +
       '<td><button class="btn btn-sm btn-primary" onclick="openReminderModal(\'' + e.resource.id + '\')"><i class="ti ti-send"></i> Log reminder</button></td>' +
       '</tr>';
-    if (isOpen) html += '<tr><td></td><td></td><td colspan="3">' + reminderDetailHtml(e) + '</td></tr>';
+    if (isOpen) html += '<tr><td></td><td colspan="5">' + reminderDetailHtml(e) + '</td></tr>';
     return html;
   }
   var unlinkedRows = unlinked.map(unlinkedRowHtml).join('');
