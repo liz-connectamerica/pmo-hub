@@ -15,10 +15,11 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-10">
-  <h2>Fixed a date-display bug in Summarize</h2>
+  <h2>Fixed a date-display bug in Summarize, plus line breaks in long text</h2>
   <p class="changelog-date">September 10, 2026</p>
   <ul>
     <li><strong>Fixed:</strong> the Summarize tab's generated report could show milestone and reporting-period dates one day earlier than the actual stored date (for anyone in a US timezone). Information and Milestones were never affected — this was purely a display bug in how the report formatted dates, not a problem with the dates themselves.</li>
+    <li><strong>Fixed:</strong> line breaks in task/to-do descriptions, RAID descriptions and mitigation/solution, requirement and scope descriptions, decision rationale, meeting recaps, project and work request descriptions, value justification, and PMO/rejection feedback were being collapsed onto one line when displayed, even though they were saved correctly. Comments already handled this right; every other long-text field now matches.</li>
   </ul>
 </div>
 
