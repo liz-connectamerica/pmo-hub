@@ -3786,11 +3786,11 @@ function reviewRequest(id) {
       (r.value ? '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + r.value + '</span></div>' : '') +
       estimateDisplay +
     '</div>' +
-    (r.valueJustification && canFinancials ? '<div class="form-group"><div class="form-label">Value justification</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + r.valueJustification + '</div></div>' : '') +
+    (r.valueJustification && canFinancials ? '<div class="form-group"><div class="form-label">Value justification</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + r.valueJustification + '</div></div>' : '') +
     (costDisplay ? '<div class="mb-16">' + costDisplay + '</div>' : '') +
     (r.tags && r.tags.length ? '<div class="form-group"><div class="form-label">Tags</div>' + r.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
     (r.team && r.team.length ? '<div class="form-group"><div class="form-label">Proposed team</div>' + r.team.join(', ') + '</div>' : '') +
-    (r.feedback ? '<div class="form-group"><div class="form-label">PMO feedback</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--accent)">' + r.feedback + '</div></div>' : '');
+    (r.feedback ? '<div class="form-group"><div class="form-label">PMO feedback</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--accent);white-space:pre-wrap;word-break:break-word">' + r.feedback + '</div></div>' : '');
 
   if (linkedP) {
     html += '<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="form-label" style="margin-bottom:0">Linked project</div>' +
@@ -4083,7 +4083,7 @@ function openEditResubmitModal(id, overrides) {
     : '<div class="form-group"><div class="form-label">What\'s the expected value? *</div><textarea id="erq-value-desc" rows="3">' + curOppOther.replace(/</g,'&lt;') + '</textarea></div>';
 
   showModal('<div class="modal-title">Edit &amp; resubmit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    (r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:var(--coral-soft);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--coral-strong-tx)">' + r.feedback + '</div></div>' : '') +
+    (r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:var(--coral-soft);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--coral-strong-tx);white-space:pre-wrap;word-break:break-word">' + r.feedback + '</div></div>' : '') +
     '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="erq-title" value="' + curTitle.replace(/"/g,'&quot;') + '"></div>' +
     '<div class="form-group"><div class="form-label">Business Unit *</div><select id="erq-bu">' + buOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="erq-sponsor" value="' + curSponsor.replace(/"/g,'&quot;') + '" placeholder="Optional"></div>' +
@@ -5253,7 +5253,7 @@ function pgProjectDetail(pid, tab) {
               (D.role === 'admin' ? '<button class="btn btn-sm btn-danger" onclick="deleteProject(\'' + p.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
             '</div>' +
             fieldBox('Project name', p.name) +
-            '<div class="form-group" style="margin:12px 0"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
+            '<div class="form-group" style="margin:12px 0"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin:12px 0 16px">' +
               fieldBox('Priority', bdg(p.priority)) +
               fieldBox('Value area', badgeIf('badge-purple', p.value)) +
@@ -5613,7 +5613,7 @@ function pgProjectDetail(pid, tab) {
         var descRow = '';
         if (descOpenNow) {
           descRow = '<tr><td colspan="6" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
-            (task.description ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + task.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
+            (task.description ? '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + task.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
             '</div></td></tr>';
         }
         var comments = task.comments || [];
@@ -5773,7 +5773,7 @@ function pgProjectDetail(pid, tab) {
         var descRow = '';
         if (descOpenNow) {
           descRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
-            (td.description ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + td.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
+            (td.description ? '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + td.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
             '</div></td></tr>';
         }
         var todoComments = td.comments || [];
@@ -5855,9 +5855,9 @@ function pgProjectDetail(pid, tab) {
               return '<div class="raid-grid-risks raid-grid-row">' +
                 '<div style="font-size:13px">' + (item.probability != null ? item.probability + '%' : '—') + '</div>' +
                 '<div>' + (item.impact ? bdg(item.impact) : '—') + '</div>' +
-                '<div><div style="font-size:13px;word-break:break-word;white-space:normal;margin-bottom:4px">' + item.desc + '</div>' +
-                (item.impactDescription ? '<div style="font-size:12px;color:var(--text-muted);word-break:break-word;white-space:normal;margin-bottom:4px"><strong>Impact:</strong> ' + item.impactDescription + '</div>' : '') +
-                '<div style="font-size:12px;color:var(--text-2);word-break:break-word;white-space:normal;background:var(--surface-2);padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.mitigation||'—') + '</div></div>' +
+                '<div><div style="font-size:13px;word-break:break-word;white-space:pre-wrap;margin-bottom:4px">' + item.desc + '</div>' +
+                (item.impactDescription ? '<div style="font-size:12px;color:var(--text-muted);word-break:break-word;white-space:pre-wrap;margin-bottom:4px"><strong>Impact:</strong> ' + item.impactDescription + '</div>' : '') +
+                '<div style="font-size:12px;color:var(--text-2);word-break:break-word;white-space:pre-wrap;background:var(--surface-2);padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.mitigation||'—') + '</div></div>' +
                 '<div style="font-size:12px;color:var(--text-muted);word-break:break-word">' + item.owner + '</div>' +
                 '<div>' + (item.status ? bdg(item.status) : '—') + '</div>' +
                 '<div>' + actionBtns(type, idx, item) + '</div></div>' +
@@ -5869,9 +5869,9 @@ function pgProjectDetail(pid, tab) {
               var idx = idxOf(item);
               return '<div class="raid-grid-issues raid-grid-row">' +
                 '<div>' + bdg(item.severity) + '</div>' +
-                '<div><div style="font-size:13px;word-break:break-word;white-space:normal;margin-bottom:4px">' + item.desc + '</div>' +
-                (item.impactDescription ? '<div style="font-size:12px;color:var(--text-muted);word-break:break-word;white-space:normal;margin-bottom:4px"><strong>Impact:</strong> ' + item.impactDescription + '</div>' : '') +
-                '<div style="font-size:12px;color:var(--text-2);word-break:break-word;white-space:normal;background:var(--surface-2);padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.solution||'—') + '</div></div>' +
+                '<div><div style="font-size:13px;word-break:break-word;white-space:pre-wrap;margin-bottom:4px">' + item.desc + '</div>' +
+                (item.impactDescription ? '<div style="font-size:12px;color:var(--text-muted);word-break:break-word;white-space:pre-wrap;margin-bottom:4px"><strong>Impact:</strong> ' + item.impactDescription + '</div>' : '') +
+                '<div style="font-size:12px;color:var(--text-2);word-break:break-word;white-space:pre-wrap;background:var(--surface-2);padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.solution||'—') + '</div></div>' +
                 '<div style="font-size:12px;color:var(--text-muted)">' + item.owner + '</div>' +
                 '<div>' + bdg(item.status) + '</div>' +
                 '<div>' + actionBtns(type, idx, item) + '</div></div>' +
@@ -5881,7 +5881,7 @@ function pgProjectDetail(pid, tab) {
         return items.map(function(item) {
           var idx = idxOf(item);
           return '<div style="font-size:13px;padding:10px 0;border-bottom:1px solid var(--border-soft);display:flex;justify-content:space-between;align-items:center;gap:8px;word-break:break-word">' +
-            '<div style="flex:1">' + item.desc + (item.owner ? ' <span class="text-muted">— ' + item.owner + '</span>' : '') + (item.status ? ' ' + bdg(item.status) : '') + '</div>' +
+            '<div style="flex:1;white-space:pre-wrap">' + item.desc + (item.owner ? ' <span class="text-muted">— ' + item.owner + '</span>' : '') + (item.status ? ' ' + bdg(item.status) : '') + '</div>' +
             actionBtns(type, idx, item) + '</div>' +
             logBlock(type, idx, item);
         }).join('');
@@ -7193,7 +7193,7 @@ function renderReqScopePanel(p, kind, editable) {
     var descRow = '';
     if (descOpenNow) {
       descRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
-        (it.description ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + it.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
+        (it.description ? '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + it.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
         '</div></td></tr>';
     }
     var itComments = it.comments || [];
@@ -7385,7 +7385,7 @@ function renderDecisionsPanel(p, editable) {
     var rationaleRow = '';
     if (rOpenNow) {
       rationaleRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
-        (it.rationale ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + it.rationale + '</div>' : '<div class="text-muted" style="font-size:12px">No rationale recorded</div>') +
+        (it.rationale ? '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + it.rationale + '</div>' : '<div class="text-muted" style="font-size:12px">No rationale recorded</div>') +
         '</div></td></tr>';
     }
     return '<tr><td><span style="font-size:13px">' + it.decision + '</span></td>' +
@@ -7522,7 +7522,7 @@ function renderMeetingMinutesPanel(p, editable) {
     var recapRow = '';
     if (rOpenNow) {
       recapRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
-        (m.recap ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + m.recap + '</div>' : '<div class="text-muted" style="font-size:12px">No recap recorded</div>') +
+        (m.recap ? '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + m.recap + '</div>' : '<div class="text-muted" style="font-size:12px">No recap recorded</div>') +
         '</div></td></tr>';
     }
     var attendeesLabel = m.attendees.length ? m.attendees.map(function(a){ return a.name; }).join(', ') : '—';
@@ -9652,8 +9652,8 @@ async function openDeletedWorkRequestModal(id) {
       '<div><div class="form-label">Estimated hours</div>' + (w.estimated_hours != null ? w.estimated_hours : '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Estimated completion</div>' + (w.estimated_completion_date || '<span class="text-muted">—</span>') + '</div>' +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (w.description || '<span class="text-muted">—</span>') + '</div></div>' +
-    (w.info_note ? '<div class="form-group"><div class="form-label">Note</div><div style="font-size:13px;line-height:1.6">' + w.info_note + '</div></div>' : '') +
+    '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (w.description || '<span class="text-muted">—</span>') + '</div></div>' +
+    (w.info_note ? '<div class="form-group"><div class="form-label">Note</div><div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + w.info_note + '</div></div>' : '') +
     '<div class="form-group"><div class="form-label">History</div>' + logHtml + '</div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button></div>',
     true
@@ -9758,7 +9758,7 @@ async function openDeletedProjectModal(pid) {
       '<div><div class="form-label">Start</div>' + (pr.start_date || '—') + '</div>' +
       '<div><div class="form-label">Target end</div>' + (pr.end_date || '—') + '</div>' +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (pr.description || '<span class="text-muted">—</span>') + '</div></div>' +
+    '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (pr.description || '<span class="text-muted">—</span>') + '</div></div>' +
     '<div class="form-group"><div class="form-label">Categories</div>' + categoriesHtml + '</div>' +
     financialsHtml +
     '<div class="form-group"><div class="form-label">Team</div><div style="font-size:13px">' + (teamNamesList.length ? teamNamesList.join(', ') : '<span class="text-muted">—</span>') + '</div></div>' +
@@ -9818,8 +9818,8 @@ async function openDeletedRequestModal(id) {
       '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Value Area</div>' + (r.value_area || '<span class="text-muted">—</span>') + '</div>' +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6">' + (r.description || '<span class="text-muted">—</span>') + '</div></div>' +
-    (r.feedback ? '<div class="form-group"><div class="form-label">Feedback</div><div style="font-size:13px;line-height:1.6">' + r.feedback + '</div></div>' : '') +
+    '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (r.description || '<span class="text-muted">—</span>') + '</div></div>' +
+    (r.feedback ? '<div class="form-group"><div class="form-label">Feedback</div><div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + r.feedback + '</div></div>' : '') +
     financialsHtml +
     '<div class="form-group"><div class="form-label">Proposed Team</div><div style="font-size:13px">' + (teamNamesList.length ? teamNamesList.join(', ') : '<span class="text-muted">—</span>') + '</div></div>' +
     '<div class="form-group"><div class="form-label">Tags</div>' + (tagNamesList.length ? tagNamesList.map(function(t){ return tagBadge(t); }).join('') : '<span class="text-muted">—</span>') + '</div>' +
@@ -9992,7 +9992,7 @@ function workRequestRowHtml(w, flavor, opts) {
   }
 
   var detailLine = '';
-  if ((w.status === 'Needs Info' || w.status === 'Complete' || w.status === 'Declined') && w.infoNote) detailLine += '<div style="font-size:12px;color:var(--text-2);margin-top:4px;background:var(--surface-2);padding:6px 8px;border-radius:6px">' + w.infoNote + '</div>';
+  if ((w.status === 'Needs Info' || w.status === 'Complete' || w.status === 'Declined') && w.infoNote) detailLine += '<div style="font-size:12px;color:var(--text-2);margin-top:4px;background:var(--surface-2);padding:6px 8px;border-radius:6px;white-space:pre-wrap;word-break:break-word">' + w.infoNote + '</div>';
   if (flavor === 'assigned' && w.status === 'New' && w.requestedCompletionDate) detailLine += '<div class="text-muted" style="font-size:12px;margin-top:4px">Requested completion: ' + w.requestedCompletionDate + '</div>';
   if (w.status === 'Accepted' || w.status === 'Complete') {
     var bits = [];
@@ -10001,7 +10001,7 @@ function workRequestRowHtml(w, flavor, opts) {
     if (bits.length) detailLine += '<div class="text-muted" style="font-size:12px;margin-top:4px">Est. ' + bits.join(', ') + '</div>';
   }
 
-  return '<tr><td class="bold">' + w.title + (w.description ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;font-weight:400">' + w.description + '</div>' : '') + detailLine + '</td>' +
+  return '<tr><td class="bold">' + w.title + (w.description ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;font-weight:400;white-space:pre-wrap;word-break:break-word">' + w.description + '</div>' : '') + detailLine + '</td>' +
     '<td>' + (flavor==='assigned' ? w.requesterName : w.resourceName) + '</td>' +
     '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span> ' + lateBadgeHtml(isWorkRequestLate(w)) + '</td>' +
     (opts.showCompletionColumn ? '<td class="text-muted">' + workRequestCompletionCellHtml(w) + '</td>' : '') +
@@ -10741,7 +10741,7 @@ function pgAdminPersonalTodos() {
 
   var rows = list.map(function(td) {
     var idx = D.personalTodos.indexOf(td);
-    return '<tr><td class="bold">' + td.title + (td.description ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;font-weight:400">' + td.description + '</div>' : '') + '</td>' +
+    return '<tr><td class="bold">' + td.title + (td.description ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;font-weight:400;white-space:pre-wrap;word-break:break-word">' + td.description + '</div>' : '') + '</td>' +
       '<td>' + (td.assignee || '<span class="text-muted">Unassigned</span>') + '</td>' +
       '<td>' + bdg(td.status) + '</td>' +
       '<td class="text-muted">' + (td.due || '—') + ' ' + lateBadgeHtml(isTodoLate(td)) + '</td>' +
@@ -13404,7 +13404,7 @@ function renderMyPlanTasks() {
     var descRow = '';
     if (descOpenNow) {
       descRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
-        (task.description ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + task.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
+        (task.description ? '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + task.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
         '</div></td></tr>';
     }
 
@@ -13584,7 +13584,7 @@ function renderMyTodos() {
     var descRow = '';
     if (descOpenNow) {
       descRow = '<tr><td colspan="5" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
-        (td.description ? '<div style="font-size:13px;white-space:normal;word-break:break-word;line-height:1.6">' + td.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
+        (td.description ? '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + td.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
         '</div></td></tr>';
     }
 
