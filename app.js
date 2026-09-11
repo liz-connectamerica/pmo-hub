@@ -598,8 +598,9 @@ function myAssignedWorkRequestsNewCount() {
 
 // Work requests this person submitted that are waiting on a reply from them.
 function mySubmittedWorkRequestsNeedsInfoCount() {
-  if (!D.currentProfile) return 0;
-  return (D.workRequests || []).filter(function(w){ return w.requesterId === D.currentProfile.id && w.status === 'Needs Info'; }).length;
+  var myId = effectiveUserId();
+  if (!myId) return 0;
+  return (D.workRequests || []).filter(function(w){ return w.requesterId === myId && w.status === 'Needs Info'; }).length;
 }
 
 function myProjects() {
@@ -630,6 +631,21 @@ function hasAssignedWork() {
 
 function currentUser() {
   return D.currentProfile ? D.currentProfile.display_name : '';
+}
+
+// The account id whose "mine" data (submitted requests, etc.) should show --
+// normally the real logged-in admin's own id, but while previewing a specific
+// person via View As, D.currentProfile never actually changes (only D.role and
+// D.myResourceId do), so anything keyed directly off D.currentProfile.id has to
+// go through here instead to reflect who's actually being previewed. Returns
+// null if the viewed resource has no linked account yet -- there's nothing
+// real to show, matching the "no account yet" View As banner note.
+function effectiveUserId() {
+  if (D.viewingAsMode === 'resource' && D.viewingAsResourceId) {
+    var r = D.resources.find(function(x){ return x.id === D.viewingAsResourceId; });
+    return r ? (r.userId || null) : null;
+  }
+  return D.currentProfile ? D.currentProfile.id : null;
 }
 
 function canEdit(p) {
@@ -2837,9 +2853,10 @@ function globalSearchMatches(query) {
   });
 
   var myId = D.myResourceId;
+  var myUserId = effectiveUserId();
   var wrPool = D.role === 'admin'
     ? (D.workRequests || [])
-    : (D.workRequests || []).filter(function(w) { return w.requesterId === D.currentProfile.id || (myId && w.resourceId === myId); });
+    : (D.workRequests || []).filter(function(w) { return w.requesterId === myUserId || (myId && w.resourceId === myId); });
   var allWorkRequests = wrPool.filter(function(w) {
     return w.title.toLowerCase().indexOf(q) >= 0 || (w.description || '').toLowerCase().indexOf(q) >= 0;
   });
@@ -3250,7 +3267,7 @@ function pgHome() {
     var newWr = (D.workRequests || []).filter(function(w){ return w.status === 'New'; }).length;
     if (newWr > 0) addAttn('blue', 'ti-clipboard-list', newWr + ' work request' + (newWr===1?'':'s') + ' awaiting review', '', 'nav(\'admin-work-requests\')');
   } else {
-    (D.workRequests || []).filter(function(w){ return w.requesterId === D.currentProfile.id && w.status === 'Needs Info'; }).forEach(function(w) {
+    (D.workRequests || []).filter(function(w){ return w.requesterId === effectiveUserId() && w.status === 'Needs Info'; }).forEach(function(w) {
       addAttn('blue', 'ti-arrow-back-up', 'Work request "' + w.title + '" was sent back to you', 'Needs more detail before it can be reviewed', 'globalSearchGoWorkRequest(\'' + w.id + '\')');
     });
     if (myId) {
@@ -3748,9 +3765,9 @@ function captureFinalizeDraft(id) {
 function reviewRequest(id) {
   var r = D.requests.find(function(x){ return x.id === id; });
   var canApprove = D.role === 'admin' && r.status === 'Pending';
-  var canResubmit = (r.status === 'Rejected' || r.status === 'Revoked') && (r.submitterId === D.currentProfile.id || D.role === 'admin');
+  var canResubmit = (r.status === 'Rejected' || r.status === 'Revoked') && (r.submitterId === effectiveUserId() || D.role === 'admin');
   var isAdmin = D.role === 'admin';
-  var isOwnPending = r.status === 'Pending' && r.submitterId === D.currentProfile.id;
+  var isOwnPending = r.status === 'Pending' && r.submitterId === effectiveUserId();
   var canEditRequest = isAdmin || isOwnPending;
   var linkedP = r.linkedProject ? D.projects.find(function(p){ return p.id === r.linkedProject; }) : null;
 
@@ -12425,9 +12442,9 @@ window.setMyRequestsTopTab = function(t) { myRequestsPageState.tab = t; pgMyRequ
 function pgMyRequests() {
   tb('My Requests');
   var top = myRequestsPageState;
-  var me = currentUser() || 'Current User';
-  var projectCount = D.requests.filter(function(r){ return r.submitter === me; }).length;
-  var workCount = (D.workRequests || []).filter(function(w){ return w.requesterId === D.currentProfile.id; }).length;
+  var myId = effectiveUserId();
+  var projectCount = D.requests.filter(function(r){ return r.submitterId === myId; }).length;
+  var workCount = (D.workRequests || []).filter(function(w){ return w.requesterId === myId; }).length;
 
   var tabsHtml = '<div class="tab-bar" style="margin-bottom:16px">' +
     '<div class="tab' + (top.tab==='project'?' active':'') + '" onclick="setMyRequestsTopTab(\'project\')">Project Requests <span class="badge badge-gray">' + projectCount + '</span></div>' +
@@ -12440,8 +12457,9 @@ function pgMyRequests() {
 
 function renderMyProjectRequests() {
   var st = myRequestsState;
+  var myId = effectiveUserId();
   var me = currentUser() || 'Current User';
-  var allMine = D.requests.filter(function(r){ return r.submitter === me; });
+  var allMine = D.requests.filter(function(r){ return r.submitterId === myId; });
   var myNotifs = D.notifications.filter(function(n){ return n.submitter === me; });
 
   var mine = allMine.slice();
@@ -12520,7 +12538,7 @@ function renderMyProjectRequests() {
 
 function renderMySubmittedWorkRequests() {
   var st = myWorkRequestsSubmittedState;
-  var mine = (D.workRequests || []).filter(function(w){ return w.requesterId === D.currentProfile.id; });
+  var mine = (D.workRequests || []).filter(function(w){ return w.requesterId === effectiveUserId(); });
 
   var searchBar = searchBoxHtml(st.search, 'Search work requests by title…', 'my-wr-submitted-search', 'onMyWorkRequestsSubmittedSearch');
 
