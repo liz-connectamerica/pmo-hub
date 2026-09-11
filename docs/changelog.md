@@ -14,6 +14,14 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-11">
+  <h2>Fixed View As showing the admin's own requests</h2>
+  <p class="changelog-date">September 11, 2026</p>
+  <ul>
+    <li><strong>Fixed:</strong> using View As to preview a specific person showed the admin's own Project Requests and Work Requests on My Requests, instead of the previewed person's — along with a few related spots (the "Needs Info" badge, a Home attention notification, and global search's work-request scoping) that had the same underlying issue.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-09-10">
   <h2>Fixed a date-display bug in Summarize, plus line breaks in long text</h2>
   <p class="changelog-date">September 10, 2026</p>
