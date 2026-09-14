@@ -4289,6 +4289,12 @@ async function decideReq(id, decision) {
       showToast('Please fill in Value Area and Business Unit before approving');
       return;
     }
+    // Disable both decision buttons the moment validation passes and real
+    // writes are about to start -- if anything throws partway through (as
+    // happened once when a stray reference here went uncaught), re-clicking
+    // Approve on a modal that never got the chance to close must not be able
+    // to create a second project from the same request.
+    document.querySelectorAll('.modal-footer button').forEach(function(b){ b.disabled = true; });
     var selectedCategories = Array.from(document.querySelectorAll('.rv-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
 
     var newStage = computeStageFromDates(startDate, endDate);
@@ -4354,7 +4360,7 @@ async function decideReq(id, decision) {
     // while counting badges across every project.
     await refreshProjects();
     r.status = reqStatus; r.linkedProject = projResult.data.id; r.feedback = feedbackVal;
-    r.priority = priority; r.value = valueArea; r.businessUnit = businessUnit; r.startDate = startDate; r.targetEndDate = endDate;
+    r.value = valueArea; r.businessUnit = businessUnit; r.startDate = startDate; r.targetEndDate = endDate;
     delete reviewFinalizeDrafts[id];
     addNotif(r.submitter, 'Your request "' + r.title + '" has been approved' + (newStage === 'backlog' ? ' and added to the backlog.' : newStage === 'active' ? ' and is already underway.' : ' and scheduled.'), 'approved');
   } else if (decision === 'Rejected') {
