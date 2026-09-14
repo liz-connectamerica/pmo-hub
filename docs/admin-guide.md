@@ -38,7 +38,7 @@ The full picture, request through project retirement — the dashed arrow is **D
 <pre class="mermaid">
 flowchart TD
     Submit(["Member submits a request"]) --> Pending["Pending"]
-    Pending -->|"Admin reviews &amp; finalizes:<br/>priority · value area · dates"| Decision{"Approve?"}
+    Pending -->|"Admin reviews &amp; finalizes:<br/>commitment · value area · dates"| Decision{"Approve?"}
     Pending -->|"Submitter withdraws"| Revoked["Revoked"]
     Decision -->|"No — with feedback"| Rejected["Rejected"]
     Decision -->|"Yes"| Stage{"Dates entered?"}
@@ -169,7 +169,7 @@ Similar timeline to Roadmap, but scoped to backlog projects with only a target-q
 
 ## All Projects
 
-A single admin-only table of every project regardless of stage, with a column — sortable and filterable — for every field Bulk Edit can set: category, business unit, stage, status, phase, priority, value area, sponsor, owner, T-shirt size, health, delivery methodology, opportunity type, and both confidence ratings. Every filter also offers a **Not set** option, to isolate exactly which projects are missing a given field — Stage is the one exception, since it can never actually be blank. Two things live here that don't exist elsewhere:
+A single admin-only table of every project regardless of stage, with a column — sortable and filterable — for every field Bulk Edit can set: category, business unit, stage, status, phase, commitment, value area, sponsor, owner, T-shirt size, health, delivery methodology, opportunity type, and both confidence ratings. Every filter also offers a **Not set** option, to isolate exactly which projects are missing a given field — Stage is the one exception, since it can never actually be blank. Two things live here that don't exist elsewhere:
 
 - **New project** — create a project directly, bypassing the request/approval workflow entirely (useful for adding already-in-flight work).
 - **Bulk edit** — select multiple rows and set one field across all of them at once: Sponsor, Owner, Business Unit, Value Area, Commitment, Status, Phase, T-shirt Size, Health, Delivery Methodology, Opportunity Type, Opportunity Type Confidence, or Cost Estimate Confidence.
@@ -180,7 +180,7 @@ Download the template, fill it in, and upload it. Expected columns: Project Name
 
 Stage should almost always be left blank — it's derived from Start Date/Target End Date the same way it is everywhere else in the app (no dates → Backlog, one or both dates in the future → Planned, today falls within the range → Active). The only values the column accepts are **Hold** or **Complete**, since those two can't be inferred from dates alone; a Complete row also gets its progress forced to 100 and its completed date stamped, matching what Mark complete does.
 
-Every row is validated before you commit anything — you'll see a green check or a red alert with a specific error message per row (bad stage/priority/category values or unparseable dates). Only valid rows get imported; fix errors in the spreadsheet and re-upload rather than editing inline.
+Every row is validated before you commit anything — you'll see a green check or a red alert with a specific error message per row (bad stage/category values or unparseable dates). Only valid rows get imported; fix errors in the spreadsheet and re-upload rather than editing inline.
 
 **Important:** there's no duplicate detection. Every valid row is always inserted as a new project — re-uploading a template you've already imported will create duplicates for every row that was already brought in. Only include genuinely new rows in each upload.
 
