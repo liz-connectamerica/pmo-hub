@@ -546,7 +546,7 @@ async function loadAllProjects() {
       team: teamNames, teamIds: teamIds, teamTiers: teamTiers, teamOverrides: teamOverrides,
       status: pr.status, phase: pr.phase, progress: pr.progress,
       start: pr.start_date, end: pr.end_date, plannedStart: pr.planned_start,
-      value: pr.value_area, priority: pr.priority, description: pr.description,
+      value: pr.value_area, commitment: pr.commitment, description: pr.description,
       blockers: pr.blockers, health: pr.health, stage: pr.stage, requestId: pr.request_id,
       holdReason: pr.hold_reason, preHoldStage: pr.pre_hold_stage, heldAt: pr.held_at,
       targetQuarter: pr.target_quarter, targetYear: pr.target_year, completedAt: pr.completed_at,
@@ -2034,11 +2034,11 @@ var portfolioOwnerFilter = [];
 var portfolioCollapsed = {};
 var prioritizeBacklogState = { category:'All', dragPid:null, search:'', materializing:false, lastMove:null };
 var backlogProjState = { sort:'name', dir:'asc', search:'', category:'All',
-  filters: { tags:[], value:[], priority:[], owner:[] }, openFilter:null };
+  filters: { tags:[], value:[], commitment:[], owner:[] }, openFilter:null };
 var plannedProjState = { sort:'name', dir:'asc', search:'', category:'All',
-  filters: { tags:[], priority:[], owner:[] }, openFilter:null };
+  filters: { tags:[], commitment:[], owner:[] }, openFilter:null };
 var activeProjState = { sort:'name', dir:'asc', search:'', category:'All',
-  filters: { tags:[], status:[], priority:[], phase:[], owner:[] }, openFilter:null };
+  filters: { tags:[], status:[], commitment:[], phase:[], owner:[] }, openFilter:null };
 var completedProjState = { sort:'completedAt', dir:'desc', search:'', category:'All', tagFilter:[] };
 var roadmapTagFilter = [];
 var roadmapRangeMode = 'next12'; // 'next12' | 'last12' | 'year'
@@ -2048,7 +2048,7 @@ var futurePlanningSelectedYear = new Date().getFullYear();
 var futurePlanningCategoryFilter = 'All';
 var allProjectsState = {
   search: '', sort: 'name', dir: 'asc', selected: {},
-  filters: { category:[], businessUnit:[], stage:[], status:[], phase:[], priority:[], value:[], sponsor:[], owner:[],
+  filters: { category:[], businessUnit:[], stage:[], status:[], phase:[], commitment:[], value:[], sponsor:[], owner:[],
     tshirtSize:[], health:[], deliveryMethodology:[], estimatedType:[], valueConfidence:[], costConfidence:[] },
   openFilter: null
 };
@@ -2059,15 +2059,16 @@ var myProjectsPageState = { tab:'sponsor' };
 // tab since a search/filter/sort chosen on one tab shouldn't reset when you
 // switch to another.
 var myProjectsTableState = {
-  sponsor:            { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], priority:[], owner:[] } },
-  'owner-active':     { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], priority:[], owner:[] } },
-  'owner-notstarted': { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], priority:[], owner:[] } },
-  contributor:        { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], priority:[], owner:[] } },
-  completed:          { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], priority:[], owner:[] } }
+  sponsor:            { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], commitment:[], owner:[] } },
+  'owner-active':     { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], commitment:[], owner:[] } },
+  'owner-notstarted': { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], commitment:[], owner:[] } },
+  contributor:        { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], commitment:[], owner:[] } },
+  completed:          { search:'', sort:'name', dir:'asc', filters:{ status:[], stage:[], commitment:[], owner:[] } }
 };
 var myCapacityPageState = { month:'current' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
+var COMMITMENT_RANK = { 'Must':0, 'Should':1, 'Want':2 };
 
 // Capacity planning: a team member's involvement in a given project is set
 // as one of these tiers (by the project owner or an admin) rather than a
@@ -2130,7 +2131,7 @@ function buildQuarterOptions() {
 var STAGE_SORT_RANK = { active: 0, planned: 1, backlog: 2, hold: 3, complete: 4 };
 
 var CHANGE_LOG_FIELDS = {
-  name: 'Project Name', stage: 'Stage', status: 'Status', phase: 'Phase', priority: 'Priority',
+  name: 'Project Name', stage: 'Stage', status: 'Status', phase: 'Phase', commitment: 'Commitment',
   value: 'Value Area', businessUnit: 'Business Unit', sponsor: 'Sponsor', owner: 'Owner', requirementsOwner: 'Requirements Owner',
   start: 'Start Date', end: 'Target End Date', progress: 'Progress %', health: 'Health',
   description: 'Description', blockers: 'Blockers', holdReason: 'Hold Reason', deliveryMethodology: 'Delivery Methodology',
@@ -2290,7 +2291,7 @@ function buildReportHtml(p) {
   var sevColors = { High: ['#FCEBEB','#791F1F'], Medium: ['#FAEEDA','#633806'], Low: ['#E6F1FB','#0C447C'] };
   var stageColors = { backlog:['#FAEEDA','#633806'], planned:['#E6F1FB','#0C447C'], active:['#E1F5EE','#085041'], complete:['#f0ede8','#555'], hold:['#FAECE7','#993C1D'] };
   var stageLabels = { backlog:'Backlog', planned:'Planned', active:'Active', complete:'Completed', hold:'Hold' };
-  var priorityColors = { Critical:['#FCEBEB','#791F1F'], High:['#FAECE7','#712B13'], Medium:['#FAEEDA','#633806'], Low:['#E6F1FB','#0C447C'], 'Needs prioritization':['#f0ede8','#444'] };
+  var commitmentColors = { Must:['#FCEBEB','#791F1F'], Should:['#FAEEDA','#633806'], Want:['#E6F1FB','#0C447C'] };
   var statusColors = { 'On Track':['#E1F5EE','#085041'], 'At Risk':['#FAEEDA','#633806'], Blocked:['#FCEBEB','#791F1F'] };
 
   // No margin here on purpose -- Outlook's paste sanitizer (even in "Keep
@@ -2351,11 +2352,11 @@ function buildReportHtml(p) {
   }
 
   var sc = stageColors[p.stage] || stageColors.backlog;
-  var pc = priorityColors[p.priority] || priorityColors['Needs prioritization'];
+  var cc = commitmentColors[p.commitment] || commitmentColors.Want;
   var stc = statusColors[p.status] || null;
   var badgeList = [labeledBadge('Stage', stageLabels[p.stage] || p.stage, sc)];
   if (stc) badgeList.push(labeledBadge('Status', p.status, stc));
-  if (p.priority) badgeList.push(labeledBadge('Priority', p.priority, pc));
+  if (p.commitment) badgeList.push(labeledBadge('Commitment', p.commitment, cc));
   var badgesHtml = badgeList.join('&nbsp;&nbsp;&nbsp;');
 
   var recentItems = s.recentlyCompleted.map(function(m){ return { name: m.name, date: fmtDate(m.completedDate), late: false }; });
@@ -2408,7 +2409,7 @@ function reportPlainText(p) {
   var lines = [];
   lines.push(p.name + ' — Status Report (as of ' + fmtDate(todayStr()) + ')');
   lines.push('');
-  lines.push('Stage: ' + (p.stage||'—') + '   Status: ' + (p.status||'—') + '   Priority: ' + (p.priority||'—'));
+  lines.push('Stage: ' + (p.stage||'—') + '   Status: ' + (p.status||'—') + '   Commitment: ' + (p.commitment||'—'));
   lines.push('Owner: ' + (p.owner||'—') + '   Sponsor: ' + (p.sponsor||'—') + '   Target end: ' + (p.end ? fmtDate(p.end) : 'TBD'));
   lines.push('Progress: ' + (p.progress||0) + '%');
   lines.push('');
@@ -2640,13 +2641,22 @@ function bdg(s) {
     'Pending':'badge-amber','Approved':'badge-teal','Rejected':'badge-red','Backlog':'badge-amber','Active':'badge-teal','Planned':'badge-blue','Revoked':'badge-gray',
     'Done':'badge-teal','In Progress':'badge-purple','To Do':'badge-gray',
     'Open':'badge-red','Closed':'badge-teal','Deferred':'badge-amber','Cancelled':'badge-red',
-    'Critical':'badge-red','High':'badge-coral','Medium':'badge-amber','Low':'badge-blue','Needs prioritization':'badge-gray'
+    'Critical':'badge-red','High':'badge-coral','Medium':'badge-amber','Low':'badge-blue','Needs prioritization':'badge-gray',
+    'Must':'badge-red','Should':'badge-amber','Want':'badge-blue','Needs commitment':'badge-gray'
   };
   return '<span class="badge ' + (map[s] || 'badge-gray') + '">' + s + '</span>';
 }
 
 function badgeIf(cls, s) {
   return s ? '<span class="badge ' + cls + '">' + s + '</span>' : '';
+}
+
+// Commitment (Must/Should/Want) is admin-only and starts unset on every
+// project -- unlike Priority, unset always renders as its own explicit
+// "Needs commitment" badge rather than a blank dash, so it never reads as
+// "decided to be low" when really nobody's looked at it yet.
+function commitmentBadge(p) {
+  return bdg(p.commitment || 'Needs commitment');
 }
 
 function hdot(h) {
@@ -3475,7 +3485,7 @@ function pgSummary() {
 
   window.summaryGoCategory = function(cat) {
     activeProjState.category = cat;
-    activeProjState.filters = { tags:[], status:[], priority:[], phase:[], owner:[] };
+    activeProjState.filters = { tags:[], status:[], commitment:[], phase:[], owner:[] };
     nav('projects');
   };
   window.summaryGoStatus = function(status) {
@@ -3483,7 +3493,7 @@ function pgSummary() {
     // The Active page's own Status filter has no "not set" option (unlike
     // All Projects) -- "Not set" here just clears the filter and shows
     // everything, rather than claiming a precision it can't deliver.
-    activeProjState.filters = { tags:[], status: status === 'Not set' ? [] : [status], priority:[], phase:[], owner:[] };
+    activeProjState.filters = { tags:[], status: status === 'Not set' ? [] : [status], commitment:[], phase:[], owner:[] };
     nav('projects');
   };
 }
@@ -3515,7 +3525,7 @@ function pgExecSummary() {
     return '<div class="card mb-16">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">' +
         '<div style="font-size:16px;font-weight:700;display:flex;align-items:center;cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' + hdot(p.health) + p.name + '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + lateBadgeHtml(isProjectLate(p)) + '</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + commitmentBadge(p) + ' ' + lateBadgeHtml(isProjectLate(p)) + '</div>' +
       '</div>' +
       '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px 20px;margin:12px 0">' +
         metaBox('Owner', p.owner || '—') + metaBox('Sponsor', p.sponsor || '—') + metaBox('Target end', p.end || '—') +
@@ -4294,7 +4304,7 @@ async function decideReq(id, decision) {
 
     var projectRecord = {
       name: r.title, status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
-      value_area: valueArea, priority: priority, description: r.description, sponsor: r.sponsor || null,
+      value_area: valueArea, description: r.description, sponsor: r.sponsor || null,
       business_unit: businessUnit, tshirt_size: tshirtSize, delivery_methodology: deliveryMethodology, blockers: '', health: null, stage: newStage,
       planned_start: startDate, start_date: startDate, end_date: endDate,
       target_quarter: targetQuarter, target_year: targetYear, target_end_quarter: targetEndQuarter, target_end_year: targetEndYear,
@@ -4305,7 +4315,7 @@ async function decideReq(id, decision) {
     var projResult = await sb.from('projects').insert(projectRecord).select().single();
     if (projResult.error) { showToast('Could not create project: ' + projResult.error.message); return; }
     await logProjectChanges(projResult.data.id, null, {
-      name: r.title, stage: newStage, status: projectRecord.status, priority: priority, value: valueArea,
+      name: r.title, stage: newStage, status: projectRecord.status, value: valueArea,
       businessUnit: businessUnit, sponsor: r.sponsor, start: startDate, end: endDate, description: r.description,
       tshirtSize: tshirtSize, deliveryMethodology: deliveryMethodology
     }, 'request');
@@ -4373,12 +4383,12 @@ function pgBacklog() {
   if (st.search) { var bq = st.search.toLowerCase(); bp = bp.filter(function(p){ return p.name.toLowerCase().indexOf(bq) >= 0; }); }
   if (st.filters.tags.length) bp = bp.filter(function(p){ return st.filters.tags.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   if (st.filters.value.length) bp = bp.filter(function(p){ return st.filters.value.indexOf(p.value) >= 0; });
-  if (st.filters.priority.length) bp = bp.filter(function(p){ return st.filters.priority.indexOf(p.priority) >= 0; });
+  if (st.filters.commitment.length) bp = bp.filter(function(p){ return st.filters.commitment.indexOf(p.commitment || 'Needs commitment') >= 0; });
   if (st.filters.owner.length) bp = bp.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
 
   bp = bp.slice().sort(function(a,b) {
     var av, bv;
-    if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 3; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 3; }
     else {
       av = a[st.sort]; bv = b[st.sort];
       av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
@@ -4391,7 +4401,7 @@ function pgBacklog() {
   function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
   function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleBacklogFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
 
-  var valueChoices = VALUE_AREAS.slice(), priorityChoices = PRIORITIES.slice();
+  var valueChoices = VALUE_AREAS.slice(), commitmentChoices = COMMITMENTS.concat(['Needs commitment']);
   var ownerChoices = []; allBacklog.forEach(function(p){ if (p.owner && ownerChoices.indexOf(p.owner) < 0) ownerChoices.push(p.owner); }); ownerChoices.sort();
   var tagChoices = D.tags.map(function(t){ return t.name; });
 
@@ -4400,7 +4410,7 @@ function pgBacklog() {
       '<td class="bold">' + p.name + '</td>' +
       '<td>' + ((p.tags && p.tags.length) ? p.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.value || '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + commitmentBadge(p) + '</td>' +
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
       '<td style="white-space:nowrap"><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button> ' +
         (D.role === 'admin' ? '<button class="btn btn-sm btn-primary" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule</button>' : '') +
@@ -4416,7 +4426,7 @@ function pgBacklog() {
       '<th class="sortable-th" onclick="setBacklogSort(\'name\')">Project ' + arrow('name') + '</th>' +
       '<th class="sortable-th"><span onclick="setBacklogSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setBacklogSort(\'value\')">Value area ' + arrow('value') + '</span>' + filterIcon('value', st.filters.value.length>0) + '</th>' +
-      '<th class="sortable-th"><span onclick="setBacklogSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setBacklogSort(\'commitment\')">Commitment ' + arrow('commitment') + '</span>' + filterIcon('commitment', st.filters.commitment.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setBacklogSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
       '<th></th>' +
     '</tr></thead><tbody>' + (rows || '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:20px">No backlog projects match these filters</td></tr>') + '</tbody></table></div></div>';
@@ -4429,8 +4439,8 @@ function pgBacklog() {
   window.setBacklogCategory = function(c) { st.category = c; pgBacklog(); };
   window.setBacklogSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgBacklog(); };
   window.toggleBacklogFilter = function(col) {
-    var labelMap = { tags:'Tags', value:'Value area', priority:'Priority', owner:'Owner' };
-    var choicesMap = { tags:tagChoices, value:valueChoices, priority:priorityChoices, owner:ownerChoices };
+    var labelMap = { tags:'Tags', value:'Value area', commitment:'Commitment', owner:'Owner' };
+    var choicesMap = { tags:tagChoices, value:valueChoices, commitment:commitmentChoices, owner:ownerChoices };
     openFilterModal(labelMap[col], choicesMap[col],
       function() { return st.filters[col]; },
       function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
@@ -4849,12 +4859,12 @@ function pgPlanned() {
   var pp = allPlanned.filter(function(p){ return projectMatchesCategoryTab(p, st.category); });
   if (st.search) { var plq = st.search.toLowerCase(); pp = pp.filter(function(p){ return p.name.toLowerCase().indexOf(plq) >= 0; }); }
   if (st.filters.tags.length) pp = pp.filter(function(p){ return st.filters.tags.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
-  if (st.filters.priority.length) pp = pp.filter(function(p){ return st.filters.priority.indexOf(p.priority) >= 0; });
+  if (st.filters.commitment.length) pp = pp.filter(function(p){ return st.filters.commitment.indexOf(p.commitment || 'Needs commitment') >= 0; });
   if (st.filters.owner.length) pp = pp.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
 
   pp = pp.slice().sort(function(a,b) {
     var av, bv;
-    if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 3; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 3; }
     else {
       var sortKey = st.sort === 'start' ? 'plannedStart' : st.sort;
       av = a[sortKey]; bv = b[sortKey];
@@ -4871,7 +4881,7 @@ function pgPlanned() {
   function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
   function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();togglePlannedFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
 
-  var priorityChoices = PRIORITIES.slice();
+  var commitmentChoices = COMMITMENTS.concat(['Needs commitment']);
   var ownerChoices = []; allPlanned.forEach(function(p){ if (p.owner && ownerChoices.indexOf(p.owner) < 0) ownerChoices.push(p.owner); }); ownerChoices.sort();
   var tagChoices = D.tags.map(function(t){ return t.name; });
 
@@ -4886,7 +4896,7 @@ function pgPlanned() {
     return '<tr>' +
       '<td class="bold">' + p.name + '</td>' +
       '<td>' + ((p.tags && p.tags.length) ? p.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + commitmentBadge(p) + '</td>' +
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + (soonNoOwner ? ' <i class="ti ti-alert-triangle" style="color:var(--hatch-border)" title="Starts within 30 days, no Owner assigned yet"></i>' : '') + '</td>' +
       '<td>' + (p.plannedStart || '<span class="text-muted">TBD</span>') + '</td>' +
       '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
@@ -4903,7 +4913,7 @@ function pgPlanned() {
     '<div class="card"><div class="table-wrap"><table><thead><tr>' +
       '<th class="sortable-th" onclick="setPlannedSort(\'name\')">Project ' + arrow('name') + '</th>' +
       '<th class="sortable-th"><span onclick="setPlannedSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
-      '<th class="sortable-th"><span onclick="setPlannedSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setPlannedSort(\'commitment\')">Commitment ' + arrow('commitment') + '</span>' + filterIcon('commitment', st.filters.commitment.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setPlannedSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
       '<th class="sortable-th" onclick="setPlannedSort(\'start\')">Target start date ' + arrow('start') + '</th>' +
       '<th class="sortable-th" onclick="setPlannedSort(\'end\')">Target end date ' + arrow('end') + '</th>' +
@@ -4918,8 +4928,8 @@ function pgPlanned() {
   window.setPlannedCategory = function(c) { st.category = c; pgPlanned(); };
   window.setPlannedSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgPlanned(); };
   window.togglePlannedFilter = function(col) {
-    var labelMap = { tags:'Tags', priority:'Priority', owner:'Owner' };
-    var choicesMap = { tags:tagChoices, priority:priorityChoices, owner:ownerChoices };
+    var labelMap = { tags:'Tags', commitment:'Commitment', owner:'Owner' };
+    var choicesMap = { tags:tagChoices, commitment:commitmentChoices, owner:ownerChoices };
     openFilterModal(labelMap[col], choicesMap[col],
       function() { return st.filters[col]; },
       function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
@@ -4980,13 +4990,13 @@ function pgProjects() {
   if (st.search) { var apq = st.search.toLowerCase(); ps = ps.filter(function(p){ return p.name.toLowerCase().indexOf(apq) >= 0; }); }
   if (st.filters.tags.length) ps = ps.filter(function(p){ return st.filters.tags.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
   if (st.filters.status.length) ps = ps.filter(function(p){ return st.filters.status.indexOf(p.status) >= 0; });
-  if (st.filters.priority.length) ps = ps.filter(function(p){ return st.filters.priority.indexOf(p.priority) >= 0; });
+  if (st.filters.commitment.length) ps = ps.filter(function(p){ return st.filters.commitment.indexOf(p.commitment || 'Needs commitment') >= 0; });
   if (st.filters.phase.length) ps = ps.filter(function(p){ return st.filters.phase.indexOf(p.phase) >= 0; });
   if (st.filters.owner.length) ps = ps.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
 
   ps = ps.slice().sort(function(a,b) {
     var av, bv;
-    if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 3; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 3; }
     else {
       av = a[st.sort]; bv = b[st.sort];
       av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
@@ -4999,7 +5009,7 @@ function pgProjects() {
   function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
   function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleActiveProjFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
 
-  var statusChoices = STATUSES.slice(), priorityChoices = PRIORITIES.slice(), phaseChoices = PHASES.slice();
+  var statusChoices = STATUSES.slice(), commitmentChoices = COMMITMENTS.concat(['Needs commitment']), phaseChoices = PHASES.slice();
   var ownerChoices = []; allActive.forEach(function(p){ if (p.owner && ownerChoices.indexOf(p.owner) < 0) ownerChoices.push(p.owner); }); ownerChoices.sort();
   var tagChoices = D.tags.map(function(t){ return t.name; });
 
@@ -5009,7 +5019,7 @@ function pgProjects() {
       '<td class="bold">' + p.name + '</td>' +
       '<td>' + ((p.tags && p.tags.length) ? p.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + commitmentBadge(p) + '</td>' +
       '<td>' + (p.phase || '<span class="text-muted">—</span>') + '</td>' +
       '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:var(--border-soft);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + p.progress + '%;background:var(--accent)"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
@@ -5026,7 +5036,7 @@ function pgProjects() {
       '<th class="sortable-th" onclick="setActiveProjSort(\'name\')">Project ' + arrow('name') + '</th>' +
       '<th class="sortable-th"><span onclick="setActiveProjSort(\'tags\')">Tags ' + arrow('tags') + '</span>' + filterIcon('tags', st.filters.tags.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setActiveProjSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
-      '<th class="sortable-th"><span onclick="setActiveProjSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setActiveProjSort(\'commitment\')">Commitment ' + arrow('commitment') + '</span>' + filterIcon('commitment', st.filters.commitment.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setActiveProjSort(\'phase\')">Phase ' + arrow('phase') + '</span>' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
       '<th class="sortable-th" onclick="setActiveProjSort(\'progress\')">Progress % ' + arrow('progress') + '</th>' +
       '<th class="sortable-th"><span onclick="setActiveProjSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
@@ -5042,8 +5052,8 @@ function pgProjects() {
   window.setActiveProjCategory = function(c) { st.category = c; pgProjects(); };
   window.setActiveProjSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgProjects(); };
   window.toggleActiveProjFilter = function(col) {
-    var labelMap = { tags:'Tags', status:'Status', priority:'Priority', phase:'Phase', owner:'Owner' };
-    var choicesMap = { tags:tagChoices, status:statusChoices, priority:priorityChoices, phase:phaseChoices, owner:ownerChoices };
+    var labelMap = { tags:'Tags', status:'Status', commitment:'Commitment', phase:'Phase', owner:'Owner' };
+    var choicesMap = { tags:tagChoices, status:statusChoices, commitment:commitmentChoices, phase:phaseChoices, owner:ownerChoices };
     openFilterModal(labelMap[col], choicesMap[col],
       function() { return st.filters[col]; },
       function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
@@ -5078,7 +5088,7 @@ function pgCompleted() {
     return '<tr><td class="bold">' + p.name +
       (p.tags && p.tags.length ? '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">' + p.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
       '</td><td>' + badgeIf('badge-purple', p.value) + '</td>' +
-      '<td>' + bdg(p.priority) + '</td><td class="text-muted">' + (p.owner||'—') + '</td><td class="text-muted">' + fmtDate(p.completedAt) + '</td>' +
+      '<td>' + commitmentBadge(p) + '</td><td class="text-muted">' + (p.owner||'—') + '</td><td class="text-muted">' + fmtDate(p.completedAt) + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
       (D.role === 'admin' ? ' <button class="btn btn-sm" onclick="reactivateProject(\'' + p.id + '\')"><i class="ti ti-refresh"></i> Re-activate</button>' : '') +
       '</td></tr>';
@@ -5088,7 +5098,7 @@ function pgCompleted() {
     cat.html +
     (cp.length
       ? '<div class="card"><div class="section-title">Completed projects</div><div class="table-wrap"><table>' +
-        '<thead><tr><th>Project</th><th>Value area</th><th>Priority</th><th>Owner</th><th>Completed</th><th></th></tr></thead>' +
+        '<thead><tr><th>Project</th><th>Value area</th><th>Commitment</th><th>Owner</th><th>Completed</th><th></th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table></div></div>'
       : '<div class="empty-state"><i class="ti ti-circle-check"></i><p>No completed projects yet</p></div>');
   window.onCompletedSearch = function(v) {
@@ -5242,10 +5252,6 @@ function pgProjectDetail(pid, tab) {
 
       var identityBody = (function() {
         if (editable && projectInfoEditing === 'identity') {
-          var priorOptsI = PRIORITIES.map(function(s){
-            var isSelected = p.priority === s || (PRIORITIES.indexOf(p.priority) < 0 && s === 'Needs prioritization');
-            return '<option' + (isSelected ? ' selected' : '') + '>' + s + '</option>';
-          }).join('');
           var valOptsI = (VALUE_AREAS.indexOf(p.value) < 0 ? '<option value="" selected>— Not set —</option>' : '') + VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
           var tshirtOptsI = '<option value=""' + (!p.tshirtSize?' selected':'') + '>— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option' + (p.tshirtSize===s?' selected':'') + '>' + s + '</option>'; }).join('');
           var buOptsI = '<option value="">— None —</option>' + BUSINESS_UNITS.map(function(s){ return '<option' + (p.businessUnit===s?' selected':'') + '>' + s + '</option>'; }).join('');
@@ -5256,7 +5262,6 @@ function pgProjectDetail(pid, tab) {
           return '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Project name</div><input type="text" id="pfi-name" value="' + p.name.replace(/"/g,'&quot;') + '"></div>' +
             '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Description</div><textarea id="pfi-desc">' + (p.description||'') + '</textarea></div>' +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px 16px;margin-bottom:12px">' +
-              '<div><div class="form-label">Priority</div><select id="pfi-priority">' + priorOptsI + '</select></div>' +
               '<div><div class="form-label">Value area</div><select id="pfi-value">' + valOptsI + '</select></div>' +
               '<div><div class="form-label">T-shirt size</div><select id="pfi-tshirt">' + tshirtOptsI + '</select></div>' +
               '<div><div class="form-label">Business unit</div><select id="pfi-bu">' + buOptsI + '</select></div>' +
@@ -5272,7 +5277,12 @@ function pgProjectDetail(pid, tab) {
             fieldBox('Project name', p.name) +
             '<div class="form-group" style="margin:12px 0"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin:12px 0 16px">' +
-              fieldBox('Priority', bdg(p.priority)) +
+              fieldBox('Commitment', D.role === 'admin'
+                ? '<select onchange="saveCommitment(\'' + p.id + '\', this.value)" style="font-size:12px;padding:3px 6px">' +
+                    '<option value=""' + (!p.commitment ? ' selected' : '') + '>Needs commitment</option>' +
+                    COMMITMENTS.map(function(s){ return '<option' + (p.commitment===s?' selected':'') + '>' + s + '</option>'; }).join('') +
+                  '</select>'
+                : commitmentBadge(p)) +
               fieldBox('Value area', badgeIf('badge-purple', p.value)) +
               fieldBox('T-shirt size', p.tshirtSize ? '<span class="badge badge-gray">' + p.tshirtSize + '</span>' : '<span class="text-muted">Not sized</span>') +
               fieldBox('Business unit', p.businessUnit || '—') +
@@ -5991,7 +6001,7 @@ function pgProjectDetail(pid, tab) {
 
   document.getElementById('content').innerHTML =
     '<div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 112px);box-sizing:border-box;overflow:hidden">' +
-    '<div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;flex-shrink:0">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + bdg(p.priority) + ' ' + lateBadgeHtml(isProjectLate(p)) + ' ' + dataConfirmedBadgeHtml(p) + '</div>' +
+    '<div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;flex-shrink:0">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + commitmentBadge(p) + ' ' + lateBadgeHtml(isProjectLate(p)) + ' ' + dataConfirmedBadgeHtml(p) + '</div>' +
     '<div class="tab-bar no-print" style="flex-shrink:0">' + tabsHtml + '</div>' +
     '<div id="ptab-content" style="flex:1;overflow-y:auto">' + tabC(tab) + '</div>' +
     '</div>';
@@ -7753,11 +7763,10 @@ window.savePeopleRoles = async function(pid) {
 
 window.saveProjectIdentity = async function(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  var beforeSnapshot = { name: p.name, priority: p.priority, value: p.value, tshirtSize: p.tshirtSize, businessUnit: p.businessUnit, deliveryMethodology: p.deliveryMethodology, description: p.description };
+  var beforeSnapshot = { name: p.name, value: p.value, tshirtSize: p.tshirtSize, businessUnit: p.businessUnit, deliveryMethodology: p.deliveryMethodology, description: p.description };
   var newVals = {
     name: document.getElementById('pfi-name').value.trim() || p.name,
     description: document.getElementById('pfi-desc').value,
-    priority: document.getElementById('pfi-priority').value || null,
     value_area: document.getElementById('pfi-value').value || null,
     tshirt_size: document.getElementById('pfi-tshirt').value || null,
     business_unit: document.getElementById('pfi-bu').value || null,
@@ -7771,7 +7780,7 @@ window.saveProjectIdentity = async function(pid) {
   var result = await sb.from('projects').update(newVals).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
 
-  p.name = newVals.name; p.description = newVals.description; p.priority = newVals.priority; p.value = newVals.value_area;
+  p.name = newVals.name; p.description = newVals.description; p.value = newVals.value_area;
   p.tshirtSize = newVals.tshirt_size; p.businessUnit = newVals.business_unit; p.deliveryMethodology = newVals.delivery_methodology;
   p.categories = newCats;
   projectInfoEditing = null;
@@ -7779,7 +7788,7 @@ window.saveProjectIdentity = async function(pid) {
 
   try {
     await logProjectChanges(pid, beforeSnapshot, {
-      name: newVals.name, description: newVals.description, priority: newVals.priority, value: newVals.value_area,
+      name: newVals.name, description: newVals.description, value: newVals.value_area,
       tshirtSize: newVals.tshirt_size, businessUnit: newVals.business_unit, deliveryMethodology: newVals.delivery_methodology
     }, 'edit');
   } catch (e) { console.error('Could not record change history:', e); }
@@ -7790,6 +7799,25 @@ window.saveProjectIdentity = async function(pid) {
     if (catsToAdd.length) await sb.from('project_categories').insert(catsToAdd.map(function(c){ return { project_id: pid, category: c }; }));
     for (var ci = 0; ci < catsToRemove.length; ci++) { await sb.from('project_categories').delete().eq('project_id', pid).eq('category', catsToRemove[ci]); }
   } catch (e) { console.error('Could not sync categories:', e); }
+};
+
+// Commitment (Must/Should/Want) is admin-only, so it auto-saves straight
+// from its own inline select -- unlike every other Identity field, it never
+// goes through the shared canEdit()-gated Edit/Save/Cancel flow, since a
+// project owner is never supposed to be able to set this at all.
+window.saveCommitment = async function(pid, value) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (D.role !== 'admin') return; // safety check; the control is already hidden for non-admins
+  var beforeSnapshot = { commitment: p.commitment };
+  var newCommitment = value || null;
+  var result = await sb.from('projects').update({ commitment: newCommitment }).eq('id', pid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  p.commitment = newCommitment;
+  showToast('Saved');
+  pgProjectDetail(pid, 'overview');
+  try {
+    await logProjectChanges(pid, beforeSnapshot, { commitment: newCommitment }, 'edit');
+  } catch (e) { console.error('Could not record change history:', e); }
 };
 
 window.saveProjectSchedule = async function(pid) {
@@ -7898,12 +7926,6 @@ function editProject(pid) {
   if (!canEdit(p)) { showToast('You do not have edit access'); return; }
   var statusOpts = (STATUSES.indexOf(p.status) < 0 ? '<option value="" selected>— Not set —</option>' : '') + STATUSES.map(function(s){ return '<option' + (p.status===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var phaseOpts  = (PHASES.indexOf(p.phase) < 0 ? '<option value="" selected>— Not set —</option>' : '') + PHASES.map(function(s){   return '<option' + (p.phase===s?' selected':'') + '>' + s + '</option>'; }).join('');
-  // No recognized priority yet defaults to "Needs prioritization" rather than
-  // a blank "Not set" placeholder; an existing valid value is always kept.
-  var priorOpts  = PRIORITIES.map(function(s){
-    var isSelected = p.priority === s || (PRIORITIES.indexOf(p.priority) < 0 && s === 'Needs prioritization');
-    return '<option' + (isSelected ? ' selected' : '') + '>' + s + '</option>';
-  }).join('');
   var valOpts    = (VALUE_AREAS.indexOf(p.value) < 0 ? '<option value="" selected>— Not set —</option>' : '') + VALUE_AREAS.map(function(s){ return '<option' + (p.value===s?' selected':'') + '>' + s + '</option>'; }).join('');
   var ownerPoolEdit = p.owner && individualResourceNames().indexOf(p.owner) < 0 ? individualResourceNames().concat([p.owner]) : individualResourceNames();
   var ownerOpts     = '<option value="">— None —</option>' + ownerPoolEdit.map(function(n){
@@ -7932,7 +7954,6 @@ function editProject(pid) {
     '<div class="grid-2">' +
       '<div class="form-group"><div class="form-label">Status</div><select id="ep-status">' + statusOpts + '</select></div>' +
       '<div class="form-group"><div class="form-label">Phase</div><select id="ep-phase">' + phaseOpts + '</select></div>' +
-      '<div class="form-group"><div class="form-label">Priority</div><select id="ep-priority">' + priorOpts + '</select></div>' +
       '<div class="form-group"><div class="form-label">Value area</div><select id="ep-value">' + valOpts + '</select></div>' +
       '<div class="form-group"><div class="form-label">Delivery methodology</div><select id="ep-methodology"><option value=""' + (!p.deliveryMethodology?' selected':'') + '>Not selected</option><option' + (p.deliveryMethodology==='Agile'?' selected':'') + '>Agile</option><option' + (p.deliveryMethodology==='Waterfall'?' selected':'') + '>Waterfall</option><option' + (p.deliveryMethodology==='Hybrid'?' selected':'') + '>Hybrid</option></select></div>' +
       '<div class="form-group"><div class="form-label">T-shirt size</div><select id="ep-tshirt"><option value=""' + (!p.tshirtSize?' selected':'') + '>— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option' + (p.tshirtSize===s?' selected':'') + '>' + s + '</option>'; }).join('') + '</select></div>' +
@@ -7961,7 +7982,7 @@ function editProject(pid) {
 async function saveProject(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
   var beforeSnapshot = {
-    name: p.name, stage: p.stage, status: p.status, phase: p.phase, priority: p.priority, value: p.value,
+    name: p.name, stage: p.stage, status: p.status, phase: p.phase, value: p.value,
     businessUnit: p.businessUnit, sponsor: p.sponsor, owner: p.owner, ownerId: p.ownerId, start: p.start, end: p.end,
     progress: p.progress, health: p.health, description: p.description, blockers: p.blockers,
     deliveryMethodology: p.deliveryMethodology, tshirtSize: p.tshirtSize
@@ -7970,7 +7991,6 @@ async function saveProject(pid) {
     name: document.getElementById('ep-name').value,
     status: document.getElementById('ep-status').value || null,
     phase: document.getElementById('ep-phase').value || null,
-    priority: document.getElementById('ep-priority').value || null,
     value_area: document.getElementById('ep-value').value || null,
     delivery_methodology: document.getElementById('ep-methodology').value || null,
     tshirt_size: document.getElementById('ep-tshirt').value || null,
@@ -8022,7 +8042,7 @@ async function saveProject(pid) {
   // toast, and the page re-render all happen first and don't depend on them.
   if (newVals.stage) { p.stage = newVals.stage; if (newVals.planned_start) p.plannedStart = newVals.planned_start; }
 
-  p.name = newVals.name; p.status = newVals.status; p.phase = newVals.phase; p.priority = newVals.priority;
+  p.name = newVals.name; p.status = newVals.status; p.phase = newVals.phase;
   p.value = newVals.value_area; p.start = newVals.start_date; p.end = newVals.end_date; p.progress = newVals.progress;
   p.deliveryMethodology = newVals.delivery_methodology;
   p.tshirtSize = newVals.tshirt_size;
@@ -8038,7 +8058,7 @@ async function saveProject(pid) {
 
   try {
     var afterSnapshot = {
-      name: newVals.name, status: newVals.status, phase: newVals.phase, priority: newVals.priority, value: newVals.value_area,
+      name: newVals.name, status: newVals.status, phase: newVals.phase, value: newVals.value_area,
       businessUnit: newVals.business_unit, sponsor: newVals.sponsor,
       start: newVals.start_date, end: newVals.end_date, progress: newVals.progress, health: newVals.health,
       description: newVals.description, blockers: newVals.blockers, stage: newVals.stage || beforeSnapshot.stage,
@@ -8074,7 +8094,6 @@ async function deleteProject(pid) {
 
 function openNewProjectModal() {
   var valOpts = VALUE_AREAS.map(function(s){ return '<option>' + s + '</option>'; }).join('');
-  var priorOpts = PRIORITIES.map(function(s){ return '<option' + (s==='Needs prioritization'?' selected':'') + '>' + s + '</option>'; }).join('');
   var ownerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var sponsorOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
   var reqOwnerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
@@ -8084,7 +8103,6 @@ function openNewProjectModal() {
   showModal('<div class="modal-title">Create new project <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
     '<div class="form-group"><div class="form-label">Project name *</div><input type="text" id="np-name" placeholder="Project name"></div>' +
     '<div class="grid-2"><div class="form-group"><div class="form-label">Value area</div><select id="np-value">' + valOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Priority</div><select id="np-priority">' + priorOpts + '</select></div>' +
     '<div class="form-group"><div class="form-label">Business unit</div><select id="np-bu">' + buOpts + '</select></div></div>' +
     '<div class="form-group"><div class="form-label">Delivery methodology</div><select id="np-methodology"><option value="" selected>Not selected</option><option>Agile</option><option>Waterfall</option><option>Hybrid</option></select></div>' +
     '<div class="form-sub" style="margin:4px 0">Leave dates blank for a backlog item, or set them now if the timeline is already known — the stage is set automatically based on whether the range has started.</div>' +
@@ -8122,7 +8140,7 @@ function openNewProjectModal() {
       business_unit: document.getElementById('np-bu').value || null,
       delivery_methodology: document.getElementById('np-methodology').value || null,
       status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
-      value_area: document.getElementById('np-value').value, priority: document.getElementById('np-priority').value,
+      value_area: document.getElementById('np-value').value,
       description: document.getElementById('np-desc').value, blockers: '', health: null, stage: newStage,
       start_date: startDate, end_date: endDate, planned_start: newStage !== 'backlog' ? startDate : null
     };
@@ -8131,7 +8149,7 @@ function openNewProjectModal() {
 
     if (selectedCats.length) await sb.from('project_categories').insert(selectedCats.map(function(c){ return { project_id: result.data.id, category: c }; }));
     await logProjectChanges(result.data.id, null, {
-      name: name, stage: newStage, status: record.status, priority: record.priority, value: record.value_area,
+      name: name, stage: newStage, status: record.status, value: record.value_area,
       businessUnit: record.business_unit, sponsor: sponsorName, owner: ownerName, requirementsOwner: reqOwnerName, description: record.description,
       deliveryMethodology: record.delivery_methodology, start: startDate, end: endDate
     }, 'edit');
@@ -8179,7 +8197,7 @@ function pgHold() {
     return '<div class="project-card">' +
       '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">' +
         '<div><div class="bold mb-12">' + p.name + '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + bdg(p.priority) + ' ' + badgeIf('badge-purple', p.value) + ' <span class="badge badge-gray">Was: ' + (p.preHoldStage||'—') + '</span></div></div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + commitmentBadge(p) + ' ' + badgeIf('badge-purple', p.value) + ' <span class="badge badge-gray">Was: ' + (p.preHoldStage||'—') + '</span></div></div>' +
         '<div style="display:flex;gap:8px">' +
           '<button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button>' +
           (canEdit(p) ? '<button class="btn btn-success" onclick="resumeFromHold(\'' + p.id + '\')"><i class="ti ti-player-play"></i> Resume</button>' : '') +
@@ -8700,10 +8718,6 @@ function validateImportRow(row, profilesByEmail) {
   if (stageRaw && stageOverride === undefined) errors.push('Stage "' + stageRaw + '" is not Hold or Complete -- leave it blank to derive Backlog/Planned/Active from the dates');
   var stage = stageOverride ? stageOverride.toLowerCase() : computeStageFromDates(startDate, endDate);
 
-  var priorityRaw = row['Priority'];
-  var priority = priorityRaw ? matchOneOf(priorityRaw, PRIORITIES) : null;
-  if (priority === undefined) errors.push('Priority "' + priorityRaw + '" is not one of ' + PRIORITIES.join('/'));
-
   var categoryRaw = String(row['Category'] || '').trim();
   var categoryPieces = categoryRaw ? categoryRaw.split(',').map(function(c){ return c.trim(); }).filter(Boolean) : [];
   var categories = [];
@@ -8752,7 +8766,6 @@ function validateImportRow(row, profilesByEmail) {
       stage: stage,
       status: status || null,
       phase: phase || null,
-      priority: priority || null,
       value_area: row['Value Area'] || null,
       start_date: startDate,
       end_date: endDate,
@@ -9085,7 +9098,7 @@ function pgAllProjects() {
   if (st.filters.stage.length) list = list.filter(function(p){ return st.filters.stage.indexOf(p.stage) >= 0; });
   if (st.filters.status.length) list = list.filter(function(p){ return st.filters.status.indexOf(fv(p.status)) >= 0; });
   if (st.filters.phase.length) list = list.filter(function(p){ return st.filters.phase.indexOf(fv(p.phase)) >= 0; });
-  if (st.filters.priority.length) list = list.filter(function(p){ return st.filters.priority.indexOf(fv(p.priority)) >= 0; });
+  if (st.filters.commitment.length) list = list.filter(function(p){ return st.filters.commitment.indexOf(fv(p.commitment)) >= 0; });
   if (st.filters.value.length) list = list.filter(function(p){ return st.filters.value.indexOf(fv(p.value)) >= 0; });
   if (st.filters.sponsor.length) list = list.filter(function(p){ return st.filters.sponsor.indexOf(fv(p.sponsor)) >= 0; });
   if (st.filters.owner.length) list = list.filter(function(p){ return st.filters.owner.indexOf(fv(p.owner)) >= 0; });
@@ -9121,7 +9134,7 @@ function pgAllProjects() {
       '<td>' + stagePill(p.stage) + '</td>' +
       '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td>' + (p.phase || '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + commitmentBadge(p) + '</td>' +
       '<td>' + (p.value || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.sponsor || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
@@ -9150,7 +9163,7 @@ function pgAllProjects() {
       '<th class="sortable-th"><span onclick="setAllProjSort(\'stage\')">Stage ' + arrow('stage') + '</span>' + filterIcon('stage', st.filters.stage.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'phase\')">Phase ' + arrow('phase') + '</span>' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
-      '<th class="sortable-th"><span onclick="setAllProjSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'commitment\')">Commitment ' + arrow('commitment') + '</span>' + filterIcon('commitment', st.filters.commitment.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'value\')">Value Area ' + arrow('value') + '</span>' + filterIcon('value', st.filters.value.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'sponsor\')">Sponsor ' + arrow('sponsor') + '</span>' + filterIcon('sponsor', st.filters.sponsor.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
@@ -9177,9 +9190,9 @@ function pgAllProjects() {
   window.clearAllProjSelection = function() { st.selected = {}; withScrollPreserved(pgAllProjects); };
 
   window.toggleAllProjFilter = function(col) {
-    var labelMap = { category:'Category', businessUnit:'Business Unit', stage:'Stage', status:'Status', phase:'Phase', priority:'Priority', value:'Value Area', sponsor:'Sponsor', owner:'Owner',
+    var labelMap = { category:'Category', businessUnit:'Business Unit', stage:'Stage', status:'Status', phase:'Phase', commitment:'Commitment', value:'Value Area', sponsor:'Sponsor', owner:'Owner',
       tshirtSize:'T-shirt Size', health:'Health', deliveryMethodology:'Delivery Methodology', estimatedType:'Opportunity Type', valueConfidence:'Opportunity Type Confidence', costConfidence:'Cost Estimate Confidence' };
-    var baseChoicesMap = { category:CATEGORIES, businessUnit:BUSINESS_UNITS, stage:stageChoices, status:STATUSES, phase:PHASES, priority:PRIORITIES, value:VALUE_AREAS, sponsor:sponsorChoices, owner:ownerChoices,
+    var baseChoicesMap = { category:CATEGORIES, businessUnit:BUSINESS_UNITS, stage:stageChoices, status:STATUSES, phase:PHASES, commitment:COMMITMENTS, value:VALUE_AREAS, sponsor:sponsorChoices, owner:ownerChoices,
       tshirtSize:TSHIRT_SIZES, health:['green','amber','red'], deliveryMethodology:['Agile','Waterfall','Hybrid'], estimatedType:['Revenue','Savings'], valueConfidence:CONFIDENCE_LEVELS, costConfidence:CONFIDENCE_LEVELS };
     // Stage can never actually be blank (defaults to Backlog), so it's the
     // one column that doesn't get a "Not set" option -- every other column
@@ -9207,7 +9220,7 @@ function pgAllProjects() {
     if (!selectedIds.length) return;
     window.__bulkEditSelectedIds = selectedIds;
     var fieldOpts = '<option value="sponsor">Sponsor</option><option value="owner">Owner</option><option value="businessUnit">Business Unit</option>' +
-      '<option value="value">Value Area</option><option value="priority">Priority</option><option value="status">Status</option><option value="phase">Phase</option>' +
+      '<option value="value">Value Area</option><option value="commitment">Commitment</option><option value="status">Status</option><option value="phase">Phase</option>' +
       '<option value="tshirtSize">T-shirt Size</option><option value="health">Health</option><option value="deliveryMethodology">Delivery Methodology</option>' +
       '<option value="estimatedType">Opportunity Type</option><option value="valueConfidence">Opportunity Type Confidence</option><option value="costConfidence">Cost Estimate Confidence</option>';
     showModal('<div class="modal-title">Bulk edit ' + selectedIds.length + ' project' + (selectedIds.length===1?'':'s') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
@@ -9238,7 +9251,7 @@ function pgAllProjects() {
     } else if (field === 'valueConfidence' || field === 'costConfidence') {
       html = '<div class="form-group"><div class="form-label">New ' + (field === 'valueConfidence' ? 'opportunity type' : 'cost estimate') + ' confidence</div><select id="bulk-value-input">' + confidenceOptsHtml() + '</select></div>';
     } else {
-      var opts = field === 'businessUnit' ? BUSINESS_UNITS : field === 'value' ? VALUE_AREAS : field === 'priority' ? PRIORITIES : field === 'status' ? STATUSES : PHASES;
+      var opts = field === 'businessUnit' ? BUSINESS_UNITS : field === 'value' ? VALUE_AREAS : field === 'commitment' ? COMMITMENTS : field === 'status' ? STATUSES : PHASES;
       html = '<div class="form-group"><div class="form-label">New value</div><select id="bulk-value-input">' + opts.map(function(o){ return '<option>' + o + '</option>'; }).join('') + '</select></div>';
     }
     container.innerHTML = html;
@@ -9250,7 +9263,7 @@ function pgAllProjects() {
     var value = document.getElementById('bulk-value-input').value;
     var btn = document.querySelector('.modal-footer .btn-primary'); if (btn) btn.disabled = true;
 
-    var columnMap = { sponsor:'sponsor', businessUnit:'business_unit', value:'value_area', priority:'priority', status:'status', phase:'phase',
+    var columnMap = { sponsor:'sponsor', businessUnit:'business_unit', value:'value_area', commitment:'commitment', status:'status', phase:'phase',
       tshirtSize:'tshirt_size', health:'health', deliveryMethodology:'delivery_methodology', estimatedType:'estimated_type', valueConfidence:'value_confidence', costConfidence:'cost_confidence' };
     var ownerResource = null;
     var sponsorResource = null;
@@ -9769,7 +9782,7 @@ async function openDeletedProjectModal(pid) {
       '<div><div class="form-label">Stage</div>' + stagePill(pr.stage) + '</div>' +
       '<div><div class="form-label">Status</div>' + (pr.status ? bdg(pr.status) : '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Phase</div>' + (pr.phase || '<span class="text-muted">—</span>') + '</div>' +
-      '<div><div class="form-label">Priority</div>' + (pr.priority ? bdg(pr.priority) : '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Commitment</div>' + (pr.commitment ? bdg(pr.commitment) : '<span class="text-muted">Needs commitment</span>') + '</div>' +
       '<div><div class="form-label">Owner</div>' + (pr.owner_name || '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Sponsor</div>' + (pr.sponsor || '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Start</div>' + (pr.start_date || '—') + '</div>' +
@@ -11156,7 +11169,7 @@ function exportProjectsToExcel() {
       'Stage': EXPORT_STAGE_LABELS[p.stage] || p.stage || '',
       'Status': p.status || '',
       'Phase': p.phase || '',
-      'Priority': p.priority || '',
+      'Commitment': p.commitment || '',
       'Priority Rank': p.priorityRank != null ? p.priorityRank : ''
     };
     Object.assign(row, {
@@ -13075,20 +13088,20 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
 
   var statusChoices = []; list.forEach(function(p){ if (p.status && statusChoices.indexOf(p.status) < 0) statusChoices.push(p.status); });
   var stageChoices = []; list.forEach(function(p){ if (p.stage && stageChoices.indexOf(p.stage) < 0) stageChoices.push(p.stage); });
-  var priorityChoices = []; list.forEach(function(p){ if (p.priority && priorityChoices.indexOf(p.priority) < 0) priorityChoices.push(p.priority); });
+  var commitmentChoices = []; list.forEach(function(p){ if (p.commitment && commitmentChoices.indexOf(p.commitment) < 0) commitmentChoices.push(p.commitment); });
   var ownerChoices = []; list.forEach(function(p){ if (p.owner && ownerChoices.indexOf(p.owner) < 0) ownerChoices.push(p.owner); }); ownerChoices.sort();
 
   var filtered = list.slice();
   if (st.search) { var q = st.search.toLowerCase(); filtered = filtered.filter(function(p){ return p.name.toLowerCase().indexOf(q) >= 0; }); }
   if (st.filters.status.length) filtered = filtered.filter(function(p){ return st.filters.status.indexOf(p.status) >= 0; });
   if (st.filters.stage.length) filtered = filtered.filter(function(p){ return st.filters.stage.indexOf(p.stage) >= 0; });
-  if (st.filters.priority.length) filtered = filtered.filter(function(p){ return st.filters.priority.indexOf(p.priority) >= 0; });
+  if (st.filters.commitment.length) filtered = filtered.filter(function(p){ return st.filters.commitment.indexOf(p.commitment) >= 0; });
   if (st.filters.owner.length) filtered = filtered.filter(function(p){ return st.filters.owner.indexOf(p.owner) >= 0; });
 
   filtered.sort(function(a, b) {
     var av, bv;
     if (st.sort === 'stage') { av = EXPORT_STAGE_LABELS[a.stage] || a.stage || ''; bv = EXPORT_STAGE_LABELS[b.stage] || b.stage || ''; }
-    else if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+    else if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 3; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 3; }
     else { av = a[st.sort]; bv = b[st.sort]; }
     av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
     if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
@@ -13109,7 +13122,7 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
       '<td>' + roleBadges + '</td>' +
       '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + stagePill(p.stage) + '</td>' +
-      '<td>' + (p.priority ? bdg(p.priority) : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + commitmentBadge(p) + '</td>' +
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td class="text-muted">' + doneTasks + '/' + myTasks.length + ' done</td>' +
@@ -13125,7 +13138,7 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
       '<th>Role</th>' +
       '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'stage\')">Stage ' + arrow('stage') + '</span>' + filterIcon('stage', st.filters.stage.length>0) + '</th>' +
-      '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'commitment\')">Commitment ' + arrow('commitment') + '</span>' + filterIcon('commitment', st.filters.commitment.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setMyProjectsTableSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
       '<th class="sortable-th" onclick="setMyProjectsTableSort(\'end\')">Due ' + arrow('end') + '</th>' +
       '<th>My tasks</th>' +
@@ -13146,8 +13159,8 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
   };
   window.toggleMyProjectsTableFilter = function(col) {
     var s = myProjectsTableState[myProjectsPageState.tab];
-    var labelMap = { status:'Status', stage:'Stage', priority:'Priority', owner:'Owner' };
-    var choicesMap = { status:statusChoices, stage:stageChoices.map(function(v){ return EXPORT_STAGE_LABELS[v] || v; }), priority:priorityChoices, owner:ownerChoices };
+    var labelMap = { status:'Status', stage:'Stage', commitment:'Commitment', owner:'Owner' };
+    var choicesMap = { status:statusChoices, stage:stageChoices.map(function(v){ return EXPORT_STAGE_LABELS[v] || v; }), commitment:commitmentChoices, owner:ownerChoices };
     // Stage is stored/filtered by raw value but shown by its display label --
     // map back to the raw value the same way the filter-modal pattern expects.
     var stageRawByLabel = {}; stageChoices.forEach(function(v){ stageRawByLabel[EXPORT_STAGE_LABELS[v] || v] = v; });
