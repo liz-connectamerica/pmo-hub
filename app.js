@@ -2068,7 +2068,7 @@ var myProjectsTableState = {
 var myCapacityPageState = { month:'current' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
-var COMMITMENT_RANK = { 'Must':0, 'Should':1, 'Want':2 };
+var COMMITMENT_RANK = { 'Must':0, 'Should':1, 'Want':2, "Won't":3 };
 
 // Capacity planning: a team member's involvement in a given project is set
 // as one of these tiers (by the project owner or an admin) rather than a
@@ -2291,7 +2291,7 @@ function buildReportHtml(p) {
   var sevColors = { High: ['#FCEBEB','#791F1F'], Medium: ['#FAEEDA','#633806'], Low: ['#E6F1FB','#0C447C'] };
   var stageColors = { backlog:['#FAEEDA','#633806'], planned:['#E6F1FB','#0C447C'], active:['#E1F5EE','#085041'], complete:['#f0ede8','#555'], hold:['#FAECE7','#993C1D'] };
   var stageLabels = { backlog:'Backlog', planned:'Planned', active:'Active', complete:'Completed', hold:'Hold' };
-  var commitmentColors = { Must:['#FCEBEB','#791F1F'], Should:['#FAEEDA','#633806'], Want:['#E6F1FB','#0C447C'] };
+  var commitmentColors = { Must:['#FCEBEB','#791F1F'], Should:['#FAEEDA','#633806'], Want:['#E6F1FB','#0C447C'], "Won't":['#f0ede8','#555'] };
   var statusColors = { 'On Track':['#E1F5EE','#085041'], 'At Risk':['#FAEEDA','#633806'], Blocked:['#FCEBEB','#791F1F'] };
 
   // No margin here on purpose -- Outlook's paste sanitizer (even in "Keep
@@ -2642,7 +2642,7 @@ function bdg(s) {
     'Done':'badge-teal','In Progress':'badge-purple','To Do':'badge-gray',
     'Open':'badge-red','Closed':'badge-teal','Deferred':'badge-amber','Cancelled':'badge-red',
     'Critical':'badge-red','High':'badge-coral','Medium':'badge-amber','Low':'badge-blue','Needs prioritization':'badge-gray',
-    'Must':'badge-red','Should':'badge-amber','Want':'badge-blue','Needs commitment':'badge-gray'
+    'Must':'badge-red','Should':'badge-amber','Want':'badge-blue',"Won't":'badge-gray','Needs commitment':'badge-gray'
   };
   return '<span class="badge ' + (map[s] || 'badge-gray') + '">' + s + '</span>';
 }
@@ -4395,7 +4395,7 @@ function pgBacklog() {
 
   bp = bp.slice().sort(function(a,b) {
     var av, bv;
-    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 3; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 3; }
+    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 4; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 4; }
     else {
       av = a[st.sort]; bv = b[st.sort];
       av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
@@ -4871,7 +4871,7 @@ function pgPlanned() {
 
   pp = pp.slice().sort(function(a,b) {
     var av, bv;
-    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 3; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 3; }
+    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 4; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 4; }
     else {
       var sortKey = st.sort === 'start' ? 'plannedStart' : st.sort;
       av = a[sortKey]; bv = b[sortKey];
@@ -5003,7 +5003,7 @@ function pgProjects() {
 
   ps = ps.slice().sort(function(a,b) {
     var av, bv;
-    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 3; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 3; }
+    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 4; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 4; }
     else {
       av = a[st.sort]; bv = b[st.sort];
       av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
@@ -5266,9 +5266,16 @@ function pgProjectDetail(pid, tab) {
             var checked = (p.categories||[]).indexOf(s) >= 0;
             return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="pfi-category-cb" value="' + s + '"' + (checked?' checked':'') + '> ' + s + '</label>';
           }).join('');
+          var commitmentFieldI = D.role === 'admin'
+            ? '<select id="pfi-commitment" style="font-size:13px">' +
+                '<option value=""' + (!p.commitment ? ' selected' : '') + '>Needs commitment</option>' +
+                COMMITMENTS.map(function(s){ return '<option' + (p.commitment===s?' selected':'') + '>' + s + '</option>'; }).join('') +
+              '</select>'
+            : commitmentBadge(p);
           return '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Project name</div><input type="text" id="pfi-name" value="' + p.name.replace(/"/g,'&quot;') + '"></div>' +
             '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Description</div><textarea id="pfi-desc">' + (p.description||'') + '</textarea></div>' +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px 16px;margin-bottom:12px">' +
+              '<div><div class="form-label">Commitment' + (D.role !== 'admin' ? ' <span class="text-muted" style="font-weight:400">(admin-only)</span>' : '') + '</div>' + commitmentFieldI + '</div>' +
               '<div><div class="form-label">Value area</div><select id="pfi-value">' + valOptsI + '</select></div>' +
               '<div><div class="form-label">T-shirt size</div><select id="pfi-tshirt">' + tshirtOptsI + '</select></div>' +
               '<div><div class="form-label">Business unit</div><select id="pfi-bu">' + buOptsI + '</select></div>' +
@@ -5284,12 +5291,7 @@ function pgProjectDetail(pid, tab) {
             fieldBox('Project name', p.name) +
             '<div class="form-group" style="margin:12px 0"><div class="form-label" style="font-size:11px;color:var(--text-muted);margin-bottom:3px">Description</div><div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (p.description||'<span class="text-muted">—</span>') + '</div></div>' +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px 20px;margin:12px 0 16px">' +
-              fieldBox('Commitment', D.role === 'admin'
-                ? '<select onchange="saveCommitment(\'' + p.id + '\', this.value)" style="font-size:12px;padding:3px 6px">' +
-                    '<option value=""' + (!p.commitment ? ' selected' : '') + '>Needs commitment</option>' +
-                    COMMITMENTS.map(function(s){ return '<option' + (p.commitment===s?' selected':'') + '>' + s + '</option>'; }).join('') +
-                  '</select>'
-                : commitmentBadge(p)) +
+              fieldBox('Commitment', commitmentBadge(p)) +
               fieldBox('Value area', badgeIf('badge-purple', p.value)) +
               fieldBox('T-shirt size', p.tshirtSize ? '<span class="badge badge-gray">' + p.tshirtSize + '</span>' : '<span class="text-muted">Not sized</span>') +
               fieldBox('Business unit', p.businessUnit || '—') +
@@ -7770,10 +7772,16 @@ window.savePeopleRoles = async function(pid) {
 
 window.saveProjectIdentity = async function(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  var beforeSnapshot = { name: p.name, value: p.value, tshirtSize: p.tshirtSize, businessUnit: p.businessUnit, deliveryMethodology: p.deliveryMethodology, description: p.description };
+  var beforeSnapshot = { name: p.name, value: p.value, tshirtSize: p.tshirtSize, businessUnit: p.businessUnit, deliveryMethodology: p.deliveryMethodology, description: p.description, commitment: p.commitment };
+  // Commitment only has an <select> in this form for an admin (see
+  // identityBody above) -- a non-admin editing the rest of Identity never
+  // gets the element at all, so falling back to the existing value here
+  // means their save can't accidentally touch a field they can't see.
+  var commitmentEl = document.getElementById('pfi-commitment');
   var newVals = {
     name: document.getElementById('pfi-name').value.trim() || p.name,
     description: document.getElementById('pfi-desc').value,
+    commitment: commitmentEl ? (commitmentEl.value || null) : p.commitment,
     value_area: document.getElementById('pfi-value').value || null,
     tshirt_size: document.getElementById('pfi-tshirt').value || null,
     business_unit: document.getElementById('pfi-bu').value || null,
@@ -7789,13 +7797,14 @@ window.saveProjectIdentity = async function(pid) {
 
   p.name = newVals.name; p.description = newVals.description; p.value = newVals.value_area;
   p.tshirtSize = newVals.tshirt_size; p.businessUnit = newVals.business_unit; p.deliveryMethodology = newVals.delivery_methodology;
+  p.commitment = newVals.commitment;
   p.categories = newCats;
   projectInfoEditing = null;
   showToast('Saved'); pgProjectDetail(pid, 'overview');
 
   try {
     await logProjectChanges(pid, beforeSnapshot, {
-      name: newVals.name, description: newVals.description, value: newVals.value_area,
+      name: newVals.name, description: newVals.description, value: newVals.value_area, commitment: newVals.commitment,
       tshirtSize: newVals.tshirt_size, businessUnit: newVals.business_unit, deliveryMethodology: newVals.delivery_methodology
     }, 'edit');
   } catch (e) { console.error('Could not record change history:', e); }
@@ -7806,25 +7815,6 @@ window.saveProjectIdentity = async function(pid) {
     if (catsToAdd.length) await sb.from('project_categories').insert(catsToAdd.map(function(c){ return { project_id: pid, category: c }; }));
     for (var ci = 0; ci < catsToRemove.length; ci++) { await sb.from('project_categories').delete().eq('project_id', pid).eq('category', catsToRemove[ci]); }
   } catch (e) { console.error('Could not sync categories:', e); }
-};
-
-// Commitment (Must/Should/Want) is admin-only, so it auto-saves straight
-// from its own inline select -- unlike every other Identity field, it never
-// goes through the shared canEdit()-gated Edit/Save/Cancel flow, since a
-// project owner is never supposed to be able to set this at all.
-window.saveCommitment = async function(pid, value) {
-  var p = D.projects.find(function(x){ return x.id === pid; });
-  if (D.role !== 'admin') return; // safety check; the control is already hidden for non-admins
-  var beforeSnapshot = { commitment: p.commitment };
-  var newCommitment = value || null;
-  var result = await sb.from('projects').update({ commitment: newCommitment }).eq('id', pid);
-  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
-  p.commitment = newCommitment;
-  showToast('Saved');
-  pgProjectDetail(pid, 'overview');
-  try {
-    await logProjectChanges(pid, beforeSnapshot, { commitment: newCommitment }, 'edit');
-  } catch (e) { console.error('Could not record change history:', e); }
 };
 
 window.saveProjectSchedule = async function(pid) {
@@ -13108,7 +13098,7 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
   filtered.sort(function(a, b) {
     var av, bv;
     if (st.sort === 'stage') { av = EXPORT_STAGE_LABELS[a.stage] || a.stage || ''; bv = EXPORT_STAGE_LABELS[b.stage] || b.stage || ''; }
-    else if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 3; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 3; }
+    else if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 4; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 4; }
     else { av = a[st.sort]; bv = b[st.sort]; }
     av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
     if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
