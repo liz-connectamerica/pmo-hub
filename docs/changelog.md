@@ -23,6 +23,8 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li>The Requests review screen's old required "Priority" field — which hadn't actually flowed into the created project for a while — is now an optional Commitment picker that does.</li>
     <li>Prioritize Backlog, Future Planning, and Roadmap are unchanged for now; wiring Commitment into those views is a deliberate next step, not part of this change.</li>
     <li><strong>Fixed:</strong> a bug introduced by the above — approving a request could silently fail to close the review window after creating the project, so clicking Approve again created another full duplicate project from the same request. Both decision buttons now lock immediately once a decision starts saving.</li>
+    <li>Added a fourth Commitment value, <strong>Won't</strong> — for the popular idea that keeps coming up but doesn't hold up on its own merits, distinct from "Needs commitment" (nobody's decided yet).</li>
+    <li><strong>Fixed:</strong> Commitment was rendering as an always-editable dropdown for admins regardless of whether Identity & Classification was actually in edit mode. It now only becomes editable when Edit is clicked and the viewer is an admin; everyone else always sees the read-only badge.</li>
   </ul>
 </div>
 
