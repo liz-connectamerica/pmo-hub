@@ -3757,10 +3757,10 @@ function pgRequests() {
 var reviewFinalizeDrafts = {};
 
 function captureFinalizeDraft(id) {
-  var priorityEl = document.getElementById('rv-priority');
-  if (!priorityEl) return; // finalize section wasn't showing - nothing to capture
+  var commitmentEl = document.getElementById('rv-commitment');
+  if (!commitmentEl) return; // finalize section wasn't showing - nothing to capture
   reviewFinalizeDrafts[id] = {
-    priority: priorityEl.value, value: document.getElementById('rv-value').value,
+    commitment: commitmentEl.value, value: document.getElementById('rv-value').value,
     businessUnit: document.getElementById('rv-bu').value,
     tshirtSize: document.getElementById('rv-tshirt').value,
     deliveryMethodology: document.getElementById('rv-methodology').value,
@@ -3839,8 +3839,9 @@ function reviewRequest(id) {
   if (canApprove) {
     var draft = reviewFinalizeDrafts[r.id] || {};
     var buOptsApprove = BUSINESS_UNITS.map(function(v){ return '<option' + ((draft.businessUnit||r.businessUnit)===v?' selected':'') + '>' + v + '</option>'; }).join('');
-    var curPriorityApprove = draft.priority || r.priority || 'Needs prioritization';
-    var priorOptsApprove = PRIORITIES.map(function(p){ return '<option value="' + p + '"' + (curPriorityApprove===p?' selected':'') + '>' + p + '</option>'; }).join('');
+    var curCommitmentApprove = draft.commitment || '';
+    var commitmentOptsApprove = '<option value=""' + (!curCommitmentApprove?' selected':'') + '>Needs commitment</option>' +
+      COMMITMENTS.map(function(c){ return '<option' + (curCommitmentApprove===c?' selected':'') + '>' + c + '</option>'; }).join('');
     var curTshirtApprove = 'tshirtSize' in draft ? draft.tshirtSize : (r.tshirtSize || '');
     var tshirtOptsApprove = '<option value="">— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option' + (curTshirtApprove===s?' selected':'') + '>' + s + '</option>'; }).join('');
     var valOptsApprove = VALUE_AREAS.map(function(v){ return '<option' + ((draft.value||r.value)===v?' selected':'') + '>' + v + '</option>'; }).join('');
@@ -3860,7 +3861,7 @@ function reviewRequest(id) {
 
     html += '<div class="divider"></div><div class="section-title" style="font-size:14px">Finalize before approving</div>' +
       '<div class="grid-2">' +
-        '<div class="form-group"><div class="form-label">Priority *</div><select id="rv-priority">' + priorOptsApprove + '</select></div>' +
+        '<div class="form-group"><div class="form-label">Commitment</div><select id="rv-commitment">' + commitmentOptsApprove + '</select></div>' +
         '<div class="form-group"><div class="form-label">Value area *</div><select id="rv-value"><option value="">— Select —</option>' + valOptsApprove + '</select></div>' +
       '</div>' +
       '<div class="grid-2">' +
@@ -4277,15 +4278,15 @@ async function decideReq(id, decision) {
   var feedbackVal = fb ? fb.value : r.feedback;
 
   if (decision === 'Approved') {
-    var priority = document.getElementById('rv-priority').value;
+    var commitment = document.getElementById('rv-commitment').value || null;
     var valueArea = document.getElementById('rv-value').value;
     var businessUnit = document.getElementById('rv-bu').value;
     var tshirtSize = document.getElementById('rv-tshirt').value || null;
     var deliveryMethodology = document.getElementById('rv-methodology').value || null;
     var startDate = document.getElementById('rv-start').value || null;
     var endDate = document.getElementById('rv-end').value || null;
-    if (!priority || !valueArea || !businessUnit) {
-      showToast('Please fill in Priority, Value Area, and Business Unit before approving');
+    if (!valueArea || !businessUnit) {
+      showToast('Please fill in Value Area and Business Unit before approving');
       return;
     }
     var selectedCategories = Array.from(document.querySelectorAll('.rv-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
@@ -4304,7 +4305,7 @@ async function decideReq(id, decision) {
 
     var projectRecord = {
       name: r.title, status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
-      value_area: valueArea, description: r.description, sponsor: r.sponsor || null,
+      commitment: commitment, value_area: valueArea, description: r.description, sponsor: r.sponsor || null,
       business_unit: businessUnit, tshirt_size: tshirtSize, delivery_methodology: deliveryMethodology, blockers: '', health: null, stage: newStage,
       planned_start: startDate, start_date: startDate, end_date: endDate,
       target_quarter: targetQuarter, target_year: targetYear, target_end_quarter: targetEndQuarter, target_end_year: targetEndYear,
@@ -4315,7 +4316,7 @@ async function decideReq(id, decision) {
     var projResult = await sb.from('projects').insert(projectRecord).select().single();
     if (projResult.error) { showToast('Could not create project: ' + projResult.error.message); return; }
     await logProjectChanges(projResult.data.id, null, {
-      name: r.title, stage: newStage, status: projectRecord.status, value: valueArea,
+      name: r.title, stage: newStage, status: projectRecord.status, value: valueArea, commitment: commitment,
       businessUnit: businessUnit, sponsor: r.sponsor, start: startDate, end: endDate, description: r.description,
       tshirtSize: tshirtSize, deliveryMethodology: deliveryMethodology
     }, 'request');
@@ -4340,7 +4341,7 @@ async function decideReq(id, decision) {
     var reqStatus = newStage === 'backlog' ? 'Backlog' : newStage === 'active' ? 'Active' : 'Planned';
     var reqResult = await sb.from('requests').update({
       status: reqStatus, feedback: feedbackVal, linked_project: projResult.data.id,
-      priority: priority, value_area: valueArea, business_unit: businessUnit,
+      value_area: valueArea, business_unit: businessUnit,
       start_date: startDate, target_end_date: endDate
     }).eq('id', id);
     if (reqResult.error) { showToast('Could not update request: ' + reqResult.error.message); return; }
