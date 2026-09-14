@@ -22,6 +22,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li>Commitment shows everywhere Priority used to (Portfolio lists, My Projects, Completed, a project's Information tab, project headers, Summarize, Export, Deleted Items), is filterable/sortable, and can be bulk-edited from <strong>All Projects</strong>.</li>
     <li>The Requests review screen's old required "Priority" field — which hadn't actually flowed into the created project for a while — is now an optional Commitment picker that does.</li>
     <li>Prioritize Backlog, Future Planning, and Roadmap are unchanged for now; wiring Commitment into those views is a deliberate next step, not part of this change.</li>
+    <li><strong>Fixed:</strong> a bug introduced by the above — approving a request could silently fail to close the review window after creating the project, so clicking Approve again created another full duplicate project from the same request. Both decision buttons now lock immediately once a decision starts saving.</li>
   </ul>
 </div>
 
