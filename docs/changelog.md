@@ -14,6 +14,17 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-14">
+  <h2>Replaced Priority with Commitment</h2>
+  <p class="changelog-date">September 14, 2026</p>
+  <ul>
+    <li>The old Priority field (Critical/High/Medium/Low/Needs prioritization) is retired — its data had drifted to the point that most projects were just sitting at "Needs prioritization," with no real signal behind it. In its place: <strong>Commitment</strong> (Must/Should/Want), visible to everyone but set by admins only, defaulting to "Needs commitment" rather than silently reading as low priority. Every project starts unset — nothing was carried over from the old field.</li>
+    <li>Commitment shows everywhere Priority used to (Portfolio lists, My Projects, Completed, a project's Information tab, project headers, Summarize, Export, Deleted Items), is filterable/sortable, and can be bulk-edited from <strong>All Projects</strong>.</li>
+    <li>The Requests review screen's old required "Priority" field — which hadn't actually flowed into the created project for a while — is now an optional Commitment picker that does.</li>
+    <li>Prioritize Backlog, Future Planning, and Roadmap are unchanged for now; wiring Commitment into those views is a deliberate next step, not part of this change.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-09-11">
   <h2>Fixed View As showing the admin's own requests</h2>
   <p class="changelog-date">September 11, 2026</p>

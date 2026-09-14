@@ -12,7 +12,7 @@ The **Requests** page (with a live count badge for pending items) is where new p
 
 Opening a pending request shows the full proposal — submitter, business unit, sponsor, description, value type, and (admin-only) the dollar estimate, value justification, and cost estimate with confidence ratings. A **"Finalize before approving"** section lets you set or override:
 
-- Priority, Value Area, Business Unit, T-shirt size, Delivery Methodology (Agile/Waterfall/Hybrid — optional, since a request never collects this itself), Categories
+- Commitment (Must/Should/Want — optional, admin-only, defaults to "Needs commitment"), Value Area, Business Unit, T-shirt size, Delivery Methodology (Agile/Waterfall/Hybrid — optional, since a request never collects this itself), Categories
 - Either real Start/Target-End dates, **or**, if the timeline isn't known yet, an optional target quarter range (this just keeps it visible on the Future Planning timeline while it sits in Backlog)
 - Free-text feedback to the submitter
 
@@ -172,11 +172,11 @@ Similar timeline to Roadmap, but scoped to backlog projects with only a target-q
 A single admin-only table of every project regardless of stage, with a column — sortable and filterable — for every field Bulk Edit can set: category, business unit, stage, status, phase, priority, value area, sponsor, owner, T-shirt size, health, delivery methodology, opportunity type, and both confidence ratings. Every filter also offers a **Not set** option, to isolate exactly which projects are missing a given field — Stage is the one exception, since it can never actually be blank. Two things live here that don't exist elsewhere:
 
 - **New project** — create a project directly, bypassing the request/approval workflow entirely (useful for adding already-in-flight work).
-- **Bulk edit** — select multiple rows and set one field across all of them at once: Sponsor, Owner, Business Unit, Value Area, Priority, Status, Phase, T-shirt Size, Health, Delivery Methodology, Opportunity Type, Opportunity Type Confidence, or Cost Estimate Confidence.
+- **Bulk edit** — select multiple rows and set one field across all of them at once: Sponsor, Owner, Business Unit, Value Area, Commitment, Status, Phase, T-shirt Size, Health, Delivery Methodology, Opportunity Type, Opportunity Type Confidence, or Cost Estimate Confidence.
 
 ## Import Projects
 
-Download the template, fill it in, and upload it. Expected columns: Project Name (required), Sponsor Email, Owner Email, Business Unit, Stage, Status, Phase, Priority, Category (comma-separated), Value Area, Start Date, Target End Date, Progress %, Description, Current Blockers, Tags (comma-separated — new tags are created automatically). Sponsor Email and Owner Email each get linked to that person's resource record when they match one already set up in PMO Hub — same as picking them from the People tab — otherwise the name is stored as plain text with no linkage (no edit access, won't show up in their My Projects/My Capacity). There's no Target Quarter/Target Year column — set that afterward from [Future Planning](#future-planning) if a Backlog project needs a rough estimate.
+Download the template, fill it in, and upload it. Expected columns: Project Name (required), Sponsor Email, Owner Email, Business Unit, Stage, Status, Phase, Category (comma-separated), Value Area, Start Date, Target End Date, Progress %, Description, Current Blockers, Tags (comma-separated — new tags are created automatically). Sponsor Email and Owner Email each get linked to that person's resource record when they match one already set up in PMO Hub — same as picking them from the People tab — otherwise the name is stored as plain text with no linkage (no edit access, won't show up in their My Projects/My Capacity). There's no Target Quarter/Target Year column — set that afterward from [Future Planning](#future-planning) if a Backlog project needs a rough estimate. There's no Commitment column either — that's admin-only, set afterward from All Projects (bulk edit) or a project's Information tab.
 
 Stage should almost always be left blank — it's derived from Start Date/Target End Date the same way it is everywhere else in the app (no dates → Backlog, one or both dates in the future → Planned, today falls within the range → Active). The only values the column accepts are **Hold** or **Complete**, since those two can't be inferred from dates alone; a Complete row also gets its progress forced to 100 and its completed date stamped, matching what Mark complete does.
 
