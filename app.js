@@ -5275,7 +5275,7 @@ function pgProjectDetail(pid, tab) {
           return '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Project name</div><input type="text" id="pfi-name" value="' + p.name.replace(/"/g,'&quot;') + '"></div>' +
             '<div class="form-group" style="margin-bottom:12px"><div class="form-label">Description</div><textarea id="pfi-desc">' + (p.description||'') + '</textarea></div>' +
             '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px 16px;margin-bottom:12px">' +
-              '<div><div class="form-label">Commitment' + (D.role !== 'admin' ? ' <span class="text-muted" style="font-weight:400">(admin-only)</span>' : '') + '</div>' + commitmentFieldI + '</div>' +
+              '<div><div class="form-label">Commitment</div>' + commitmentFieldI + '</div>' +
               '<div><div class="form-label">Value area</div><select id="pfi-value">' + valOptsI + '</select></div>' +
               '<div><div class="form-label">T-shirt size</div><select id="pfi-tshirt">' + tshirtOptsI + '</select></div>' +
               '<div><div class="form-label">Business unit</div><select id="pfi-bu">' + buOptsI + '</select></div>' +
