@@ -14,6 +14,15 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-16">
+  <h2>Reminders: late milestones, richer flagged-item detail</h2>
+  <p class="changelog-date">September 16, 2026</p>
+  <ul>
+    <li><strong>Late milestones</strong> are now a flag type on the Reminders page, alongside late projects/tasks/work requests and stale data confirmations. A milestone has no assignee of its own, so a late one is attributed to whoever owns its project.</li>
+    <li>Expanding a person's row now shows a lot more per flagged item: a type badge (Project/Task/Milestone/Work request/Confirmation), its project where relevant, its due date, and how many days late it is — instead of a single ambiguous tag. Stale confirmations show days since last confirmed instead, since they don't have a due date.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-09-14">
   <h2>Replaced Priority with Commitment</h2>
   <p class="changelog-date">September 14, 2026</p>

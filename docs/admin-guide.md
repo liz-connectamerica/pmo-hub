@@ -221,14 +221,14 @@ This is separate from **Resources**: an account's role lives on the `profiles` r
 
 ## Reminders
 
-A roster of who needs a nudge to log in and take care of something — anyone with a **late project** they own, a **late task** or **late work request** assigned to them, or a project they own that hasn't had its data confirmed in a while. Nothing here is a new data source; it's all computed live from the same Late and [data confirmation](../user-guide/#project-detail-page) concepts used everywhere else in the app.
+A roster of who needs a nudge to log in and take care of something — anyone with a **late project** they own, a **late milestone**, **late task**, or **late work request** assigned to them, or a project they own that hasn't had its data confirmed in a while. Nothing here is a new data source; it's all computed live from the same Late and [data confirmation](../user-guide/#project-detail-page) concepts used everywhere else in the app. A milestone has no assignee of its own, so a late one is attributed to whoever owns the project it's on, same as a late project itself.
 
 Two thresholds at the top, both portfolio-wide and admin-editable:
 
 - **Flag if data isn't confirmed in ___ days** — the same number that drives the "Needs review" badge on every project's Information tab.
 - **Prioritize people not reminded in ___ days** — only affects this page: it's what "due for a nudge" and the default sort mean.
 
-The main table lists everyone with at least one flag who has a PMO Hub login. **Person** and **Last reminded** are both sortable — the table opens sorted by Last reminded, oldest (or never-reminded) first, so whoever's gone longest without a nudge is already at the top. Filter chips narrow it to one flag type, or to **Due for a nudge** specifically. Expanding a row lists the actual late projects/tasks/work requests, each one a link straight to it — a late task's project is shown too, since a task isn't always on a project this person owns.
+The main table lists everyone with at least one flag who has a PMO Hub login. **Person** and **Last reminded** are both sortable — the table opens sorted by Last reminded, oldest (or never-reminded) first, so whoever's gone longest without a nudge is already at the top. Filter chips narrow it to one flag type, or to **Due for a nudge** specifically. Expanding a row lists every flagged item with a type badge (Project/Task/Milestone/Work request/Confirmation), its project where relevant, its due date, and how many days late it is — a stale-confirmation item shows days since last confirmed instead, since it has no due date. Every item links straight to it.
 
 **Log reminder** records that you reached out — a channel (Email, Teams, Phone, In person, Other), an optional note, and the date/time — without sending anything itself. Every person's history is visible before you log another one, so you can tell at a glance whether they've already been nudged recently. A separate section below the main table lists anyone with the same kind of flags but **no linked account** — typically a project owner who was never set up with a login. They can't confirm anything or see these items themselves, so a reminder logged for them is just your own record of having reached out some other way (an email, asking their manager, etc.), not something sent through the app.
 
