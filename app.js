@@ -1947,6 +1947,15 @@ function individualResourceNames() {
   return (D.resources || []).filter(function(r){ return r.type === 'individual' && r.active !== false; }).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(r){ return r.name; });
 }
 
+// Unlike individualResourceNames(), includes inactive people -- for the one
+// picker (adding someone to a project's team) where an admin needs to be
+// able to retroactively add someone who's already left, e.g. entering a
+// project into the Hub after the fact. Callers pair this with an inactive
+// badge on each row so the admin can see who they're picking.
+function allIndividualResourceNames() {
+  return (D.resources || []).filter(function(r){ return r.type === 'individual'; }).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(r){ return r.name; });
+}
+
 function isResourceInactive(resourceId) {
   var r = D.resources.find(function(x){ return x.id === resourceId; });
   return !!(r && r.type === 'individual' && r.active === false);
@@ -5566,7 +5575,9 @@ function pgProjectDetail(pid, tab) {
         '</div>';
       }
       var addKind = teamAddKind[p.id] || 'individual';
-      var candidatePeople = individualResourceNames().filter(function(n){ return p.team.indexOf(n) < 0; });
+      // Admins see inactive people too, flagged, so a project being entered
+      // retroactively can still list someone who's already left.
+      var candidatePeople = (isAdminPeople ? allIndividualResourceNames() : individualResourceNames()).filter(function(n){ return p.team.indexOf(n) < 0; });
       var candidateTeams = teamNames().filter(function(n){ return p.team.indexOf(n) < 0; });
       var projectTags = p.tags || [];
       function sharesTag(name) {
@@ -5610,7 +5621,9 @@ function pgProjectDetail(pid, tab) {
       var addCandidates = addKind === 'team' ? candidateTeams : candidatePeople;
       var addRows = addCandidates.map(function(n){
         var rec = sharesTag(n);
-        return '<div class="team-add-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + n + (addKind==='team' ? teamManagerSuffix(n) : '') + (rec ? ' <span class="badge badge-teal" style="font-size:10px">Recommended</span>' : '') + '</span><button class="btn btn-sm" onclick="addTeamMemberDirect(\'' + p.id + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button></div>';
+        var res2 = D.resources.find(function(r){ return r.name === n; });
+        var inactiveBadge = (res2 && res2.active === false) ? ' <span class="badge badge-gray" style="font-size:10px">Inactive</span>' : '';
+        return '<div class="team-add-row" data-name="' + n.toLowerCase() + '" style="display:flex;align-items:center;justify-content:space-between;padding:6px 0"><span style="font-size:13px">' + n + (addKind==='team' ? teamManagerSuffix(n) : '') + inactiveBadge + (rec ? ' <span class="badge badge-teal" style="font-size:10px">Recommended</span>' : '') + '</span><button class="btn btn-sm" onclick="addTeamMemberDirect(\'' + p.id + '\',\'' + n.replace(/'/g,"\\'") + '\')"><i class="ti ti-plus"></i> Add</button></div>';
       }).join('');
       var tierInfoOpenNow = !!teamTierInfoOpen[p.id];
       var sizeMultText = TSHIRT_SIZES.map(function(sz){ return sz + ' ' + Math.round(TSHIRT_SIZE_LOAD_MULTIPLIER[sz] * 100) + '%'; }).join(' &nbsp;·&nbsp; ');
