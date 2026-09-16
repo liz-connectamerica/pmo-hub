@@ -10427,7 +10427,7 @@ function computeReminderRoster() {
     if (!byResource[resId]) {
       var res = D.resources.find(function(r){ return r.id === resId; });
       if (!res) return null;
-      byResource[resId] = { resource: res, lateProjects: [], lateTasks: [], lateWR: [], staleProjects: [] };
+      byResource[resId] = { resource: res, lateProjects: [], lateTasks: [], lateWR: [], staleProjects: [], lateMilestones: [] };
     }
     return byResource[resId];
   }
@@ -10438,6 +10438,11 @@ function computeReminderRoster() {
         if (isProjectLate(p)) e.lateProjects.push({ id: p.id, name: p.name });
         var days = daysSinceConfirmed(p);
         if (days != null && days > DATA_CONFIRM_STALE_DAYS) e.staleProjects.push({ id: p.id, name: p.name, days: days });
+        // Milestones have no assignee of their own -- late ones fall to
+        // whoever owns the project, same as a late project itself does.
+        (p.milestones || []).forEach(function(m) {
+          if (isMilestoneLate(m)) e.lateMilestones.push({ name: m.name, project: p.name, projectId: p.id });
+        });
       }
     }
     (p.tasks || []).forEach(function(t) {
@@ -10454,7 +10459,7 @@ function computeReminderRoster() {
     }
   });
   return Object.keys(byResource).map(function(id){ return byResource[id]; }).filter(function(e){
-    return e.lateProjects.length || e.lateTasks.length || e.lateWR.length || e.staleProjects.length;
+    return e.lateProjects.length || e.lateTasks.length || e.lateWR.length || e.staleProjects.length || e.lateMilestones.length;
   });
 }
 
@@ -10464,6 +10469,7 @@ function reminderFlagTypes(e) {
   if (e.lateTasks.length) t.push('task');
   if (e.lateWR.length) t.push('wr');
   if (e.staleProjects.length) t.push('confirm');
+  if (e.lateMilestones.length) t.push('milestone');
   return t;
 }
 
@@ -10475,6 +10481,7 @@ function reminderFlagBadgesHtml(e) {
   if (e.lateProjects.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.lateProjects.length + ' late project' + (e.lateProjects.length>1?'s':'') + '</span> ';
   if (e.lateTasks.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.lateTasks.length + ' late task' + (e.lateTasks.length>1?'s':'') + '</span> ';
   if (e.lateWR.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.lateWR.length + ' late request' + (e.lateWR.length>1?'s':'') + '</span> ';
+  if (e.lateMilestones.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.lateMilestones.length + ' late milestone' + (e.lateMilestones.length>1?'s':'') + '</span> ';
   if (e.staleProjects.length) b += '<span class="badge badge-amber"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.staleProjects.length + ' unconfirmed ' + (e.staleProjects.length>1?'projects':'project') + '</span> ';
   if (!b) b = '<span class="badge badge-teal"><i class="ti ti-circle-check" style="margin-right:4px"></i>All clear</span>';
   return b;
@@ -10496,6 +10503,9 @@ function reminderDetailHtml(e) {
   });
   e.lateWR.forEach(function(w){
     rows.push(row(link('globalSearchGoWorkRequest(\'' + w.id + '\')', w.title), 'Work request'));
+  });
+  e.lateMilestones.forEach(function(m){
+    rows.push(row(link('goToProject(\'' + m.projectId + '\',\'milestones\')', m.name), m.project));
   });
   e.staleProjects.forEach(function(sp){
     rows.push(row(link('goToProject(\'' + sp.id + '\')', sp.name), sp.days + 'd since confirmed'));
@@ -10646,7 +10656,7 @@ function renderRemindersPage() {
 
     '<div class="task-filter-bar">' +
       '<input type="text" id="rem-search" placeholder="Search people…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onReminderSearch(this.value)">' +
-      chip('all','All flagged') + chip('nudge','Due for a nudge') + chip('project','Late projects') + chip('task','Late tasks') + chip('wr','Late work requests') + chip('confirm','Stale confirmation') +
+      chip('all','All flagged') + chip('nudge','Due for a nudge') + chip('project','Late projects') + chip('task','Late tasks') + chip('milestone','Late milestones') + chip('wr','Late work requests') + chip('confirm','Stale confirmation') +
     '</div>' +
 
     '<div class="card mb-16" style="padding:0;overflow:hidden">' +
@@ -11234,6 +11244,7 @@ function resourceOwnedFlagCount(r) {
     if (isProjectLate(p)) count++;
     var days = daysSinceConfirmed(p);
     if (days != null && days > DATA_CONFIRM_STALE_DAYS) count++;
+    (p.milestones || []).forEach(function(m) { if (isMilestoneLate(m)) count++; });
   });
   return count;
 }
