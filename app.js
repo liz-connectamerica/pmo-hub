@@ -2200,6 +2200,15 @@ function daysSinceConfirmed(p) {
   return Math.floor((Date.now() - new Date(p.dataConfirmedAt).getTime()) / 86400000);
 }
 
+// Reminders only nags owners about Active projects -- a Backlog/Planned/Hold
+// project's data going stale isn't the same urgency, and Complete projects
+// aren't being actively tracked at all.
+function projectNeedsConfirmation(p) {
+  if (p.stage !== 'active') return false;
+  var days = daysSinceConfirmed(p);
+  return days != null && days > DATA_CONFIRM_STALE_DAYS;
+}
+
 function dataConfirmedBadgeHtml(p) {
   var days = daysSinceConfirmed(p);
   if (days == null) return '<span class="badge badge-gray">Never confirmed</span>';
@@ -10439,8 +10448,7 @@ function computeReminderRoster() {
       var e = entryFor(p.ownerId);
       if (e) {
         if (isProjectLate(p)) e.lateProjects.push({ id: p.id, name: p.name, due: p.end, daysLate: daysLate(p) });
-        var days = daysSinceConfirmed(p);
-        if (days != null && days > DATA_CONFIRM_STALE_DAYS) e.staleProjects.push({ id: p.id, name: p.name, days: days });
+        if (projectNeedsConfirmation(p)) e.staleProjects.push({ id: p.id, name: p.name, days: daysSinceConfirmed(p) });
         // Milestones have no assignee of their own -- late ones fall to
         // whoever owns the project, same as a late project itself does.
         (p.milestones || []).forEach(function(m) {
@@ -11256,8 +11264,7 @@ function resourceOwnedFlagCount(r) {
   D.projects.forEach(function(p) {
     if (p.ownerId !== r.id) return;
     if (isProjectLate(p)) count++;
-    var days = daysSinceConfirmed(p);
-    if (days != null && days > DATA_CONFIRM_STALE_DAYS) count++;
+    if (projectNeedsConfirmation(p)) count++;
     (p.milestones || []).forEach(function(m) { if (isMilestoneLate(m)) count++; });
   });
   return count;
