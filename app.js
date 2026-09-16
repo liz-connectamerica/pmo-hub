@@ -10499,7 +10499,7 @@ function reminderDetailHtml(e) {
   function row(titleHtml, type, metaHtml) {
     var tb = typeBadgeClass[type] || 'badge-gray';
     return '<div class="raid-log-entry" style="display:flex;flex-direction:column;gap:2px;padding:6px 0;border-bottom:1px solid var(--border-soft)">' +
-      '<div style="display:flex;align-items:center;gap:8px"><i class="ti ti-alert-triangle" style="flex:none;color:var(--danger)"></i> <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + titleHtml + '</span><span class="badge ' + tb + '" style="margin-left:auto;flex:none">' + type + '</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px"><i class="ti ti-alert-triangle" style="flex:none;color:var(--danger)"></i><span class="badge ' + tb + '" style="flex:none">' + type + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + titleHtml + '</span></div>' +
       '<div class="text-muted" style="font-size:11.5px;padding-left:22px">' + metaHtml + '</div>' +
       '</div>';
   }
