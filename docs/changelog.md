@@ -15,12 +15,13 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-16">
-  <h2>Reminders: late milestones, richer flagged-item detail</h2>
+  <h2>Reminders: late milestones, richer flagged-item detail; inactive resources</h2>
   <p class="changelog-date">September 16, 2026</p>
   <ul>
     <li><strong>Late milestones</strong> are now a flag type on the Reminders page, alongside late projects/tasks/work requests and stale data confirmations. A milestone has no assignee of its own, so a late one is attributed to whoever owns its project.</li>
     <li>Expanding a person's row now shows a lot more per flagged item: a type badge (Project/Task/Milestone/Work request/Confirmation), its project where relevant, its due date, and how many days late it is — instead of a single ambiguous tag. Stale confirmations show days since last confirmed instead, since they don't have a due date.</li>
     <li>The stale data confirmation flag now only applies to <strong>Active</strong>-stage projects — a Backlog, Planned, Hold, or Complete project no longer gets flagged for needing reconfirmation, on Reminders, the Resources flag count, or the "Needs review" badge on its own Information tab.</li>
+    <li>Resources can now be flagged <strong>Inactive — no longer with the organization</strong>. They drop out of pickers for new assignments (Sponsor, Owner, Requirements Owner, task/to-do assignee, RAID owner, "add a team member"), but anything already assigned to them is untouched and now shows an inline <strong>Inactive</strong> badge next to their name everywhere it appears. A new <strong>Needs reassignment</strong> flag on Reminders rolls up any open work still sitting with an inactive person, attributed to the project owner. Admins can still add an inactive person to a project's team directly, for entering a project retroactively.</li>
   </ul>
 </div>
 
