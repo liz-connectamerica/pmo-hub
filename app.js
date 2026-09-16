@@ -2598,6 +2598,9 @@ function daysSince(iso) {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
 }
 function daysLate(p) { return Math.round((new Date(todayStr()) - new Date(p.end)) / 86400000); }
+// Same math as daysLate(), generalized to any due date -- tasks, milestones,
+// and work requests are each late against a different field.
+function daysLateFrom(dateStr) { return Math.round((new Date(todayStr()) - new Date(dateStr)) / 86400000); }
 
 // Issues carry a severity field directly; risks don't, so this derives an
 // equivalent High/Medium/Low from the probability/impact pair already
@@ -10435,27 +10438,30 @@ function computeReminderRoster() {
     if (p.ownerId) {
       var e = entryFor(p.ownerId);
       if (e) {
-        if (isProjectLate(p)) e.lateProjects.push({ id: p.id, name: p.name });
+        if (isProjectLate(p)) e.lateProjects.push({ id: p.id, name: p.name, due: p.end, daysLate: daysLate(p) });
         var days = daysSinceConfirmed(p);
         if (days != null && days > DATA_CONFIRM_STALE_DAYS) e.staleProjects.push({ id: p.id, name: p.name, days: days });
         // Milestones have no assignee of their own -- late ones fall to
         // whoever owns the project, same as a late project itself does.
         (p.milestones || []).forEach(function(m) {
-          if (isMilestoneLate(m)) e.lateMilestones.push({ name: m.name, project: p.name, projectId: p.id });
+          if (isMilestoneLate(m)) e.lateMilestones.push({ name: m.name, project: p.name, projectId: p.id, due: m.date, daysLate: daysLateFrom(m.date) });
         });
       }
     }
     (p.tasks || []).forEach(function(t) {
       if (t.assigneeId && isTaskLate(t)) {
         var te = entryFor(t.assigneeId);
-        if (te) te.lateTasks.push({ name: t.title, project: p.name, projectId: p.id });
+        if (te) te.lateTasks.push({ name: t.title, project: p.name, projectId: p.id, due: t.end, daysLate: daysLateFrom(t.end) });
       }
     });
   });
   (D.workRequests || []).forEach(function(w) {
     if (w.resourceId && isWorkRequestLate(w)) {
       var we = entryFor(w.resourceId);
-      if (we) we.lateWR.push({ id: w.id, title: w.title });
+      if (we) {
+        var wDue = w.status === 'Accepted' ? w.estimatedCompletionDate : w.requestedCompletionDate;
+        we.lateWR.push({ id: w.id, title: w.title, due: wDue, daysLate: daysLateFrom(wDue) });
+      }
     }
   });
   return Object.keys(byResource).map(function(id){ return byResource[id]; }).filter(function(e){
@@ -10489,26 +10495,34 @@ function reminderFlagBadgesHtml(e) {
 
 function reminderDetailHtml(e) {
   var rows = [];
-  function row(nameHtml, tag) {
-    return '<div class="raid-log-entry" style="display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border-soft)"><i class="ti ti-alert-triangle" style="flex:none"></i> <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + nameHtml + '</span><span class="badge badge-gray" style="margin-left:auto;flex:none">' + tag + '</span></div>';
+  var typeBadgeClass = { Project: 'badge-blue', Task: 'badge-purple', Milestone: 'badge-teal', 'Work request': 'badge-coral', Confirmation: 'badge-amber' };
+  function row(titleHtml, type, metaHtml) {
+    var tb = typeBadgeClass[type] || 'badge-gray';
+    return '<div class="raid-log-entry" style="display:flex;flex-direction:column;gap:2px;padding:6px 0;border-bottom:1px solid var(--border-soft)">' +
+      '<div style="display:flex;align-items:center;gap:8px"><i class="ti ti-alert-triangle" style="flex:none;color:var(--danger)"></i> <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + titleHtml + '</span><span class="badge ' + tb + '" style="margin-left:auto;flex:none">' + type + '</span></div>' +
+      '<div class="text-muted" style="font-size:11.5px;padding-left:22px">' + metaHtml + '</div>' +
+      '</div>';
   }
   function link(onclick, label) {
     return '<a href="#" style="color:var(--accent)" onclick="' + onclick + ';return false;">' + label + '</a>';
   }
+  function dueMeta(due, daysLate) {
+    return 'Due ' + (due ? fmtDate(due) : '—') + ' &middot; ' + daysLate + ' day' + (daysLate === 1 ? '' : 's') + ' late';
+  }
   e.lateProjects.forEach(function(p){
-    rows.push(row(link('goToProject(\'' + p.id + '\')', p.name), 'Project'));
+    rows.push(row(link('goToProject(\'' + p.id + '\')', p.name), 'Project', dueMeta(p.due, p.daysLate)));
   });
   e.lateTasks.forEach(function(t){
-    rows.push(row(link('goToProject(\'' + t.projectId + '\',\'tasks\')', t.name), t.project));
+    rows.push(row(link('goToProject(\'' + t.projectId + '\',\'tasks\')', t.name), 'Task', t.project + ' &middot; ' + dueMeta(t.due, t.daysLate)));
   });
   e.lateWR.forEach(function(w){
-    rows.push(row(link('globalSearchGoWorkRequest(\'' + w.id + '\')', w.title), 'Work request'));
+    rows.push(row(link('globalSearchGoWorkRequest(\'' + w.id + '\')', w.title), 'Work request', dueMeta(w.due, w.daysLate)));
   });
   e.lateMilestones.forEach(function(m){
-    rows.push(row(link('goToProject(\'' + m.projectId + '\',\'milestones\')', m.name), m.project));
+    rows.push(row(link('goToProject(\'' + m.projectId + '\',\'milestones\')', m.name), 'Milestone', m.project + ' &middot; ' + dueMeta(m.due, m.daysLate)));
   });
   e.staleProjects.forEach(function(sp){
-    rows.push(row(link('goToProject(\'' + sp.id + '\')', sp.name), sp.days + 'd since confirmed'));
+    rows.push(row(link('goToProject(\'' + sp.id + '\')', sp.name), 'Confirmation', sp.days + ' day' + (sp.days === 1 ? '' : 's') + ' since last confirmed'));
   });
   if (!rows.length) rows.push('<div class="text-muted" style="padding:4px 0">Nothing outstanding.</div>');
   return '<div class="raid-log" style="margin:0 0 10px">' + rows.join('') + '</div>';
