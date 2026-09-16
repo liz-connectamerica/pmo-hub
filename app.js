@@ -212,7 +212,7 @@ async function loadResources() {
       id: r.id, name: r.name, role: r.title, type: r.type,
       firstName: r.first_name, lastName: r.last_name,
       projects: projectIds, email: r.email, userId: r.user_id,
-      bauPercent: r.non_project_capacity
+      bauPercent: r.non_project_capacity, active: r.active !== false
     };
     if (r.type === 'team') {
       out.members = (membersByTeam[r.id] || []).map(function(x){ return nameById[x.member_resource_id]; }).filter(Boolean);
@@ -1937,8 +1937,53 @@ function teamNames() {
   return (D.resources || []).filter(function(r){ return r.type === 'team'; }).map(function(r){ return r.name; });
 }
 
+// Excludes inactive resources -- this is the pool used almost everywhere a
+// NEW assignment gets made. It deliberately doesn't drop someone who's
+// already assigned somewhere: every picker built from this list separately
+// re-adds the current value if it's missing from the pool (see e.g. the
+// owner/sponsor pickers), so a person going inactive never silently
+// unassigns them -- it only stops them from being picked for new work.
 function individualResourceNames() {
-  return (D.resources || []).filter(function(r){ return r.type === 'individual'; }).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(r){ return r.name; });
+  return (D.resources || []).filter(function(r){ return r.type === 'individual' && r.active !== false; }).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(r){ return r.name; });
+}
+
+function isResourceInactive(resourceId) {
+  var r = D.resources.find(function(x){ return x.id === resourceId; });
+  return !!(r && r.type === 'individual' && r.active === false);
+}
+
+// Every project role or open item held by someone no longer with the
+// organization -- shared by Reminders' "needs reassignment" flag and the
+// Resources page's owned-flag count, so the two never drift apart.
+// Assumptions have no lifecycle status (same convention as the Home page's
+// own RAID rollup), so they're treated as permanently open.
+var RAID_OPEN_TERMINAL = { risks: 'Closed', issues: 'Closed', dependencies: 'Resolved' };
+var RAID_KIND_LABEL = { risks: 'Risk', issues: 'Issue', dependencies: 'Dependency', assumptions: 'Assumption' };
+function projectReassignmentItems(p) {
+  var out = [];
+  if (isResourceInactive(p.ownerId)) out.push({ role: 'Owner', personName: p.owner, projectId: p.id, project: p.name, goTo: null });
+  if (p.sponsorResourceId && isResourceInactive(p.sponsorResourceId)) out.push({ role: 'Sponsor', personName: p.sponsor, projectId: p.id, project: p.name, goTo: null });
+  if (p.requirementsOwnerId && isResourceInactive(p.requirementsOwnerId)) out.push({ role: 'Requirements Owner', personName: p.requirementsOwner, projectId: p.id, project: p.name, goTo: null });
+  (p.tasks || []).forEach(function(t) {
+    if (t.assigneeId && t.status !== 'Done' && isResourceInactive(t.assigneeId)) {
+      out.push({ role: 'Task', title: t.title, personName: t.assignee, projectId: p.id, project: p.name, goTo: 'tasks' });
+    }
+  });
+  (p.todos || []).forEach(function(td) {
+    if (td.assigneeId && td.status !== 'Done' && isResourceInactive(td.assigneeId)) {
+      out.push({ role: 'To-do', title: td.title, personName: td.assignee, projectId: p.id, project: p.name, goTo: 'todos' });
+    }
+  });
+  Object.keys(RAID_KIND_LABEL).forEach(function(kind) {
+    var terminal = RAID_OPEN_TERMINAL[kind];
+    ((p.raid && p.raid[kind]) || []).forEach(function(item) {
+      var isOpen = !terminal || item.status !== terminal;
+      if (isOpen && item.ownerId && isResourceInactive(item.ownerId)) {
+        out.push({ role: RAID_KIND_LABEL[kind], title: item.desc, personName: item.owner, projectId: p.id, project: p.name, goTo: 'raid' });
+      }
+    });
+  });
+  return out;
 }
 
 function resolveAssignee(name) {
@@ -2024,7 +2069,7 @@ var roadmapMsState = { sort:'due', dir:'asc', search:'', fProject:[], fOwner:[],
 var roadmapCategoryFilter = 'All';
 var PHASE_COLORS = { 'Not Started':'var(--text-faint)', 'Discovery':'var(--blue-tx)', 'Design':'var(--accent)', 'Build':'var(--good)', 'Testing':'var(--warn)', 'Deployment':'#D85A30', 'Monitor':'#993556' };
 var TASK_STATUS_COLORS = { 'To Do':'var(--text-faint)', 'In Progress':'var(--accent)', 'On Hold':'#C98A2C', 'Done':'var(--good)' };
-var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null, expandedMembersId:null };
+var resourcesPageState = { tab:'individual', sort:'firstName', dir:'asc', search:'', expandedId:null, expandedMembersId:null, showInactive:false };
 var capacityPageState = { tab:'individual', search:'', dateMode:'next12', dateYear: new Date().getFullYear(), expandedId:null, expandedAvgId:null };
 var portfolioTagFilter = [];
 var portfolioSearch = '';
@@ -10439,7 +10484,7 @@ function computeReminderRoster() {
     if (!byResource[resId]) {
       var res = D.resources.find(function(r){ return r.id === resId; });
       if (!res) return null;
-      byResource[resId] = { resource: res, lateProjects: [], lateTasks: [], lateWR: [], staleProjects: [], lateMilestones: [] };
+      byResource[resId] = { resource: res, lateProjects: [], lateTasks: [], lateWR: [], staleProjects: [], lateMilestones: [], needsReassignment: [] };
     }
     return byResource[resId];
   }
@@ -10454,6 +10499,12 @@ function computeReminderRoster() {
         (p.milestones || []).forEach(function(m) {
           if (isMilestoneLate(m)) e.lateMilestones.push({ name: m.name, project: p.name, projectId: p.id, due: m.date, daysLate: daysLateFrom(m.date) });
         });
+        // Always attributed to the project owner's own roster row -- even
+        // when the owner themselves is the one who's inactive, since
+        // Reminders is an admin roster (not a message to the flagged
+        // person) and the real action item, "pick someone new," is the
+        // same either way.
+        e.needsReassignment = e.needsReassignment.concat(projectReassignmentItems(p));
       }
     }
     (p.tasks || []).forEach(function(t) {
@@ -10473,7 +10524,7 @@ function computeReminderRoster() {
     }
   });
   return Object.keys(byResource).map(function(id){ return byResource[id]; }).filter(function(e){
-    return e.lateProjects.length || e.lateTasks.length || e.lateWR.length || e.staleProjects.length || e.lateMilestones.length;
+    return e.lateProjects.length || e.lateTasks.length || e.lateWR.length || e.staleProjects.length || e.lateMilestones.length || e.needsReassignment.length;
   });
 }
 
@@ -10484,6 +10535,7 @@ function reminderFlagTypes(e) {
   if (e.lateWR.length) t.push('wr');
   if (e.staleProjects.length) t.push('confirm');
   if (e.lateMilestones.length) t.push('milestone');
+  if (e.needsReassignment.length) t.push('reassign');
   return t;
 }
 
@@ -10497,6 +10549,7 @@ function reminderFlagBadgesHtml(e) {
   if (e.lateWR.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.lateWR.length + ' late request' + (e.lateWR.length>1?'s':'') + '</span> ';
   if (e.lateMilestones.length) b += '<span class="badge badge-red"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.lateMilestones.length + ' late milestone' + (e.lateMilestones.length>1?'s':'') + '</span> ';
   if (e.staleProjects.length) b += '<span class="badge badge-amber"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>' + e.staleProjects.length + ' unconfirmed ' + (e.staleProjects.length>1?'projects':'project') + '</span> ';
+  if (e.needsReassignment.length) b += '<span class="badge badge-red"><i class="ti ti-user-x" style="margin-right:4px"></i>' + e.needsReassignment.length + ' needs reassignment</span> ';
   if (!b) b = '<span class="badge badge-teal"><i class="ti ti-circle-check" style="margin-right:4px"></i>All clear</span>';
   return b;
 }
@@ -10504,10 +10557,10 @@ function reminderFlagBadgesHtml(e) {
 function reminderDetailHtml(e) {
   var rows = [];
   var typeBadgeClass = { Project: 'badge-blue', Task: 'badge-purple', Milestone: 'badge-teal', 'Work request': 'badge-coral', Confirmation: 'badge-amber' };
-  function row(titleHtml, type, metaHtml) {
+  function row(titleHtml, type, metaHtml, icon) {
     var tb = typeBadgeClass[type] || 'badge-gray';
     return '<div class="raid-log-entry" style="display:flex;flex-direction:column;gap:2px;padding:6px 0;border-bottom:1px solid var(--border-soft)">' +
-      '<div style="display:flex;align-items:center;gap:8px"><i class="ti ti-alert-triangle" style="flex:none;color:var(--danger)"></i><span class="badge ' + tb + '" style="flex:none">' + type + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + titleHtml + '</span></div>' +
+      '<div style="display:flex;align-items:center;gap:8px"><i class="ti ' + (icon || 'ti-alert-triangle') + '" style="flex:none;color:var(--danger)"></i><span class="badge ' + tb + '" style="flex:none">' + type + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + titleHtml + '</span></div>' +
       '<div class="text-muted" style="font-size:11.5px;padding-left:22px">' + metaHtml + '</div>' +
       '</div>';
   }
@@ -10531,6 +10584,13 @@ function reminderDetailHtml(e) {
   });
   e.staleProjects.forEach(function(sp){
     rows.push(row(link('goToProject(\'' + sp.id + '\')', sp.name), 'Confirmation', sp.days + ' day' + (sp.days === 1 ? '' : 's') + ' since last confirmed'));
+  });
+  e.needsReassignment.forEach(function(x){
+    if (x.title != null) {
+      rows.push(row(link('goToProject(\'' + x.projectId + '\',\'' + x.goTo + '\')', x.title), x.role, x.project + ' &middot; assigned to ' + (x.personName || 'someone') + ' (inactive)', 'ti-user-x'));
+    } else {
+      rows.push(row(link('goToProject(\'' + x.projectId + '\')', x.project), x.role, (x.personName || 'This person') + ' is no longer with the organization', 'ti-user-x'));
+    }
   });
   if (!rows.length) rows.push('<div class="text-muted" style="padding:4px 0">Nothing outstanding.</div>');
   return '<div class="raid-log" style="margin:0 0 10px">' + rows.join('') + '</div>';
@@ -10678,7 +10738,7 @@ function renderRemindersPage() {
 
     '<div class="task-filter-bar">' +
       '<input type="text" id="rem-search" placeholder="Search people…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onReminderSearch(this.value)">' +
-      chip('all','All flagged') + chip('nudge','Due for a nudge') + chip('project','Late projects') + chip('task','Late tasks') + chip('milestone','Late milestones') + chip('wr','Late work requests') + chip('confirm','Stale confirmation') +
+      chip('all','All flagged') + chip('nudge','Due for a nudge') + chip('project','Late projects') + chip('task','Late tasks') + chip('milestone','Late milestones') + chip('wr','Late work requests') + chip('confirm','Stale confirmation') + chip('reassign','Needs reassignment') +
     '</div>' +
 
     '<div class="card mb-16" style="padding:0;overflow:hidden">' +
@@ -11266,6 +11326,7 @@ function resourceOwnedFlagCount(r) {
     if (isProjectLate(p)) count++;
     if (projectNeedsConfirmation(p)) count++;
     (p.milestones || []).forEach(function(m) { if (isMilestoneLate(m)) count++; });
+    count += projectReassignmentItems(p).length;
   });
   return count;
 }
@@ -11324,6 +11385,7 @@ function pgResources() {
   var teams = D.resources.filter(function(r){ return r.type === 'team'; });
 
   var list = st.tab === 'individual' ? individuals : teams;
+  if (st.tab === 'individual' && !st.showInactive) list = list.filter(function(r){ return r.active !== false; });
   if (st.search) {
     var q = st.search.toLowerCase();
     list = list.filter(function(r){
@@ -11397,6 +11459,7 @@ function pgResources() {
         '<td class="bold">' + (r.firstName||'') + '</td>' +
         '<td class="bold">' + (r.lastName||'') + '</td>' +
         '<td class="text-muted">' + (r.role||'—') + '</td>' +
+        '<td>' + (r.active === false ? '<span class="badge badge-gray">Inactive</span>' : '') + '</td>' +
         '<td style="text-align:center">' + linkIcon + '</td>' +
         '<td class="text-muted">' + (r.teamName||'—') + '</td>' +
         '<td><button class="btn btn-sm" onclick="toggleResourceExpand(\'' + r.id + '\')">' + combinedCount + ' <i class="ti ' + (st.expandedId===r.id?'ti-chevron-up':'ti-chevron-down') + '"></i></button></td>' +
@@ -11404,12 +11467,13 @@ function pgResources() {
         '<td class="text-muted">' + resourceWorkRequestSummary(r) + '</td>' +
         '<td>' + resourceCurrentLoadBadgeHtml(r) + '</td>' +
         '<td><button class="btn btn-sm" onclick="editResource(\'' + r.id + '\')"><i class="ti ti-edit"></i></button> <button class="btn btn-sm btn-danger" onclick="deleteResource(\'' + r.id + '\')"><i class="ti ti-trash"></i></button></td>' +
-        '</tr>' + projectExpandRow(r, 10);
+        '</tr>' + projectExpandRow(r, 11);
     }).join('');
     tableHtml = '<table><thead><tr>' +
       '<th class="sortable-th" onclick="setResourceSort(\'firstName\')">First name ' + arrow('firstName') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'lastName\')">Last name ' + arrow('lastName') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'role\')">Role ' + arrow('role') + '</th>' +
+      '<th>Status</th>' +
       '<th style="text-align:center">Linked</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'teamName\')">Team ' + arrow('teamName') + '</th>' +
       '<th class="sortable-th" onclick="setResourceSort(\'projects\')">Projects ' + arrow('projects') + '</th>' +
@@ -11444,7 +11508,9 @@ function pgResources() {
       '<div class="tab' + (st.tab==='individual'?' active':'') + '" onclick="setResourceTab(\'individual\')">Individuals <span class="badge badge-gray">' + individuals.length + '</span></div>' +
       '<div class="tab' + (st.tab==='team'?' active':'') + '" onclick="setResourceTab(\'team\')">Teams <span class="badge badge-gray">' + teams.length + '</span></div>' +
     '</div>' +
-    '<div class="card"><div class="task-filter-bar"><input type="text" id="res-search" placeholder="Search resources…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onResourceSearch(this.value)"></div>' +
+    '<div class="card"><div class="task-filter-bar"><input type="text" id="res-search" placeholder="Search resources…" value="' + st.search.replace(/"/g,'&quot;') + '" oninput="onResourceSearch(this.value)">' +
+    (st.tab === 'individual' ? '<label style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap"><input type="checkbox" id="res-show-inactive"' + (st.showInactive?' checked':'') + ' onchange="toggleResourceShowInactive(this.checked)"> Show inactive</label>' : '') +
+    '</div>' +
     (list.length ? '<div class="table-wrap">' + tableHtml + '</div>' : '<div class="empty-state" style="padding:24px"><i class="ti ti-search"></i><p>No resources match your search</p></div>') +
     '</div>';
 
@@ -11460,6 +11526,7 @@ function pgResources() {
     var el = document.getElementById('res-search');
     if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
   };
+  window.toggleResourceShowInactive = function(val) { resourcesPageState.showInactive = val; pgResources(); };
 }
 
 // ── Capacity ─────────────────────────────────────────────────────────────────
@@ -12155,7 +12222,7 @@ function editResource(rid) {
   var memberIds = res.memberIds || [];
   var candidateResources = D.resources.filter(function(r){ return r.type === 'individual' && r.id !== rid; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
   var memberChecklist = candidateResources.map(function(r){
-    return '<label class="th-filter-opt member-row" data-name="' + r.name.toLowerCase() + '" style="display:block;padding:5px 0;font-size:13px"><input type="checkbox" value="' + r.id + '"' + (memberIds.indexOf(r.id)>=0?' checked':'') + ' style="margin-right:8px"> ' + r.name + (r.teamName ? ' <span class="text-muted" style="font-size:11px">(' + r.teamName + ')</span>' : '') + '</label>';
+    return '<label class="th-filter-opt member-row" data-name="' + r.name.toLowerCase() + '" style="display:block;padding:5px 0;font-size:13px"><input type="checkbox" value="' + r.id + '"' + (memberIds.indexOf(r.id)>=0?' checked':'') + ' style="margin-right:8px"> ' + r.name + (r.active === false ? ' <span class="badge badge-gray" style="font-size:10px">Inactive</span>' : '') + (r.teamName ? ' <span class="text-muted" style="font-size:11px">(' + r.teamName + ')</span>' : '') + '</label>';
   }).join('');
 
   showModal('<div class="modal-title">Edit resource <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
@@ -12165,7 +12232,8 @@ function editResource(rid) {
         '<div class="grid-2"><div class="form-group"><div class="form-label">Role / Title</div><input type="text" id="er-role" value="' + (res.role||'') + '"></div>' +
         '<div class="form-group"><div class="form-label">Team</div><select id="er-team">' + teamOpts + '</select></div></div>' +
         '<div class="form-group"><div class="form-label">Email</div><input type="email" id="er-email" value="' + (res.email||'') + '">' + (res.userId ? '<p class="text-muted" style="font-size:12px;margin-top:4px"><i class="ti ti-link" style="color:var(--good)"></i> Linked to a real account</p>' : '') + '</div>' +
-        '<div class="form-group"><div class="form-label">BAU (non-project) %</div><input type="number" id="er-bau" min="0" max="100" value="' + (res.bauPercent != null ? res.bauPercent : '') + '"><p class="text-muted" style="font-size:12px;margin-top:4px">Normally self-reported from My Tasks — override here if needed.</p></div>'
+        '<div class="form-group"><div class="form-label">BAU (non-project) %</div><input type="number" id="er-bau" min="0" max="100" value="' + (res.bauPercent != null ? res.bauPercent : '') + '"><p class="text-muted" style="font-size:12px;margin-top:4px">Normally self-reported from My Tasks — override here if needed.</p></div>' +
+        '<div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="er-inactive"' + (res.active === false ? ' checked' : '') + '> Inactive — no longer with the organization</label><p class="text-muted" style="font-size:12px;margin-top:4px">Removes them from pickers for new assignments. Anything already assigned to them stays as-is, but gets flagged on Reminders for the project owner to reassign.</p></div>'
       : '<div class="form-group"><div class="form-label">Team name</div><input type="text" id="er-name" value="' + res.name + '"></div>' +
         '<div class="form-group"><div class="form-label">Manager</div><select id="er-manager">' + managerOpts + '</select></div>' +
         '<div class="form-group"><div class="form-label">Team members</div>' +
@@ -12211,10 +12279,11 @@ async function saveResource(rid) {
     var name = (first + ' ' + last).trim() || res.name;
     var bauRaw = document.getElementById('er-bau').value;
     var bauVal = bauRaw === '' ? null : Math.max(0, Math.min(100, parseInt(bauRaw, 10)));
+    var activeVal = !document.getElementById('er-inactive').checked;
 
-    var result = await sb.from('resources').update({ name: name, first_name: first, last_name: last, title: role, email: email, non_project_capacity: bauVal }).eq('id', rid).select().single();
+    var result = await sb.from('resources').update({ name: name, first_name: first, last_name: last, title: role, email: email, non_project_capacity: bauVal, active: activeVal }).eq('id', rid).select().single();
     if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
-    res.name = name; res.firstName = first; res.lastName = last; res.role = role; res.email = email; res.userId = result.data.user_id; res.bauPercent = bauVal;
+    res.name = name; res.firstName = first; res.lastName = last; res.role = role; res.email = email; res.userId = result.data.user_id; res.bauPercent = bauVal; res.active = activeVal;
 
     var oldTeamId = res.teamId;
     if (oldTeamId !== newTeamId) {
