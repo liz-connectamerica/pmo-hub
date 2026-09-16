@@ -1777,7 +1777,7 @@ function taskGridRowHtml(p, row, assigneePool, editable) {
     '</div>';
   var assigneeCell = editable
     ? '<select class="grid-cell-select" onchange="gridSaveAssignee(\'' + p.id + '\',\'' + task.id + '\',this.value)">' + assigneeOpts + '</select>'
-    : '<span style="font-size:13px">' + (task.assignee || '—') + '</span>';
+    : '<span style="font-size:13px">' + (task.assignee || '—') + inactiveNameBadge(task.assignee) + '</span>';
   var statusCell = editable
     ? '<select class="grid-cell-select" onchange="gridSaveStatus(\'' + p.id + '\',\'' + task.id + '\',this.value)">' + statusOpts + '</select>'
     : bdg(task.status);
@@ -1959,6 +1959,16 @@ function allIndividualResourceNames() {
 function isResourceInactive(resourceId) {
   var r = D.resources.find(function(x){ return x.id === resourceId; });
   return !!(r && r.type === 'individual' && r.active === false);
+}
+
+// Looks a person up BY NAME -- most assignment fields (sponsor, owner, task
+// assignee, RAID owner, ...) store the plain name string rather than an id.
+// Returns inline badge markup, or '' when there's no name or the match isn't
+// an inactive individual, so callers can always just append the result.
+function inactiveNameBadge(name) {
+  if (!name) return '';
+  var r = D.resources.find(function(x){ return x.name === name && x.type === 'individual'; });
+  return (r && r.active === false) ? ' <span class="badge badge-gray" style="font-size:10px">Inactive</span>' : '';
 }
 
 // Every project role or open item held by someone no longer with the
@@ -3398,7 +3408,7 @@ function pgHome() {
   var sponsoredRows = sponsoredProjects.map(function(p) {
     return '<tr>' +
       '<td class="bold">' + hdot(p.health) + p.name + '</td>' +
-      '<td class="text-muted">' + (p.owner || 'No Owner') + '</td>' +
+      '<td class="text-muted">' + (p.owner || 'No Owner') + inactiveNameBadge(p.owner) + '</td>' +
       '<td class="text-muted">' + (p.tshirtSize || '—') + '</td>' +
       '<td>' + stagePill(p.stage) + '</td>' +
       '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
@@ -3594,7 +3604,7 @@ function pgExecSummary() {
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' + stagePill(p.stage) + ' ' + bdg(p.status) + ' ' + commitmentBadge(p) + ' ' + lateBadgeHtml(isProjectLate(p)) + '</div>' +
       '</div>' +
       '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px 20px;margin:12px 0">' +
-        metaBox('Owner', p.owner || '—') + metaBox('Sponsor', p.sponsor || '—') + metaBox('Target end', p.end || '—') +
+        metaBox('Owner', (p.owner || '—') + inactiveNameBadge(p.owner)) + metaBox('Sponsor', (p.sponsor || '—') + inactiveNameBadge(p.sponsor)) + metaBox('Target end', p.end || '—') +
         metaBox('Progress', '<div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span style="font-size:11px">' + p.progress + '%</span></div>') +
       '</div>' +
       (p.blockers ? '<div class="blocker-note"><i>Blocker:</i> ' + p.blockers + '</div>' : '') +
@@ -3662,7 +3672,7 @@ function pgPortfolio() {
         '<td class="text-muted">' + cats + '</td>' +
         '<td>' + stagePill(p.stage) + (p.stage === 'hold' && p.holdReason ? '<div class="text-muted" style="font-size:11px;margin-top:2px"><i class="ti ti-player-pause"></i> ' + p.holdReason + '</div>' : '') + '</td>' +
         '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
-        '<td class="text-muted">' + (p.owner || 'No Owner') + '</td>' +
+        '<td class="text-muted">' + (p.owner || 'No Owner') + inactiveNameBadge(p.owner) + '</td>' +
         '<td class="text-muted">' + (p.end || 'TBD') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
         '</tr>';
     }).join('');
@@ -3871,7 +3881,7 @@ function reviewRequest(id) {
       '<div><div class="form-label">Submitted by</div>' + r.submitter + '</div>' +
       '<div><div class="form-label">Date</div>' + r.date + '</div>' +
       '<div><div class="form-label">Business Unit</div>' + (r.businessUnit || '—') + '</div>' +
-      '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '—') + '</div>' +
+      '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '—') + inactiveNameBadge(r.sponsor) + '</div>' +
     '</div>' +
     '<div class="form-group"><div class="form-label">Description</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + (r.description||'') + '</div></div>' +
     '<div class="grid-2 mb-16">' +
@@ -3893,7 +3903,7 @@ function reviewRequest(id) {
         '<div class="grid-2" style="gap:8px 16px;font-size:12px">' +
           '<div><span class="text-muted">Status: </span>' + bdg(linkedP.status) + '</div>' +
           '<div><span class="text-muted">Phase: </span><span class="badge badge-gray">' + linkedP.phase + '</span></div>' +
-          '<div><span class="text-muted">Owner: </span>' + (linkedP.owner || '—') + '</div>' +
+          '<div><span class="text-muted">Owner: </span>' + (linkedP.owner || '—') + inactiveNameBadge(linkedP.owner) + '</div>' +
           '<div><span class="text-muted">Due: </span>' + (linkedP.end || 'TBD') + '</div>' +
         '</div>' +
         '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:3px"><span>Progress</span><span>' + linkedP.progress + '%</span></div>' +
@@ -4484,7 +4494,7 @@ function pgBacklog() {
       '<td>' + ((p.tags && p.tags.length) ? p.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.value || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + commitmentBadge(p) + '</td>' +
-      '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.owner || '<span class="text-muted">—</span>') + inactiveNameBadge(p.owner) + '</td>' +
       '<td style="white-space:nowrap"><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button> ' +
         (D.role === 'admin' ? '<button class="btn btn-sm btn-primary" onclick="openScheduleModal(\'' + p.id + '\')"><i class="ti ti-calendar-plus"></i> Schedule</button>' : '') +
       '</td>' +
@@ -4970,7 +4980,7 @@ function pgPlanned() {
       '<td class="bold">' + p.name + '</td>' +
       '<td>' + ((p.tags && p.tags.length) ? p.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + commitmentBadge(p) + '</td>' +
-      '<td>' + (p.owner || '<span class="text-muted">—</span>') + (soonNoOwner ? ' <i class="ti ti-alert-triangle" style="color:var(--hatch-border)" title="Starts within 30 days, no Owner assigned yet"></i>' : '') + '</td>' +
+      '<td>' + (p.owner || '<span class="text-muted">—</span>') + inactiveNameBadge(p.owner) + (soonNoOwner ? ' <i class="ti ti-alert-triangle" style="color:var(--hatch-border)" title="Starts within 30 days, no Owner assigned yet"></i>' : '') + '</td>' +
       '<td>' + (p.plannedStart || '<span class="text-muted">TBD</span>') + '</td>' +
       '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td style="white-space:nowrap">' + actionBtns + '</td>' +
@@ -5095,7 +5105,7 @@ function pgProjects() {
       '<td>' + commitmentBadge(p) + '</td>' +
       '<td>' + (p.phase || '<span class="text-muted">—</span>') + '</td>' +
       '<td style="min-width:110px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:var(--border-soft);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + p.progress + '%;background:var(--accent)"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div></td>' +
-      '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.owner || '<span class="text-muted">—</span>') + inactiveNameBadge(p.owner) + '</td>' +
       '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td>' +
       '</tr>';
@@ -5548,8 +5558,8 @@ function pgProjectDetail(pid, tab) {
             '</div>';
         } else {
           peopleEditFields = '<div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-end">' +
-              peopleFieldBox('Sponsor', p.sponsor||'—') +
-              peopleFieldBox('Owner', p.owner||'—') +
+              peopleFieldBox('Sponsor', (p.sponsor||'—') + inactiveNameBadge(p.sponsor)) +
+              peopleFieldBox('Owner', (p.owner||'—') + inactiveNameBadge(p.owner)) +
               '<div style="min-width:200px">' + reqOwnerField + '</div>' +
             '</div>';
         }
@@ -5564,9 +5574,9 @@ function pgProjectDetail(pid, tab) {
         peopleRolesHtml = '<div class="card mb-16">' +
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap">' +
             '<div style="display:flex;gap:22px;flex-wrap:wrap">' +
-              peopleFieldBox('Sponsor', p.sponsor||'—') +
-              peopleFieldBox('Owner', p.owner||'—') +
-              peopleFieldBox('Requirements owner', p.requirementsOwner||'—') +
+              peopleFieldBox('Sponsor', (p.sponsor||'—') + inactiveNameBadge(p.sponsor)) +
+              peopleFieldBox('Owner', (p.owner||'—') + inactiveNameBadge(p.owner)) +
+              peopleFieldBox('Requirements owner', (p.requirementsOwner||'—') + inactiveNameBadge(p.requirementsOwner)) +
             '</div>' +
             '<div style="display:flex;gap:8px">' +
               ((isAdminPeople || canEditReqOwnerOnly) ? '<button class="btn btn-sm" onclick="setPeopleEditing(true)"><i class="ti ti-edit"></i> Edit</button>' : '') +
@@ -5612,7 +5622,7 @@ function pgProjectDetail(pid, tab) {
               ? '<span class="text-muted" style="font-size:11px;white-space:nowrap" title="' + (isOverridden ? 'This person has overridden this from their My Capacity page' : 'Based on tier + this project\'s T-shirt size') + '">≈' + effectiveAllocationPct(p, resId) + '%' + (isOverridden ? ' (self-set)' : '') + '</span>'
               : '';
             return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-soft)">' +
-              '<div style="display:flex;align-items:center;gap:10px">' + (isTeam ? '<i class="ti ti-users" style="color:var(--blue-tx)"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:13px">' + m + '</span>' + (isTeam ? teamManagerSuffix(m) : '') + '</div>' +
+              '<div style="display:flex;align-items:center;gap:10px">' + (isTeam ? '<i class="ti ti-users" style="color:var(--blue-tx)"></i>' : '<div class="avatar ' + AV_COLS[i%AV_COLS.length] + '">' + ini + '</div>') + '<span style="font-size:13px">' + m + '</span>' + (isTeam ? teamManagerSuffix(m) : inactiveNameBadge(m)) + '</div>' +
               '<div style="display:flex;align-items:center;gap:10px">' + tierSelect + effPctHint +
               (editable ? '<button class="btn btn-sm btn-danger" onclick="removeTeamMemberDirect(\'' + p.id + '\',\'' + m.replace(/'/g,"\\'") + '\')"><i class="ti ti-x"></i></button>' : '') +
               '</div></div>';
@@ -5791,7 +5801,7 @@ function pgProjectDetail(pid, tab) {
         var trAttrs = hierarchyEditable
           ? ' class="task-row task-row-draggable" draggable="true" data-task-id="' + task.id + '" data-pid="' + p.id + '"'
           : '';
-        return '<tr' + trAttrs + '><td class="text-muted">' + row.taskNumber + '</td><td>' + titleCell + '</td><td' + (task.assignee ? '' : ' class="text-muted"') + '>' + taskAssigneeLabel(task) + '</td><td>' + bdg(task.status) + '</td><td class="text-muted">' + taskDatesLabel(task) + '</td>' +
+        return '<tr' + trAttrs + '><td class="text-muted">' + row.taskNumber + '</td><td>' + titleCell + '</td><td' + (task.assignee ? '' : ' class="text-muted"') + '>' + taskAssigneeLabel(task) + inactiveNameBadge(task.assignee) + '</td><td>' + bdg(task.status) + '</td><td class="text-muted">' + taskDatesLabel(task) + '</td>' +
           '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
           '<button class="btn btn-sm" title="Description" onclick="toggleTaskDescription(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
           '<button class="btn btn-sm" title="Checklist" onclick="toggleTaskChecklist(\'' + p.id + '\',\'' + task.id + '\')"><i class="ti ' + (clOpenNow?'ti-chevron-up':'ti-list-check') + '"></i>' + (checklist.length ? ' ' + doneCount + '/' + checklist.length : '') + '</button>' +
@@ -5903,7 +5913,7 @@ function pgProjectDetail(pid, tab) {
         var doneIconHtml = '<i class="ti ' + (td.status==='Done' ? 'ti-circle-check' : 'ti-circle-dotted') + '" style="font-size:20px;flex-shrink:0;color:' + (td.status==='Done' ? 'var(--good)' : 'var(--text-disabled)') + (canCheck ? ';cursor:pointer' : '') + '"' +
           (canCheck ? ' title="' + (td.status==='Done' ? 'Reopen' : 'Mark done') + '" onclick="toggleTodoDoneIcon(\'' + p.id + '\',' + idx + ')"' : '') + '></i>';
         var titleCell = '<div style="display:flex;align-items:center;gap:8px">' + doneIconHtml + '<span style="font-size:13px' + (td.status==='Done' ? ';color:var(--text-faint)' : '') + '">' + td.title + '</span></div>';
-        return '<tr><td>' + titleCell + '</td><td' + (td.assignee ? '' : ' class="text-muted"') + '>' + (td.assignee || 'Unassigned') + '</td><td>' + bdg(td.status) + '</td>' +
+        return '<tr><td>' + titleCell + '</td><td' + (td.assignee ? '' : ' class="text-muted"') + '>' + (td.assignee || 'Unassigned') + inactiveNameBadge(td.assignee) + '</td><td>' + bdg(td.status) + '</td>' +
           '<td class="text-muted">' + (td.due || '—') + ' ' + lateBadgeHtml(isTodoLate(td)) + '</td>' +
           '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
           '<button class="btn btn-sm" title="Description" onclick="toggleTodoDescription(\'' + p.id + '\',\'' + td.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
@@ -5964,7 +5974,7 @@ function pgProjectDetail(pid, tab) {
                 '<div><div style="font-size:13px;word-break:break-word;white-space:pre-wrap;margin-bottom:4px">' + item.desc + '</div>' +
                 (item.impactDescription ? '<div style="font-size:12px;color:var(--text-muted);word-break:break-word;white-space:pre-wrap;margin-bottom:4px"><strong>Impact:</strong> ' + item.impactDescription + '</div>' : '') +
                 '<div style="font-size:12px;color:var(--text-2);word-break:break-word;white-space:pre-wrap;background:var(--surface-2);padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.mitigation||'—') + '</div></div>' +
-                '<div style="font-size:12px;color:var(--text-muted);word-break:break-word">' + item.owner + '</div>' +
+                '<div style="font-size:12px;color:var(--text-muted);word-break:break-word">' + item.owner + inactiveNameBadge(item.owner) + '</div>' +
                 '<div>' + (item.status ? bdg(item.status) : '—') + '</div>' +
                 '<div>' + actionBtns(type, idx, item) + '</div></div>' +
                 logBlock(type, idx, item);
@@ -5978,7 +5988,7 @@ function pgProjectDetail(pid, tab) {
                 '<div><div style="font-size:13px;word-break:break-word;white-space:pre-wrap;margin-bottom:4px">' + item.desc + '</div>' +
                 (item.impactDescription ? '<div style="font-size:12px;color:var(--text-muted);word-break:break-word;white-space:pre-wrap;margin-bottom:4px"><strong>Impact:</strong> ' + item.impactDescription + '</div>' : '') +
                 '<div style="font-size:12px;color:var(--text-2);word-break:break-word;white-space:pre-wrap;background:var(--surface-2);padding:6px 8px;border-radius:6px;line-height:1.5">' + (item.solution||'—') + '</div></div>' +
-                '<div style="font-size:12px;color:var(--text-muted)">' + item.owner + '</div>' +
+                '<div style="font-size:12px;color:var(--text-muted)">' + item.owner + inactiveNameBadge(item.owner) + '</div>' +
                 '<div>' + bdg(item.status) + '</div>' +
                 '<div>' + actionBtns(type, idx, item) + '</div></div>' +
                 logBlock(type, idx, item);
@@ -5987,7 +5997,7 @@ function pgProjectDetail(pid, tab) {
         return items.map(function(item) {
           var idx = idxOf(item);
           return '<div style="font-size:13px;padding:10px 0;border-bottom:1px solid var(--border-soft);display:flex;justify-content:space-between;align-items:center;gap:8px;word-break:break-word">' +
-            '<div style="flex:1;white-space:pre-wrap">' + item.desc + (item.owner ? ' <span class="text-muted">— ' + item.owner + '</span>' : '') + (item.status ? ' ' + bdg(item.status) : '') + '</div>' +
+            '<div style="flex:1;white-space:pre-wrap">' + item.desc + (item.owner ? ' <span class="text-muted">— ' + item.owner + '</span>' + inactiveNameBadge(item.owner) : '') + (item.status ? ' ' + bdg(item.status) : '') + '</div>' +
             actionBtns(type, idx, item) + '</div>' +
             logBlock(type, idx, item);
         }).join('');
@@ -8035,8 +8045,8 @@ function editProject(pid) {
     '<div class="form-group"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="ep-blocker" value="' + (p.blockers||'') + '"></div>' +
     '<div class="divider"></div>' +
     '<div class="grid-2">' +
-    '<div class="form-group"><div class="form-label">Sponsor</div>' + (D.role === 'admin' ? '<select id="ep-sponsor">' + sponsorOpts + '</select>' : '<div style="padding:8px 0;color:var(--text-2)">' + (p.sponsor || '—') + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the sponsor</div></div>') + '</div>' +
-    '<div class="form-group"><div class="form-label">Owner</div>' + (D.role === 'admin' ? '<select id="ep-owner">' + ownerOpts + '</select>' : '<div style="padding:8px 0;color:var(--text-2)">' + (p.owner || '—') + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the owner</div></div>') + '</div>' +
+    '<div class="form-group"><div class="form-label">Sponsor</div>' + (D.role === 'admin' ? '<select id="ep-sponsor">' + sponsorOpts + '</select>' : '<div style="padding:8px 0;color:var(--text-2)">' + (p.sponsor || '—') + inactiveNameBadge(p.sponsor) + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the sponsor</div></div>') + '</div>' +
+    '<div class="form-group"><div class="form-label">Owner</div>' + (D.role === 'admin' ? '<select id="ep-owner">' + ownerOpts + '</select>' : '<div style="padding:8px 0;color:var(--text-2)">' + (p.owner || '—') + inactiveNameBadge(p.owner) + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the owner</div></div>') + '</div>' +
     '</div>' +
     '<div class="form-group"><div class="form-label">Program</div><select id="ep-program">' + programOptsEdit + '</select></div>' +
     '<div class="modal-footer">' +
@@ -8685,7 +8695,7 @@ function pgRoadmap() {
   }
 
   var msRows = msList.map(function(it) {
-    return '<tr><td class="bold">' + it.project + '</td><td>' + it.milestone + '</td><td class="text-muted">' + it.due + ' ' + lateBadgeHtml(it.late) + '</td><td class="text-muted">' + it.owner + '</td></tr>';
+    return '<tr><td class="bold">' + it.project + '</td><td>' + it.milestone + '</td><td class="text-muted">' + it.due + ' ' + lateBadgeHtml(it.late) + '</td><td class="text-muted">' + it.owner + inactiveNameBadge(it.owner) + '</td></tr>';
   }).join('');
 
   var msHeader = '<tr>' +
@@ -8855,8 +8865,8 @@ function renderImportPreview() {
       '<td>' + (v.valid ? '<i class="ti ti-circle-check" style="color:var(--good)"></i>' : '<i class="ti ti-alert-circle" style="color:var(--danger)"></i>') + '</td>' +
       '<td>' + (v.record.name || '<span class="text-muted">(missing)</span>') + '</td>' +
       '<td>' + (v.record.stage || '') + '</td>' +
-      '<td>' + (v.record.owner_name || '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (v.record.sponsor || '<span class="text-muted">—</span>') + (v.record.sponsor_resource_id ? '' : (v.record.sponsor ? ' <span class="text-muted" style="font-size:11px">(not linked)</span>' : '')) + '</td>' +
+      '<td>' + (v.record.owner_name || '<span class="text-muted">—</span>') + inactiveNameBadge(v.record.owner_name) + '</td>' +
+      '<td>' + (v.record.sponsor || '<span class="text-muted">—</span>') + inactiveNameBadge(v.record.sponsor) + (v.record.sponsor_resource_id ? '' : (v.record.sponsor ? ' <span class="text-muted" style="font-size:11px">(not linked)</span>' : '')) + '</td>' +
       '<td>' + (v.categories.length ? v.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (v.tags.length ? v.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td style="color:var(--danger);font-size:12px">' + (v.errors.join('; ') || '') + '</td>' +
@@ -9203,8 +9213,8 @@ function pgAllProjects() {
       '<td>' + (p.phase || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + commitmentBadge(p) + '</td>' +
       '<td>' + (p.value || '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (p.sponsor || '<span class="text-muted">—</span>') + '</td>' +
-      '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.sponsor || '<span class="text-muted">—</span>') + inactiveNameBadge(p.sponsor) + '</td>' +
+      '<td>' + (p.owner || '<span class="text-muted">—</span>') + inactiveNameBadge(p.owner) + '</td>' +
       '<td>' + (p.tshirtSize || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + hdot(p.health) + (EXPORT_HEALTH_LABELS[p.health] || '<span class="text-muted">Not set</span>') + '</td>' +
       '<td>' + (p.deliveryMethodology || '<span class="text-muted">—</span>') + '</td>' +
@@ -9850,8 +9860,8 @@ async function openDeletedProjectModal(pid) {
       '<div><div class="form-label">Status</div>' + (pr.status ? bdg(pr.status) : '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Phase</div>' + (pr.phase || '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Commitment</div>' + (pr.commitment ? bdg(pr.commitment) : '<span class="text-muted">Needs commitment</span>') + '</div>' +
-      '<div><div class="form-label">Owner</div>' + (pr.owner_name || '<span class="text-muted">—</span>') + '</div>' +
-      '<div><div class="form-label">Sponsor</div>' + (pr.sponsor || '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Owner</div>' + (pr.owner_name || '<span class="text-muted">—</span>') + inactiveNameBadge(pr.owner_name) + '</div>' +
+      '<div><div class="form-label">Sponsor</div>' + (pr.sponsor || '<span class="text-muted">—</span>') + inactiveNameBadge(pr.sponsor) + '</div>' +
       '<div><div class="form-label">Start</div>' + (pr.start_date || '—') + '</div>' +
       '<div><div class="form-label">Target end</div>' + (pr.end_date || '—') + '</div>' +
     '</div>' +
@@ -9912,7 +9922,7 @@ async function openDeletedRequestModal(id) {
       '<div><div class="form-label">Priority</div>' + (r.priority ? bdg(r.priority) : '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Submitter</div>' + (r.submitter_name || '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Business Unit</div>' + (r.business_unit || '<span class="text-muted">—</span>') + '</div>' +
-      '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '<span class="text-muted">—</span>') + inactiveNameBadge(r.sponsor) + '</div>' +
       '<div><div class="form-label">Value Area</div>' + (r.value_area || '<span class="text-muted">—</span>') + '</div>' +
     '</div>' +
     '<div class="form-group"><div class="form-label">Description</div><div style="font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (r.description || '<span class="text-muted">—</span>') + '</div></div>' +
@@ -10079,7 +10089,7 @@ function workRequestRowHtml(w, flavor, opts) {
     }
   } else {
     if (w.status === 'New') {
-      actions = '<span class="text-muted" style="font-size:12px">Waiting on ' + w.resourceName + '</span> <button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>' + reassignBtn;
+      actions = '<span class="text-muted" style="font-size:12px">Waiting on ' + w.resourceName + inactiveNameBadge(w.resourceName) + '</span> <button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>' + reassignBtn;
     } else if (w.status === 'Needs Info') {
       actions = '<button class="btn btn-sm btn-primary" onclick="openReplyWorkRequestModal(\'' + w.id + '\')"><i class="ti ti-message-2"></i> Reply</button>' +
         '<button class="btn btn-sm btn-danger" onclick="withdrawWorkRequest(\'' + w.id + '\')">Withdraw</button>' + reassignBtn;
@@ -10099,7 +10109,7 @@ function workRequestRowHtml(w, flavor, opts) {
   }
 
   return '<tr><td class="bold">' + w.title + (w.description ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;font-weight:400;white-space:pre-wrap;word-break:break-word">' + w.description + '</div>' : '') + detailLine + '</td>' +
-    '<td>' + (flavor==='assigned' ? w.requesterName : w.resourceName) + '</td>' +
+    '<td>' + (flavor==='assigned' ? w.requesterName : w.resourceName + inactiveNameBadge(w.resourceName)) + '</td>' +
     '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span> ' + lateBadgeHtml(isWorkRequestLate(w)) + '</td>' +
     (opts.showCompletionColumn ? '<td class="text-muted">' + workRequestCompletionCellHtml(w) + '</td>' : '') +
     '<td class="text-muted">' + fmtDate(w.createdAt) + '</td>' +
@@ -10332,7 +10342,7 @@ function pgAdminWorkRequests() {
   var searchBar = searchBoxHtml(st.search, 'Search work requests by title…', 'admin-wr-search', 'onAdminWrSearch');
 
   var rows = list.map(function(w) {
-    return '<tr><td class="bold">' + w.title + '</td><td>' + w.requesterName + '</td><td>' + w.resourceName + '</td>' +
+    return '<tr><td class="bold">' + w.title + '</td><td>' + w.requesterName + '</td><td>' + w.resourceName + inactiveNameBadge(w.resourceName) + '</td>' +
       '<td><span class="badge ' + workRequestStatusBadgeClass(w.status) + '">' + w.status + '</span> ' + lateBadgeHtml(isWorkRequestLate(w)) + '</td>' +
       '<td class="text-muted">' + (w.estimatedHours!=null ? w.estimatedHours : '—') + '</td>' +
       '<td class="text-muted">' + (w.estimatedCompletionDate || '—') + '</td>' +
@@ -10874,7 +10884,7 @@ function pgAdminPersonalTodos() {
   var rows = list.map(function(td) {
     var idx = D.personalTodos.indexOf(td);
     return '<tr><td class="bold">' + td.title + (td.description ? '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;font-weight:400;white-space:pre-wrap;word-break:break-word">' + td.description + '</div>' : '') + '</td>' +
-      '<td>' + (td.assignee || '<span class="text-muted">Unassigned</span>') + '</td>' +
+      '<td>' + (td.assignee || '<span class="text-muted">Unassigned</span>') + inactiveNameBadge(td.assignee) + '</td>' +
       '<td>' + bdg(td.status) + '</td>' +
       '<td class="text-muted">' + (td.due || '—') + ' ' + lateBadgeHtml(isTodoLate(td)) + '</td>' +
       '<td><div style="display:flex;gap:4px">' +
@@ -12975,7 +12985,7 @@ function pgProgramDetail(id) {
     (upcomingMs.length
       ? upcomingMs.map(function(m) {
           return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-soft);cursor:pointer" onclick="goToProject(\'' + m.pid + '\',\'milestones\')">' +
-            '<div style="min-width:0"><div class="bold" style="font-size:13px">' + m.name + '</div><div class="text-muted" style="font-size:11.5px;margin-top:1px">' + m.project + ' · ' + (m.owner || 'No Owner') + '</div></div>' +
+            '<div style="min-width:0"><div class="bold" style="font-size:13px">' + m.name + '</div><div class="text-muted" style="font-size:11.5px;margin-top:1px">' + m.project + ' · ' + (m.owner || 'No Owner') + inactiveNameBadge(m.owner) + '</div></div>' +
             '<span style="display:flex;align-items:center;gap:6px"><span class="badge badge-gray">' + fmtDate(m.date) + '</span>' + lateBadgeHtml(m.late) + '</span>' +
           '</div>';
         }).join('')
@@ -12993,7 +13003,7 @@ function pgProgramDetail(id) {
         '<span style="font-size:13px;flex:1;min-width:0">' + rankBadge + hdot(p.health) + p.name + '</span>' +
         stagePill(p.stage) +
         '<div style="display:flex;align-items:center;gap:6px;width:110px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted" style="font-size:11px">' + p.progress + '%</span></div>' +
-        '<span class="text-muted" style="font-size:12px;width:100px">' + (p.owner || '—') + '</span>' +
+        '<span class="text-muted" style="font-size:12px;width:100px">' + (p.owner || '—') + inactiveNameBadge(p.owner) + '</span>' +
         lateBadgeHtml(isProjectLate(p)) +
       '</div>';
     }).join('');
@@ -13006,7 +13016,7 @@ function pgProgramDetail(id) {
       '<span class="pb-rank">' + (idx + 1) + '</span>' +
       '<span class="pb-name" onclick="goToProject(\'' + p.id + '\')">' + hdot(p.health) + p.name + '</span>' +
       stagePill(p.stage) +
-      '<span class="text-muted" style="font-size:12px;width:100px">' + (p.owner || '—') + '</span>' +
+      '<span class="text-muted" style="font-size:12px;width:100px">' + (p.owner || '—') + inactiveNameBadge(p.owner) + '</span>' +
       lateBadgeHtml(isProjectLate(p)) +
       '<button class="btn btn-sm btn-danger" onclick="removeProjectFromProgram(\'' + prog.id + '\',\'' + p.id + '\')"><i class="ti ti-x"></i> Remove</button>' +
     '</div>';
@@ -13234,7 +13244,7 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
       '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + stagePill(p.stage) + '</td>' +
       '<td>' + commitmentBadge(p) + '</td>' +
-      '<td>' + (p.owner || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.owner || '<span class="text-muted">—</span>') + inactiveNameBadge(p.owner) + '</td>' +
       '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td class="text-muted">' + doneTasks + '/' + myTasks.length + ' done</td>' +
       '<td>' + (p.blockers ? '<span style="color:var(--coral-strong-tx);font-size:12px"><i class="ti ti-alert-triangle"></i> Yes</span>' : '<span class="text-muted">—</span>') + '</td>' +
