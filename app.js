@@ -2628,6 +2628,17 @@ function computeStageFromDates(start, end) {
   return 'planned';
 }
 
+// Same rule, except editing an already-Active project that's simply running
+// past its end date (it already started) stays Active -- that's lateness
+// (see isProjectLate/the Late badge), not a reason to silently demote it back
+// to Planned. Only a genuine backlog, not-yet-started, or partial-date edit
+// moves an Active project's stage.
+function stageFromDatesForEdit(currentStage, start, end) {
+  var computed = computeStageFromDates(start, end);
+  if (currentStage === 'active' && computed === 'planned' && start && end && start <= todayStr()) return 'active';
+  return computed;
+}
+
 function fmtCost(n) {
   if (!n && n !== 0) return '—';
   return '$' + Number(n).toLocaleString();
@@ -7911,11 +7922,16 @@ window.saveProjectSchedule = async function(pid) {
     end_date: document.getElementById('pfs-end').value || null
   };
 
-  // If this project is still in backlog or planned, editing in real dates should
-  // move it forward automatically, rather than leaving it stranded until someone
-  // separately reschedules or reloads the page.
-  if (p.stage === 'backlog' || p.stage === 'planned') {
-    var newStage = computeStageFromDates(newVals.start_date, newVals.end_date);
+  // Dates drive the stage automatically for backlog/planned/active projects,
+  // in both directions -- entering real dates moves it forward, and clearing
+  // them (or an as-yet-unstarted range) moves it back, rather than leaving it
+  // stranded until someone separately reschedules. An Active project that's
+  // simply running past its end date stays Active (see stageFromDatesForEdit)
+  // -- that's lateness, not a reason to demote it. Hold and Complete are
+  // deliberate manual states, so they're excluded entirely -- a date edit
+  // there never silently reopens or reschedules the project.
+  if (p.stage === 'backlog' || p.stage === 'planned' || p.stage === 'active') {
+    var newStage = stageFromDatesForEdit(p.stage, newVals.start_date, newVals.end_date);
     if (newStage !== p.stage) {
       newVals.stage = newStage;
       if (newStage !== 'backlog' && !p.plannedStart) newVals.planned_start = newVals.start_date;
@@ -8092,12 +8108,17 @@ async function saveProject(pid) {
   var programEl = document.getElementById('ep-program');
   if (programEl) newVals.program_id = programEl.value || null;
 
-  // If this project is still in backlog or planned, editing in real dates should
-  // move it forward automatically, rather than leaving it stranded until someone
-  // separately reschedules or reloads the page.
+  // Dates drive the stage automatically for backlog/planned/active projects,
+  // in both directions -- entering real dates moves it forward, and clearing
+  // them (or an as-yet-unstarted range) moves it back, rather than leaving it
+  // stranded until someone separately reschedules. An Active project that's
+  // simply running past its end date stays Active (see stageFromDatesForEdit)
+  // -- that's lateness, not a reason to demote it. Hold and Complete are
+  // deliberate manual states, so they're excluded entirely -- a date edit
+  // there never silently reopens or reschedules the project.
   var newStage = p.stage;
-  if (p.stage === 'backlog' || p.stage === 'planned') {
-    newStage = computeStageFromDates(newVals.start_date, newVals.end_date);
+  if (p.stage === 'backlog' || p.stage === 'planned' || p.stage === 'active') {
+    newStage = stageFromDatesForEdit(p.stage, newVals.start_date, newVals.end_date);
     if (newStage !== p.stage) {
       newVals.stage = newStage;
       if (newStage !== 'backlog' && !p.plannedStart) newVals.planned_start = newVals.start_date;
