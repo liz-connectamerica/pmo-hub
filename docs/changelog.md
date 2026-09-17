@@ -14,6 +14,14 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-17">
+  <h2>Home: flag projects that need data confirmed</h2>
+  <p class="changelog-date">September 17, 2026</p>
+  <ul>
+    <li>An <strong>Active</strong> project you own that hasn't had its data confirmed within the admin-set threshold now shows up under Needs your attention on your Home page — the same check that already drives the Reminders "needs confirmation" flag, so the two stay consistent.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-09-16">
   <h2>Reminders: late milestones, richer flagged-item detail; inactive resources</h2>
   <p class="changelog-date">September 16, 2026</p>
