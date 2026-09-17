@@ -3291,6 +3291,10 @@ function pgHome() {
     if (isProjectLate(p)) {
       addAttn('bad', 'ti-alert-triangle', p.name + ' — ' + daysLate(p) + ' day' + (daysLate(p)===1?'':'s') + ' past target end', 'You\'re the owner', 'goToProject(\'' + p.id + '\')');
     }
+    if (projectNeedsConfirmation(p)) {
+      var confirmDays = daysSinceConfirmed(p);
+      addAttn('warn', 'ti-alert-triangle', p.name + ' needs its data confirmed', confirmDays + ' day' + (confirmDays===1?'':'s') + ' since last confirmed', 'goToProject(\'' + p.id + '\')');
+    }
   });
 
   var soon = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
