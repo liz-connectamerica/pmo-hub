@@ -19,6 +19,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
   <p class="changelog-date">September 17, 2026</p>
   <ul>
     <li>An <strong>Active</strong> project you own that hasn't had its data confirmed within the admin-set threshold now shows up under Needs your attention on your Home page — the same check that already drives the Reminders "needs confirmation" flag, so the two stay consistent.</li>
+    <li><strong>Fixed:</strong> clearing an Active project's dates (or leaving it with a not-yet-started range) didn't move it back to Backlog/Planned the way entering real dates already promotes a Backlog/Planned project forward. An Active project that's simply running past its end date is unaffected — that's normal lateness, not a reason to change its stage.</li>
   </ul>
 </div>
 
