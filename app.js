@@ -502,7 +502,10 @@ async function loadAllProjects() {
 
     var raid = { risks: [], assumptions: [], issues: [], dependencies: [] };
     (raidByProj[pr.id] || []).forEach(function(r) {
-      var base = { id: r.id, desc: r.description, owner: r.owner_name, ownerId: r.owner_id, status: r.status, log: mapLog(raidLogByItem[r.id]) };
+      // owner defaults to '' (never a real null) so every display site that
+      // concatenates it directly -- most of them do -- shows blank instead
+      // of the literal string "null".
+      var base = { id: r.id, desc: r.description, owner: r.owner_name || '', ownerId: r.owner_id, status: r.status, log: mapLog(raidLogByItem[r.id]) };
       if (r.type === 'risk') {
         raid.risks.push(Object.assign(base, { probability: r.probability, impact: r.impact, impactDescription: r.impact_description, mitigation: r.mitigation }));
       } else if (r.type === 'assumption') {
