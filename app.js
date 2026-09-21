@@ -2697,9 +2697,10 @@ function daysLateFrom(dateStr) { return Math.round((new Date(todayStr()) - new D
 // captured on every risk, using a simple probability-band x impact-weight
 // score -- good enough to rank risks and issues on one shared scale.
 function riskEffectiveSeverity(risk) {
-  var impactWeight = { Low:1, Medium:2, High:3 }[risk.impact] || 2;
-  var probBand = (risk.probability||0) >= 67 ? 3 : (risk.probability||0) >= 34 ? 2 : 1;
-  var score = impactWeight * probBand;
+  var weight = { Low:1, Medium:2, High:3 };
+  var impactWeight = weight[risk.impact] || 2;
+  var probWeight = weight[risk.probability] || 2;
+  var score = impactWeight * probWeight;
   return score >= 6 ? 'High' : score >= 3 ? 'Medium' : 'Low';
 }
 
@@ -5990,7 +5991,7 @@ function pgProjectDetail(pid, tab) {
             items.map(function(item) {
               var idx = idxOf(item);
               return '<div class="raid-grid-risks raid-grid-row">' +
-                '<div style="font-size:13px">' + (item.probability != null ? item.probability + '%' : '—') + '</div>' +
+                '<div>' + (item.probability ? bdg(item.probability) : '—') + '</div>' +
                 '<div>' + (item.impact ? bdg(item.impact) : '—') + '</div>' +
                 '<div><div style="font-size:13px;word-break:break-word;white-space:pre-wrap;margin-bottom:4px">' + item.desc + '</div>' +
                 (item.impactDescription ? '<div style="font-size:12px;color:var(--text-muted);word-break:break-word;white-space:pre-wrap;margin-bottom:4px"><strong>Impact:</strong> ' + item.impactDescription + '</div>' : '') +
@@ -7018,7 +7019,7 @@ function openRaidModal(pid, type, idx) {
   var extra = '';
   if (type === 'risks') {
     extra = '<div class="grid-2">' +
-      '<div class="form-group"><div class="form-label">Probability (%)</div><input type="number" id="rd-prob" min="0" max="100" value="' + (item ? item.probability : 50) + '"></div>' +
+      '<div class="form-group"><div class="form-label">Probability</div><select id="rd-prob">' + PROBABILITIES.map(function(s){ return '<option' + (item && item.probability===s ? ' selected' : (!item && s==='Medium' ? ' selected':'')) + '>' + s + '</option>'; }).join('') + '</select></div>' +
       '<div class="form-group"><div class="form-label">Impact</div><select id="rd-impact">' + IMPACTS.map(function(s){ return '<option' + (item && item.impact===s ? ' selected' : (!item && s==='Medium' ? ' selected':'')) + '>' + s + '</option>'; }).join('') + '</select></div>' +
       '</div>' +
       '<div class="form-group"><div class="form-label">Impact description</div><textarea id="rd-risk-impact" placeholder="Describe the impact if this risk materializes…" rows="2">' + (item ? (item.impactDescription||'') : '') + '</textarea></div>' +
@@ -7115,7 +7116,7 @@ function openRaidModal(pid, type, idx) {
     if (isEdit) {
       var fieldLabels = { desc:'Description', owner:'Owner', probability:'Probability', impact:'Impact', status:'Status', mitigation:'Mitigation', severity:'Severity', solution:'Solution', impactDescription:'Impact description' };
       var newVals = { desc:desc, owner:owner };
-      if (type==='risks') { newVals.probability = parseInt(document.getElementById('rd-prob').value)||0; newVals.impact = document.getElementById('rd-impact').value; newVals.impactDescription = document.getElementById('rd-risk-impact').value.trim(); newVals.status = document.getElementById('rd-status').value; newVals.mitigation = document.getElementById('rd-mit').value; }
+      if (type==='risks') { newVals.probability = document.getElementById('rd-prob').value; newVals.impact = document.getElementById('rd-impact').value; newVals.impactDescription = document.getElementById('rd-risk-impact').value.trim(); newVals.status = document.getElementById('rd-status').value; newVals.mitigation = document.getElementById('rd-mit').value; }
       else if (type==='issues') { newVals.severity = document.getElementById('rd-sev').value; newVals.impactDescription = document.getElementById('rd-issue-impact').value.trim(); newVals.status = document.getElementById('rd-issuest').value; newVals.solution = document.getElementById('rd-sol').value; }
       else if (type==='dependencies') { newVals.status = document.getElementById('rd-depst').value; }
 
@@ -7123,7 +7124,7 @@ function openRaidModal(pid, type, idx) {
       Object.keys(newVals).forEach(function(f){
         var oldV = item[f] != null ? item[f].toString() : '';
         var newV = newVals[f] != null ? newVals[f].toString() : '';
-        if (oldV !== newV) changes.push((fieldLabels[f]||f) + ': "' + (oldV||'—') + (f==='probability'&&oldV!==''?'%':'') + '" → "' + (newV||'—') + (f==='probability'&&newV!==''?'%':'') + '"');
+        if (oldV !== newV) changes.push((fieldLabels[f]||f) + ': "' + (oldV||'—') + '" → "' + (newV||'—') + '"');
       });
 
       var dbUpdate = { description: newVals.desc, owner_name: newVals.owner || null, owner_id: ownerResource ? ownerResource.id : null };
@@ -7143,7 +7144,7 @@ function openRaidModal(pid, type, idx) {
       showToast(label + ' updated');
     } else {
       var record = { project_id: pid, type: dbType, description: desc, owner_name: owner || null, owner_id: ownerResource ? ownerResource.id : null };
-      if (type==='risks')   { record.probability = parseInt(document.getElementById('rd-prob').value)||0; record.impact = document.getElementById('rd-impact').value; record.impact_description = document.getElementById('rd-risk-impact').value.trim(); record.status = document.getElementById('rd-status').value; record.mitigation = document.getElementById('rd-mit').value; }
+      if (type==='risks')   { record.probability = document.getElementById('rd-prob').value; record.impact = document.getElementById('rd-impact').value; record.impact_description = document.getElementById('rd-risk-impact').value.trim(); record.status = document.getElementById('rd-status').value; record.mitigation = document.getElementById('rd-mit').value; }
       else if (type==='issues')       { record.severity = document.getElementById('rd-sev').value; record.impact_description = document.getElementById('rd-issue-impact').value.trim(); record.status = document.getElementById('rd-issuest').value; record.solution = document.getElementById('rd-sol').value; }
       else if (type==='dependencies') { record.status = document.getElementById('rd-depst').value; }
 

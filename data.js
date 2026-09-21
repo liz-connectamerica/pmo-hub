@@ -16,6 +16,7 @@ var CATEGORIES = ['Transformation','Hardware','Services','Infrastructure'];
 var BUSINESS_UNITS = ['Corporate Functions','Customer Experience','Finance','Human Resources','Legal & Compliance','Marketing','Operations','Product','Sales','Supply Chain','Technology'];
 var RISK_STATUSES = ['Open','Monitoring','Mitigated','Closed'];
 var IMPACTS = ['High','Medium','Low'];
+var PROBABILITIES = ['High','Medium','Low'];
 
 var D = {
   role: 'admin',
