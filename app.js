@@ -472,7 +472,7 @@ async function loadAllProjects() {
     var scope = (scopeByProj[pr.id] || []).map(function(s) {
       return {
         id: s.id, title: s.title, description: s.description || '',
-        status: s.status, completedAt: s.completed_at,
+        status: s.status, completedAt: s.completed_at, scopeType: s.scope_type || 'in',
         log: mapLog(scopeLogByItem[s.id]),
         comments: (scopeCommentsByItem[s.id] || []).map(function(c) {
           return { id: c.id, text: c.body, author: c.author_name, date: ymd(c.created_at) };
@@ -2071,6 +2071,9 @@ var raidSearchState = {};
 var raidSubTabState = {};
 var docFolderState = {};
 var docSubTabState = {};
+// Which of Scope's two sub-views (In Scope / Out of Scope) is showing, per
+// project -- defaults to 'in' when unset, same convention as docSubTabState.
+var scopeViewState = {};
 var reqScopeLogOpen = {};
 var reqScopeCommentsOpen = {};
 var reqScopeDescOpen = {};
@@ -7292,13 +7295,63 @@ function setRaidSubTab(pid2, subTab) {
 // "Open" = still Planned or In Progress -- Completed/Deferred/Cancelled are terminal.
 function reqScopeOpenCount(p, kind) {
   var items = p[REQ_SCOPE_CONFIG[kind].arrayKey] || [];
+  // Out-of-scope items aren't "open" work to track toward -- being excluded
+  // is their whole state, so they never count here even if their unused
+  // status column happens to hold 'Planned'.
+  if (kind === 'scope') items = items.filter(function(it){ return it.scopeType !== 'out'; });
   return items.filter(function(it){ return it.status === 'Planned' || it.status === 'In Progress'; }).length;
 }
 
-function renderReqScopePanel(p, kind, editable) {
-  var cfg = REQ_SCOPE_CONFIG[kind];
-  var items = p[cfg.arrayKey] || [];
+// Shared by Requirements and Scope. Scope additionally splits into an
+// In Scope / Out of Scope sub-view (one at a time, so switching between them
+// never means scrolling past the other) -- Requirements has no such split,
+// scopeType is simply unused there.
+function reqScopeItemRowHtml(kind, p, it, idx, editable, showStatusCol) {
+  var key = kind + '|' + p.id + '|' + it.id;
+  var colspan = showStatusCol ? 4 : 3;
+  var logOpenNow = !!reqScopeLogOpen[key];
+  var logRow = '';
+  if (logOpenNow) {
+    var entries = (it.log && it.log.length) ? it.log.slice().reverse().map(function(e){
+      return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+    }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+    logRow = '<tr><td colspan="' + colspan + '" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+  }
+  var descOpenNow = !!reqScopeDescOpen[key];
+  var descRow = '';
+  if (descOpenNow) {
+    descRow = '<tr><td colspan="' + colspan + '" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+      (it.description ? '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + it.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
+      '</div></td></tr>';
+  }
+  var itComments = it.comments || [];
+  var cOpenNow = !!reqScopeCommentsOpen[key];
+  var commentsRow = '';
+  if (cOpenNow) {
+    var commentEntries = itComments.length ? itComments.slice().reverse().map(function(c) {
+      var mine = c.author === actorName();
+      return '<div class="comment-item">' +
+        '<div class="comment-meta"><strong>' + c.author + '</strong> <span class="text-muted">' + c.date + '</span></div>' +
+        '<div class="comment-text">' + c.text + '</div>' +
+        ((editable || mine) ? '<div class="comment-actions"><button class="btn btn-sm" onclick="openEditReqScopeComment(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\',\'' + c.id + '\')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteReqScopeComment(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\',\'' + c.id + '\')"><i class="ti ti-trash"></i></button></div>' : '') +
+        '</div>';
+    }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No comments yet</div>';
+    commentsRow = '<tr><td colspan="' + colspan + '" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+      commentEntries +
+      '<div class="comment-add-row"><textarea id="rs-cmt-input-' + it.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addReqScopeComment(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
+      '</div></td></tr>';
+  }
+  return '<tr><td><span style="font-size:13px">' + it.title + '</span></td>' +
+    (showStatusCol ? '<td>' + bdg(it.status) + '</td><td class="text-muted">' + (it.completedAt || '—') + '</td>' : '') +
+    '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
+    '<button class="btn btn-sm" title="Description" onclick="toggleReqScopeDescription(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
+    '<button class="btn btn-sm" title="Comments" onclick="toggleReqScopeComments(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (itComments.length ? ' ' + itComments.length : '') + '</button>' +
+    '<button class="btn btn-sm" title="Change log" onclick="toggleReqScopeLog(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+    (editable ? '<button class="btn btn-sm" onclick="openReqScopeModal(\'' + p.id + '\',\'' + kind + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteReqScopeItem(\'' + p.id + '\',\'' + kind + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
+    '</div></td></tr>' + descRow + commentsRow + logRow;
+}
 
+function reqScopeStatusStripAndTable(kind, p, items, editable) {
   var counts = {};
   REQ_SCOPE_STATUSES.forEach(function(s){ counts[s] = 0; });
   items.forEach(function(it){ counts[it.status] = (counts[it.status] || 0) + 1; });
@@ -7306,79 +7359,103 @@ function renderReqScopePanel(p, kind, editable) {
   var strip = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">' +
     REQ_SCOPE_STATUSES.map(function(s){ return '<span class="badge ' + statusBadgeClass[s] + '">' + counts[s] + ' ' + s + '</span>'; }).join('') +
     '</div>';
-
   var sorted = items.slice().sort(function(a,b){
     var ai = REQ_SCOPE_STATUSES.indexOf(a.status), bi = REQ_SCOPE_STATUSES.indexOf(b.status);
     return ai !== bi ? ai - bi : 0;
   });
-
-  var rows = sorted.map(function(it) {
-    var idx = items.indexOf(it);
-    var key = kind + '|' + p.id + '|' + it.id;
-    var logOpenNow = !!reqScopeLogOpen[key];
-    var logRow = '';
-    if (logOpenNow) {
-      var entries = (it.log && it.log.length) ? it.log.slice().reverse().map(function(e){
-        return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
-      }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
-      logRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
-    }
-    var descOpenNow = !!reqScopeDescOpen[key];
-    var descRow = '';
-    if (descOpenNow) {
-      descRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
-        (it.description ? '<div style="font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.6">' + it.description + '</div>' : '<div class="text-muted" style="font-size:12px">No description</div>') +
-        '</div></td></tr>';
-    }
-    var itComments = it.comments || [];
-    var cOpenNow = !!reqScopeCommentsOpen[key];
-    var commentsRow = '';
-    if (cOpenNow) {
-      var commentEntries = itComments.length ? itComments.slice().reverse().map(function(c) {
-        var mine = c.author === actorName();
-        return '<div class="comment-item">' +
-          '<div class="comment-meta"><strong>' + c.author + '</strong> <span class="text-muted">' + c.date + '</span></div>' +
-          '<div class="comment-text">' + c.text + '</div>' +
-          ((editable || mine) ? '<div class="comment-actions"><button class="btn btn-sm" onclick="openEditReqScopeComment(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\',\'' + c.id + '\')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteReqScopeComment(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\',\'' + c.id + '\')"><i class="ti ti-trash"></i></button></div>' : '') +
-          '</div>';
-      }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No comments yet</div>';
-      commentsRow = '<tr><td colspan="4" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
-        commentEntries +
-        '<div class="comment-add-row"><textarea id="rs-cmt-input-' + it.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addReqScopeComment(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
-        '</div></td></tr>';
-    }
-    return '<tr><td><span style="font-size:13px">' + it.title + '</span></td><td>' + bdg(it.status) + '</td>' +
-      '<td class="text-muted">' + (it.completedAt || '—') + '</td>' +
-      '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
-      '<button class="btn btn-sm" title="Description" onclick="toggleReqScopeDescription(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ' + (descOpenNow?'ti-chevron-up':'ti-align-left') + '"></i></button>' +
-      '<button class="btn btn-sm" title="Comments" onclick="toggleReqScopeComments(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (itComments.length ? ' ' + itComments.length : '') + '</button>' +
-      '<button class="btn btn-sm" title="Change log" onclick="toggleReqScopeLog(\'' + kind + '\',\'' + p.id + '\',\'' + it.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
-      (editable ? '<button class="btn btn-sm" onclick="openReqScopeModal(\'' + p.id + '\',\'' + kind + '\',' + idx + ')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteReqScopeItem(\'' + p.id + '\',\'' + kind + '\',' + idx + ')"><i class="ti ti-trash"></i></button>' : '') +
-      '</div></td></tr>' + descRow + commentsRow + logRow;
-  }).join('');
-
-  var header = '<tr><th>' + cfg.label + '</th><th>Status</th><th>Completed</th><th></th></tr>';
-
-  return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'' + kind + '\',null)"><i class="ti ti-plus"></i> ' + cfg.addLabel + '</button>' : '') +
-    (items.length
-      ? strip + '<table class="tasks-table"><thead>' + header + '</thead><tbody>' + rows + '</tbody></table>'
-      : '<div class="empty-state" style="padding:30px"><i class="ti ti-list-check"></i><p>No ' + cfg.singular + 's tracked yet.</p></div>');
+  var allItems = p[REQ_SCOPE_CONFIG[kind].arrayKey];
+  var rows = sorted.map(function(it){ return reqScopeItemRowHtml(kind, p, it, allItems.indexOf(it), editable, true); }).join('');
+  var header = '<tr><th>' + REQ_SCOPE_CONFIG[kind].label + '</th><th>Status</th><th>Completed</th><th></th></tr>';
+  return strip + '<table class="tasks-table"><thead>' + header + '</thead><tbody>' + rows + '</tbody></table>';
 }
 
-function openReqScopeModal(pid, kind, idx) {
+function reqScopeOutOfScopeTable(p, items, editable) {
+  var allItems = p.scope;
+  var rows = items.map(function(it){ return reqScopeItemRowHtml('scope', p, it, allItems.indexOf(it), editable, false); }).join('');
+  var header = '<tr><th>Excluded item</th><th></th></tr>';
+  return '<table class="tasks-table"><thead>' + header + '</thead><tbody>' + rows + '</tbody></table>';
+}
+
+function setScopeView(pid, view) {
+  scopeViewState[pid] = view;
+  refreshTaskView();
+}
+
+function renderReqScopePanel(p, kind, editable) {
+  var cfg = REQ_SCOPE_CONFIG[kind];
+  var items = p[cfg.arrayKey] || [];
+
+  if (kind !== 'scope') {
+    return (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'' + kind + '\',null)"><i class="ti ti-plus"></i> ' + cfg.addLabel + '</button>' : '') +
+      (items.length
+        ? reqScopeStatusStripAndTable(kind, p, items, editable)
+        : '<div class="empty-state" style="padding:30px"><i class="ti ti-list-check"></i><p>No ' + cfg.singular + 's tracked yet.</p></div>');
+  }
+
+  var inItems = items.filter(function(it){ return it.scopeType !== 'out'; });
+  var outItems = items.filter(function(it){ return it.scopeType === 'out'; });
+  var view = scopeViewState[p.id] || 'in';
+
+  var subtabBar = '<div class="tab-bar" style="margin-bottom:16px">' +
+    '<div class="tab' + (view==='in'?' active':'') + '" onclick="setScopeView(\'' + p.id + '\',\'in\')"><i class="ti ti-circle-check"></i> In Scope <span class="badge badge-gray">' + inItems.length + '</span></div>' +
+    '<div class="tab' + (view==='out'?' active':'') + '" onclick="setScopeView(\'' + p.id + '\',\'out\')"><i class="ti ti-circle-x"></i> Out of Scope <span class="badge badge-gray">' + outItems.length + '</span></div>' +
+    '</div>';
+
+  var panelHtml;
+  if (view === 'out') {
+    panelHtml = (editable ? '<button class="btn btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'scope\',null,\'out\')"><i class="ti ti-plus"></i> Add excluded item</button>' : '') +
+      '<div class="text-muted" style="font-size:12px;margin-bottom:12px">No status workflow — being listed here already means excluded from this project.</div>' +
+      (outItems.length ? reqScopeOutOfScopeTable(p, outItems, editable) : '<div class="empty-state" style="padding:30px"><i class="ti ti-circle-x"></i><p>Nothing marked out of scope yet.</p></div>');
+  } else {
+    panelHtml = (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'scope\',null,\'in\')"><i class="ti ti-plus"></i> ' + cfg.addLabel + '</button>' : '') +
+      (inItems.length ? reqScopeStatusStripAndTable('scope', p, inItems, editable) : '<div class="empty-state" style="padding:30px"><i class="ti ti-list-check"></i><p>No scope items tracked yet.</p></div>');
+  }
+
+  return subtabBar + panelHtml;
+}
+
+function openReqScopeModal(pid, kind, idx, defaultScopeType) {
   var cfg = REQ_SCOPE_CONFIG[kind];
   var p = D.projects.find(function(x){ return x.id === pid; });
   p[cfg.arrayKey] = p[cfg.arrayKey] || [];
   var isEdit = idx != null;
   var it = isEdit ? p[cfg.arrayKey][idx] : null;
+  var isScope = kind === 'scope';
+  var curType = isScope ? (it ? (it.scopeType || 'in') : (defaultScopeType || 'in')) : 'in';
   var statusOpts = REQ_SCOPE_STATUSES.map(function(s){ return '<option' + ((it ? it.status : 'Planned') === s ? ' selected' : '') + '>' + s + '</option>'; }).join('');
 
-  showModal('<div class="modal-title">' + (isEdit ? 'Edit ' + cfg.singular : cfg.addLabel) + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+  var typeToggleHtml = isScope
+    ? '<div class="form-group"><div class="seg-toggle" style="display:flex;border:1px solid var(--border-input);border-radius:8px;overflow:hidden">' +
+        '<button type="button" id="rsm-type-in" onclick="setReqScopeModalType(\'in\')" style="flex:1;padding:8px;border:none;border-right:1px solid var(--border-input);cursor:pointer;font-family:inherit;font-size:13px"><i class="ti ti-circle-check"></i> In Scope</button>' +
+        '<button type="button" id="rsm-type-out" onclick="setReqScopeModalType(\'out\')" style="flex:1;padding:8px;border:none;cursor:pointer;font-family:inherit;font-size:13px"><i class="ti ti-circle-x"></i> Out of Scope</button>' +
+      '</div></div>'
+    : '';
+
+  showModal('<div class="modal-title">' + (isEdit ? 'Edit ' + (isScope ? (curType==='out'?'excluded item':cfg.singular) : cfg.singular) : (isScope && curType === 'out' ? 'Add excluded item' : cfg.addLabel)) + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    typeToggleHtml +
     '<div class="form-group"><div class="form-label">Title *</div><input type="text" id="rsm-title" value="' + (it ? it.title : '') + '" placeholder="e.g. Mobile-responsive layout for tablets"></div>' +
-    '<div class="form-group"><div class="form-label">Description</div><textarea id="rsm-desc" rows="3" placeholder="Details, acceptance criteria, links…">' + (it ? (it.description||'') : '') + '</textarea></div>' +
-    '<div class="form-group"><div class="form-label">Status</div><select id="rsm-status">' + statusOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label" id="rsm-desc-label">Description</div><textarea id="rsm-desc" rows="3" placeholder="Details, acceptance criteria, links…">' + (it ? (it.description||'') : '') + '</textarea>' +
+      (isScope ? '<p class="form-sub" id="rsm-desc-sub" style="font-size:11.5px;color:var(--text-muted);margin-top:4px"></p>' : '') +
+    '</div>' +
+    '<div class="form-group" id="rsm-status-group"><div class="form-label">Status</div><select id="rsm-status">' + statusOpts + '</select></div>' +
     '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
-    '<button class="btn btn-primary" id="rsm-save"><i class="ti ti-check"></i> ' + (isEdit?'Save changes':cfg.addLabel) + '</button></div>');
+    '<button class="btn btn-primary" id="rsm-save"><i class="ti ti-check"></i> ' + (isEdit ? 'Save changes' : (isScope && curType === 'out' ? 'Add excluded item' : cfg.addLabel)) + '</button></div>');
+
+  window.setReqScopeModalType = function(type) {
+    curType = type;
+    var inBtn = document.getElementById('rsm-type-in'), outBtn = document.getElementById('rsm-type-out');
+    inBtn.style.background = type === 'in' ? 'var(--accent-soft)' : 'var(--surface)';
+    inBtn.style.color = type === 'in' ? 'var(--accent)' : 'var(--text-muted)';
+    inBtn.style.fontWeight = type === 'in' ? '600' : '400';
+    outBtn.style.background = type === 'out' ? 'var(--gray-soft)' : 'var(--surface)';
+    outBtn.style.color = type === 'out' ? 'var(--text)' : 'var(--text-muted)';
+    outBtn.style.fontWeight = type === 'out' ? '600' : '400';
+    document.getElementById('rsm-status-group').style.display = type === 'out' ? 'none' : '';
+    document.getElementById('rsm-desc-label').textContent = type === 'out' ? 'Why is this excluded?' : 'Description';
+    document.getElementById('rsm-desc-sub').textContent = type === 'out' ? 'No status needed — being listed under Out of Scope already means excluded.' : '';
+    if (!isEdit) document.getElementById('rsm-save').innerHTML = '<i class="ti ti-check"></i> ' + (type === 'out' ? 'Add excluded item' : cfg.addLabel);
+  };
+  if (isScope) setReqScopeModalType(curType);
 
   document.getElementById('rsm-save').onclick = async function() {
     var title = document.getElementById('rsm-title').value.trim();
@@ -7395,28 +7472,34 @@ function openReqScopeModal(pid, kind, idx) {
       ['title','description','status'].forEach(function(f){
         if ((it[f]||'') !== (newVals[f]||'')) changes.push(fieldLabels[f] + ': "' + (it[f]||'—') + '" → "' + (newVals[f]||'—') + '"');
       });
+      if (isScope && (it.scopeType || 'in') !== curType) changes.push('Scope: "' + ((it.scopeType||'in')==='out'?'Out of Scope':'In Scope') + '" → "' + (curType==='out'?'Out of Scope':'In Scope') + '"');
       var newCompletedAt = it.completedAt;
       if (newVals.status === 'Completed' && it.status !== 'Completed') { newCompletedAt = todayStr(); changes.push('Completed date: "—" → "' + newCompletedAt + '"'); }
       else if (newVals.status !== 'Completed' && it.status === 'Completed') { newCompletedAt = null; changes.push('Completed date: "' + it.completedAt + '" → "—"'); }
-      var result = await sb.from(cfg.table).update({
-        title: newVals.title, description: newVals.description || null, status: newVals.status, completed_at: newCompletedAt
-      }).eq('id', it.id);
+      var updatePayload = { title: newVals.title, description: newVals.description || null, status: newVals.status, completed_at: newCompletedAt };
+      if (isScope) updatePayload.scope_type = curType;
+      var result = await sb.from(cfg.table).update(updatePayload).eq('id', it.id);
       if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
       it.title = newVals.title; it.description = newVals.description; it.status = newVals.status; it.completedAt = newCompletedAt;
+      if (isScope) it.scopeType = curType;
       it.log = it.log || [];
       if (changes.length) it.log.push(await writeLog(cfg.logTable, cfg.fk, it.id, 'Updated', changes.join('; ')));
-      showToast(cfg.label + ' updated');
+      showToast((isScope && curType === 'out' ? 'Excluded item' : cfg.label) + ' updated');
     } else {
       var completedAt = newVals.status === 'Completed' ? todayStr() : null;
-      var insertResult = await sb.from(cfg.table).insert({
+      var insertPayload = {
         project_id: pid, title: newVals.title, description: newVals.description || null, status: newVals.status, completed_at: completedAt,
         created_by: D.currentProfile.id, created_by_name: D.currentProfile.display_name
-      }).select().single();
+      };
+      if (isScope) insertPayload.scope_type = curType;
+      var insertResult = await sb.from(cfg.table).insert(insertPayload).select().single();
       if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
       var newIt = { id: insertResult.data.id, title: newVals.title, description: newVals.description, status: newVals.status, completedAt: completedAt, log: [], comments: [] };
+      if (isScope) newIt.scopeType = curType;
       newIt.log.push(await writeLog(cfg.logTable, cfg.fk, newIt.id, 'Created', ''));
       p[cfg.arrayKey].push(newIt);
-      showToast(cfg.label + ' added');
+      if (isScope) scopeViewState[pid] = curType;
+      showToast((isScope && curType === 'out' ? 'Excluded item' : cfg.label) + ' added');
     }
     closeModal(); if (window.switchPTab) window.switchPTab('documentation');
   };
