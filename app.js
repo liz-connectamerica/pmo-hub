@@ -7396,22 +7396,22 @@ function renderReqScopePanel(p, kind, editable) {
   var outItems = items.filter(function(it){ return it.scopeType === 'out'; });
   var view = scopeViewState[p.id] || 'in';
 
+  var addBtnHtml = editable
+    ? (view === 'out'
+        ? '<button class="btn btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'scope\',null,\'out\')"><i class="ti ti-plus"></i> Add excluded item</button>'
+        : '<button class="btn btn-primary btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'scope\',null,\'in\')"><i class="ti ti-plus"></i> ' + cfg.addLabel + '</button>')
+    : '';
+
   var subtabBar = '<div class="tab-bar" style="margin-bottom:16px">' +
     '<div class="tab' + (view==='in'?' active':'') + '" onclick="setScopeView(\'' + p.id + '\',\'in\')"><i class="ti ti-circle-check"></i> In Scope <span class="badge badge-gray">' + inItems.length + '</span></div>' +
     '<div class="tab' + (view==='out'?' active':'') + '" onclick="setScopeView(\'' + p.id + '\',\'out\')"><i class="ti ti-circle-x"></i> Out of Scope <span class="badge badge-gray">' + outItems.length + '</span></div>' +
     '</div>';
 
-  var panelHtml;
-  if (view === 'out') {
-    panelHtml = (editable ? '<button class="btn btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'scope\',null,\'out\')"><i class="ti ti-plus"></i> Add excluded item</button>' : '') +
-      '<div class="text-muted" style="font-size:12px;margin-bottom:12px">No status workflow — being listed here already means excluded from this project.</div>' +
-      (outItems.length ? reqScopeOutOfScopeTable(p, outItems, editable) : '<div class="empty-state" style="padding:30px"><i class="ti ti-circle-x"></i><p>Nothing marked out of scope yet.</p></div>');
-  } else {
-    panelHtml = (editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'scope\',null,\'in\')"><i class="ti ti-plus"></i> ' + cfg.addLabel + '</button>' : '') +
-      (inItems.length ? reqScopeStatusStripAndTable('scope', p, inItems, editable) : '<div class="empty-state" style="padding:30px"><i class="ti ti-list-check"></i><p>No scope items tracked yet.</p></div>');
-  }
+  var panelHtml = view === 'out'
+    ? (outItems.length ? reqScopeOutOfScopeTable(p, outItems, editable) : '<div class="empty-state" style="padding:30px"><i class="ti ti-circle-x"></i><p>Nothing marked out of scope yet.</p></div>')
+    : (inItems.length ? reqScopeStatusStripAndTable('scope', p, inItems, editable) : '<div class="empty-state" style="padding:30px"><i class="ti ti-list-check"></i><p>No scope items tracked yet.</p></div>');
 
-  return subtabBar + panelHtml;
+  return addBtnHtml + subtabBar + panelHtml;
 }
 
 function openReqScopeModal(pid, kind, idx, defaultScopeType) {
