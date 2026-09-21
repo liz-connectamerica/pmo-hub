@@ -14,6 +14,15 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-21">
+  <h2>Fixed: request self-edit permissions, more line-break display gaps</h2>
+  <p class="changelog-date">September 21, 2026</p>
+  <ul>
+    <li><strong>Fixed:</strong> a submitter editing their own pending request (title, description, value, etc. — not the Revoke action) could hit "Could not save: new row violates row-level security policy for table 'requests'" and lose nothing, but also save nothing. The underlying database policy had only ever allowed a submitter's self-edit to go through if it revoked the request; a general content edit while it stayed Pending was silently blocked. Fixed at the database level — an admin's permissions are unchanged, and a submitter still can't set a request to anything other than Pending or Revoked themselves.</li>
+    <li><strong>Fixed:</strong> a few more spots where a multi-paragraph description rendered as a run-on wall of text instead of preserving line breaks — the request review screen's Description and value-justification fields (the one reported), the Executive Summary card's blocker note and exec note, a project's own blocker note, and the Deleted Items RAID preview. The Summarize tab's emailed/PDF report needed a different fix (real &lt;br&gt; tags instead of CSS), since that renderer avoids styling that Outlook's rendering engine doesn't reliably honor.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-09-17">
   <h2>Home: flag projects that need data confirmed</h2>
   <p class="changelog-date">September 17, 2026</p>
