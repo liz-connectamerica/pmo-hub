@@ -2436,7 +2436,10 @@ function buildReportHtml(p) {
   var upcomingItems = s.upcoming.map(function(m){ var late = isMilestoneLate(m); return { name: m.name, date: late ? 'Late, was ' + fmtDate(m.date) : fmtDate(m.date), late: late }; });
 
   var raidHtml = s.raidItems.length
-    ? s.raidItems.map(function(item){ return '<div style="padding:9px 0;border-bottom:1px solid #f0ede8;font-size:13px;' + FONT + '">' + badge(item.severity, sevColors[item.severity] || sevColors.Medium) + '&nbsp;&nbsp;<span style="color:#333">' + item.desc + '</span></div>'; }).join('')
+    // white-space:pre-wrap isn't reliable in Outlook's Word-based rendering
+    // (same reason section() uses td padding instead of margins) -- a real
+    // <br> per line break is the one line-break technique Outlook honors.
+    ? s.raidItems.map(function(item){ return '<div style="padding:9px 0;border-bottom:1px solid #f0ede8;font-size:13px;' + FONT + '">' + badge(item.severity, sevColors[item.severity] || sevColors.Medium) + '&nbsp;&nbsp;<span style="color:#333">' + (item.desc || '').replace(/\n/g, '<br>') + '</span></div>'; }).join('')
     : '<div style="font-size:13px;color:#999;' + FONT + '">No open risks or issues</div>';
 
   var metaLine = [p.value, p.businessUnit].filter(Boolean).join(' &nbsp;&middot;&nbsp; ') + (p.deliveryMethodology ? ' &nbsp;&middot;&nbsp; ' + p.deliveryMethodology + ' delivery' : '');
@@ -3624,7 +3627,7 @@ function pgExecSummary() {
       '</div>' +
       (p.blockers ? '<div class="blocker-note"><i>Blocker:</i> ' + p.blockers + '</div>' : '') +
       '<div style="font-size:12.5px;color:var(--text-2);margin-top:12px">' + raidSummaryHtml(p) + '</div>' +
-      (p.execNote ? '<div style="background:var(--accent-soft);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--text-2);margin-top:10px"><i class="ti ti-message-circle" style="color:var(--accent);margin-right:6px"></i>' + p.execNote + '</div>' : '') +
+      (p.execNote ? '<div style="background:var(--accent-soft);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--text-2);margin-top:10px;white-space:pre-wrap;word-break:break-word"><i class="ti ti-message-circle" style="color:var(--accent);margin-right:6px"></i>' + p.execNote + '</div>' : '') +
     '</div>';
   }).join('');
 
@@ -3898,9 +3901,9 @@ function reviewRequest(id) {
       '<div><div class="form-label">Business Unit</div>' + (r.businessUnit || '—') + '</div>' +
       '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '—') + inactiveNameBadge(r.sponsor) + '</div>' +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Description</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6">' + (r.description||'') + '</div></div>' +
+    '<div class="form-group"><div class="form-label">Description</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (r.description||'') + '</div></div>' +
     '<div class="grid-2 mb-16">' +
-      '<div><div class="form-label">Value type</div>' + opportunityDisplay + '</div>' +
+      '<div><div class="form-label">Value type</div><div style="white-space:pre-wrap;word-break:break-word">' + opportunityDisplay + '</div></div>' +
       (r.value ? '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + r.value + '</span></div>' : '') +
       estimateDisplay +
     '</div>' +
@@ -9852,7 +9855,7 @@ async function openDeletedProjectModal(pid) {
     if (!items.length) return '';
     return '<div class="bold" style="margin-top:10px;font-size:13px">' + label + '</div>' +
       items.map(function(r) {
-        return '<div style="padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:13px">' + r.description +
+        return '<div style="padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:13px;white-space:pre-wrap;word-break:break-word">' + r.description +
           (r.owner_name ? ' <span class="text-muted">— ' + r.owner_name + '</span>' : '') +
           (r.status ? ' ' + bdg(r.status) : '') + '</div>';
       }).join('');

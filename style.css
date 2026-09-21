@@ -278,7 +278,7 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
 .info-blue { background: var(--blue-soft); border: 1px solid #85B7EB; color: var(--blue-tx); }
 .notif-banner { background: var(--good-soft); border: 1px solid var(--good); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; font-size: 13px; color: var(--good-tx); display: flex; gap: 10px; align-items: flex-start; }
 .stage-pill { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-.blocker-note { margin-top: 10px; font-size: 12px; color: var(--coral-strong-tx); background: var(--coral-soft); padding: 8px 12px; border-radius: 8px; }
+.blocker-note { margin-top: 10px; font-size: 12px; color: var(--coral-strong-tx); background: var(--coral-soft); padding: 8px 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
 .team-chip { display: flex; align-items: center; gap: 6px; background: var(--surface-2); padding: 5px 10px; border-radius: 20px; }
 .tl-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .tl-label { width: 190px; min-width: 190px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
