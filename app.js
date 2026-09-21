@@ -7397,9 +7397,7 @@ function renderReqScopePanel(p, kind, editable) {
   var view = scopeViewState[p.id] || 'in';
 
   var addBtnHtml = editable
-    ? (view === 'out'
-        ? '<button class="btn btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'scope\',null,\'out\')"><i class="ti ti-plus"></i> Add excluded item</button>'
-        : '<button class="btn btn-primary btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'scope\',null,\'in\')"><i class="ti ti-plus"></i> ' + cfg.addLabel + '</button>')
+    ? '<button class="btn btn-primary btn-sm mb-12" onclick="openReqScopeModal(\'' + p.id + '\',\'scope\',null,\'' + view + '\')"><i class="ti ti-plus"></i> ' + cfg.addLabel + '</button>'
     : '';
 
   var subtabBar = '<div class="tab-bar" style="margin-bottom:16px">' +
