@@ -2832,7 +2832,7 @@ var projectDetailReferrer = null;
 
 var NAV_DEF = {
   admin: [
-    { s:'Overview', items:[{id:'home',icon:'ti-home',label:'Home'},{id:'summary',icon:'ti-chart-bar',label:'Summary'},{id:'exec-summary',icon:'ti-flag',label:'Executive Summary'},{id:'portfolio-health',icon:'ti-activity',label:'Portfolio Health'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
+    { s:'Overview', items:[{id:'home',icon:'ti-home',label:'Home'},{id:'summary',icon:'ti-chart-bar',label:'Summary'},{id:'exec-summary',icon:'ti-flag',label:'Executive Summary'},{id:'portfolio-health',icon:'ti-activity',label:'Portfolio Health'},{id:'commitment-review',icon:'ti-list-check',label:'Commitment Review'},{id:'roadmap',icon:'ti-road',label:'Roadmap'},{id:'future-planning',icon:'ti-calendar-time',label:'Future Planning'},{id:'prioritize-backlog',icon:'ti-arrows-sort',label:'Prioritize Backlog'},{id:'portfolio',icon:'ti-folder-open',label:'Portfolio'},{id:'programs',icon:'ti-folders',label:'Programs'}] },
     { s:'My Requests', items:[
       {id:'submit',       icon:'ti-send',  label:'Submit a Request'},
       {id:'my-requests',  icon:'ti-clock', label:'My Requests', badge:'my-requests'}
@@ -3090,7 +3090,8 @@ var PAGE_RENDERERS = {
   'prioritize-backlog':pgPrioritizeBacklog, capacity:pgCapacity, programs:pgPrograms, 'deleted-items':pgDeletedItems,
   'my-work-requests':pgMyWorkRequests, 'admin-work-requests':pgAdminWorkRequests, 'admin-personal-todos':pgAdminPersonalTodos,
   'my-capacity':pgMyCapacity, 'admin-capacity-weights':pgAdminCapacityWeights,
-  'portfolio-health':pgPortfolioHealth, 'exec-summary':pgExecSummary, reminders:pgReminders
+  'portfolio-health':pgPortfolioHealth, 'exec-summary':pgExecSummary, reminders:pgReminders,
+  'commitment-review':pgCommitmentReview
 };
 
 function pageAllowedForRole(page, role) {
@@ -12465,6 +12466,377 @@ async function saveResource(rid) {
     }
   }
   showToast('Resource updated'); closeModal(); pgResources();
+}
+
+// ── Commitment Portfolio Review ─────────────────────────────────────────────
+// Exec-committee call prep: verify Must data, assign owners/dates on Should,
+// keep Want/Won't on hand for discussion. Every edit here writes straight to
+// the same tables/columns the rest of the app uses (projects, resource_projects,
+// project_change_log via logProjectChanges) -- there's no separate draft/session
+// state, so a change made here is immediately live everywhere else.
+var crState = { ready:false, lastTouched:{}, expanded:{}, sort:{}, tab:'overview', mustSub:'checklist', shouldFilter:false };
+
+async function pgCommitmentReview() {
+  tb('Commitment Portfolio Review');
+  if (D.role !== 'admin') {
+    document.getElementById('content').innerHTML =
+      '<div class="empty-state" style="padding:60px"><i class="ti ti-lock"></i><p>Only PMO Admins can access the Commitment Portfolio Review.</p></div>';
+    return;
+  }
+  if (!crState.ready) {
+    document.getElementById('content').innerHTML = '<div class="empty-state" style="padding:60px"><i class="ti ti-loader-2"></i><p>Loading…</p></div>';
+    var result = await sb.from('project_change_log').select('project_id, changed_at');
+    if (result.error) console.error('Could not load change log for Commitment Review:', result.error);
+    var lastTouched = {};
+    (result.data || []).forEach(function(r) {
+      if (!lastTouched[r.project_id] || r.changed_at > lastTouched[r.project_id]) lastTouched[r.project_id] = r.changed_at;
+    });
+    crState.lastTouched = lastTouched;
+    crState.ready = true;
+  }
+  renderCommitmentReview();
+}
+
+function crBase() { return D.projects.filter(function(p){ return p.stage !== 'complete'; }); }
+function crTier(p) { return p.commitment || 'Needs commitment'; }
+function crByTier(tier) { return crBase().filter(function(p){ return crTier(p) === tier; }); }
+
+function crLastUpdatedMs(p) { var t = crState.lastTouched[p.id]; return t ? new Date(t).getTime() : null; }
+
+function crLastUpdatedHtml(p) {
+  var real = crState.lastTouched[p.id];
+  var t = real || p.createdAt;
+  var d = t ? daysSince(t) : null;
+  if (d == null) return '<span style="color:var(--text-faint)">—</span>';
+  var rel = d === 0 ? 'Today' : d + 'd ago';
+  var relColor = d > 30 ? 'var(--bad)' : 'var(--text)';
+  var label = real ? rel : ('Never edited <span style="color:var(--text-faint)">(created ' + rel + ')</span>');
+  return '<div style="font-size:11.5px"><div style="color:' + (real ? relColor : 'var(--text)') + '">' + label + '</div><div style="color:var(--text-faint);font-size:10.5px">' + fmtDate(t.slice(0,10)) + '</div></div>';
+}
+
+function crCommitmentSelectHtml(p) {
+  return '<select class="tier-select" style="font-size:11px;padding:4px 5px;width:auto" onchange="window.crSetCommitment(\'' + p.id + '\', this.value)">' +
+    '<option value=""' + (!p.commitment ? ' selected' : '') + '>Needs commitment</option>' +
+    COMMITMENTS.map(function(t){ return '<option' + (p.commitment===t?' selected':'') + '>' + t + '</option>'; }).join('') +
+    '</select>';
+}
+
+window.crSetCommitment = async function(pid, val) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!p) return;
+  var before = { commitment: p.commitment };
+  var result = await sb.from('projects').update({ commitment: val || null }).eq('id', pid);
+  if (result.error) { showToast('Could not update commitment: ' + result.error.message); return; }
+  p.commitment = val || null;
+  await logProjectChanges(pid, before, { commitment: p.commitment }, 'Commitment Portfolio Review');
+  crState.lastTouched[pid] = new Date().toISOString();
+  showToast(p.name + ': Commitment set to ' + (val || 'Needs commitment'));
+  withScrollPreserved(renderCommitmentReview);
+};
+
+window.crSetOwner = async function(pid, name) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!p) return;
+  name = (name || '').trim();
+  if ((p.owner || '') === name) return;
+  var before = { owner: p.owner };
+  var res = resolveResource(name);
+  var result = await sb.from('projects').update({ owner_id: res ? res.id : null, owner_name: name || null }).eq('id', pid);
+  if (result.error) { showToast('Could not update owner: ' + result.error.message); return; }
+  p.owner = name; p.ownerId = res ? res.id : null;
+  await logProjectChanges(pid, before, { owner: p.owner }, 'Commitment Portfolio Review');
+  crState.lastTouched[pid] = new Date().toISOString();
+  showToast('Owner updated');
+  withScrollPreserved(renderCommitmentReview);
+};
+
+window.crSetDate = async function(pid, field, val) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!p) return;
+  val = val || null;
+  if ((p[field] || null) === val) return;
+  var before = { start: p.start, end: p.end, stage: p.stage };
+  var start = field === 'start' ? val : p.start;
+  var end = field === 'end' ? val : p.end;
+  var payload = {}; payload[field === 'start' ? 'start_date' : 'end_date'] = val;
+  var newStage = p.stage;
+  if (p.stage === 'backlog' || p.stage === 'planned' || p.stage === 'active') {
+    newStage = stageFromDatesForEdit(p.stage, start, end);
+    if (newStage !== p.stage) payload.stage = newStage;
+  }
+  var result = await sb.from('projects').update(payload).eq('id', pid);
+  if (result.error) { showToast('Could not update date: ' + result.error.message); return; }
+  p.start = start; p.end = end; p.stage = newStage;
+  await logProjectChanges(pid, before, { start: p.start, end: p.end, stage: p.stage }, 'Commitment Portfolio Review');
+  crState.lastTouched[pid] = new Date().toISOString();
+  showToast((field === 'start' ? 'Start' : 'End') + ' date updated');
+  withScrollPreserved(renderCommitmentReview);
+};
+
+function crTeamPool() { return allIndividualResourceNames().concat(teamNames()); }
+
+function crTeamBlockHtml(p) {
+  var team = p.team || [], teamIds = p.teamIds || [];
+  var chips = team.length
+    ? team.map(function(name, i){ return '<span class="team-chip">' + name + inactiveNameBadge(name) + '<span class="x" onclick="window.crRemoveTeamMember(\'' + p.id + '\',\'' + teamIds[i] + '\')" title="Remove">&times;</span></span>'; }).join(' ')
+    : '<span style="color:var(--text-faint)">No team members recorded</span>';
+  var inputId = 'cr-team-input-' + p.id;
+  return '<div class="full"><div class="k">Team</div><div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">' + chips + '</div>' +
+    '<div class="cr-team-add-row">' +
+      '<input type="text" id="' + inputId + '" list="cr-resource-pool" placeholder="Add a person or team" onkeydown="if(event.key===\'Enter\'){event.preventDefault();window.crAddTeamMember(\'' + p.id + '\',this.value);this.value=\'\';}">' +
+      '<button class="btn btn-sm" onclick="window.crAddTeamMember(\'' + p.id + '\',document.getElementById(\'' + inputId + '\').value)">Add</button>' +
+    '</div>' +
+  '</div></div>';
+}
+
+window.crAddTeamMember = async function(pid, name) {
+  name = (name || '').trim();
+  if (!name) return;
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!p) return;
+  var res = resolveResource(name);
+  if (!res) { showToast('Could not find "' + name + '" in Resources'); return; }
+  if ((p.teamIds || []).indexOf(res.id) >= 0) { showToast(res.name + ' is already on the team'); return; }
+  await ensureOnTeam(p, res);
+  showToast(res.name + ' added to the team');
+  withScrollPreserved(renderCommitmentReview);
+};
+
+window.crRemoveTeamMember = async function(pid, resourceId) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  if (!p) return;
+  var idx = (p.teamIds || []).indexOf(resourceId);
+  if (idx < 0) return;
+  var name = p.team[idx];
+  if (!confirm('Remove ' + name + ' from the team?')) return;
+  var result = await sb.from('resource_projects').delete().eq('project_id', pid).eq('resource_id', resourceId);
+  if (result.error) { showToast('Could not remove: ' + result.error.message); return; }
+  p.team.splice(idx, 1); p.teamIds.splice(idx, 1);
+  if (p.teamTiers) delete p.teamTiers[resourceId];
+  showToast(name + ' removed from the team');
+  withScrollPreserved(renderCommitmentReview);
+};
+
+function crDetailRowHtml(p) {
+  if (!crState.expanded[p.id]) return '';
+  return '<tr><td colspan="7" style="padding:0 8px 10px;border-top:none">' +
+    '<div class="cr-expand-detail">' +
+      '<div><div class="k">Health</div><div>' + hdot(p.health) + (p.health || 'not set') + '</div></div>' +
+      '<div><div class="k">Progress</div><div>' + p.progress + '%</div></div>' +
+      '<div><div class="k">Business unit</div><div>' + (p.businessUnit || '—') + '</div></div>' +
+      '<div><div class="k">Sponsor</div><div>' + (p.sponsor || '—') + inactiveNameBadge(p.sponsor) + '</div></div>' +
+      '<div><div class="k">T-shirt size</div><div>' + (p.tshirtSize || '—') + '</div></div>' +
+      (p.description ? '<div class="full"><div class="k">Description</div><div>' + p.description + '</div></div>' : '') +
+      crTeamBlockHtml(p) +
+    '</div>' +
+  '</td></tr>';
+}
+
+window.crToggleExpand = function(id) { crState.expanded[id] = !crState.expanded[id]; withScrollPreserved(renderCommitmentReview); };
+
+window.crSetSort = function(tableKey, col) {
+  var cur = crState.sort[tableKey] || { col:'name', dir:'asc' };
+  crState.sort[tableKey] = (cur.col === col) ? { col:col, dir: cur.dir === 'asc' ? 'desc' : 'asc' } : { col:col, dir:'asc' };
+  withScrollPreserved(renderCommitmentReview);
+};
+
+function crSortArrow(tableKey, col) {
+  var st = crState.sort[tableKey] || { col:'name', dir:'asc' };
+  if (st.col !== col) return '';
+  return '<span class="sort-arrow">' + (st.dir === 'asc' ? '▲' : '▼') + '</span>';
+}
+
+function crSortRows(list, tableKey, defaultCol) {
+  var st = crState.sort[tableKey] || { col: defaultCol, dir: 'asc' };
+  return list.slice().sort(function(a, b) {
+    var av, bv;
+    if (st.col === 'stage') { av = STAGE_SORT_RANK[a.stage]!=null?STAGE_SORT_RANK[a.stage]:9; bv = STAGE_SORT_RANK[b.stage]!=null?STAGE_SORT_RANK[b.stage]:9; }
+    else if (st.col === 'tier') { av = a.commitment!=null?COMMITMENT_RANK[a.commitment]:4; bv = b.commitment!=null?COMMITMENT_RANK[b.commitment]:4; }
+    else if (st.col === 'lastUpdated') { av = crLastUpdatedMs(a); av = av==null?Infinity:av; bv = crLastUpdatedMs(b); bv = bv==null?Infinity:bv; }
+    else if (st.col === 'start' || st.col === 'end') { av = a[st.col] || '9999'; bv = b[st.col] || '9999'; }
+    else if (st.col === 'owner') { av = a.owner ? a.owner.toLowerCase() : '￿'; bv = b.owner ? b.owner.toLowerCase() : '￿'; }
+    else { av = (a.name||'').toLowerCase(); bv = (b.name||'').toLowerCase(); }
+    var cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return st.dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+function crTableHtml(list, tableKey) {
+  var sorted = crSortRows(list, tableKey, 'name');
+  function th(col, label) { return '<th class="sortable-th" onclick="window.crSetSort(\'' + tableKey + '\',\'' + col + '\')">' + label + crSortArrow(tableKey, col) + '</th>'; }
+  var rows = sorted.map(function(p) {
+    var missingOwner = !p.owner, missingDate = !p.start || !p.end;
+    var flagged = missingOwner || missingDate;
+    return '<tr>' +
+      '<td><div class="cr-name-cell" onclick="window.crToggleExpand(\'' + p.id + '\')"><span class="cr-expand-icon">' + (crState.expanded[p.id]?'▾':'▸') + '</span>' +
+        '<button class="btn btn-sm" style="padding:2px 6px" title="Open project" onclick="event.stopPropagation();goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button>' +
+        p.name + (flagged ? '<span class="cr-row-flag" title="Missing owner or dates"></span>' : '') + '</div></td>' +
+      '<td>' + stagePill(p.stage) + '</td>' +
+      '<td><input type="text" list="cr-owner-pool" value="' + (p.owner||'').replace(/"/g,'&quot;') + '" placeholder="Assign owner" onchange="window.crSetOwner(\'' + p.id + '\',this.value)"></td>' +
+      '<td><input type="date" style="min-width:130px" value="' + (p.start||'') + '" onchange="window.crSetDate(\'' + p.id + '\',\'start\',this.value)"></td>' +
+      '<td><input type="date" style="min-width:130px" value="' + (p.end||'') + '" onchange="window.crSetDate(\'' + p.id + '\',\'end\',this.value)"></td>' +
+      '<td>' + crLastUpdatedHtml(p) + '</td>' +
+      '<td>' + crCommitmentSelectHtml(p) + '</td>' +
+    '</tr>' + crDetailRowHtml(p);
+  }).join('');
+  return '<div class="table-wrap"><table><thead><tr>' + th('name','Project') + th('stage','Stage') + th('owner','Owner') + th('start','Start') + th('end','End') + th('lastUpdated','Last updated') + th('tier','Commitment') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function crTimelineHtml(dated) {
+  var now = new Date();
+  var windowStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  var windowMonths = 13;
+  var monthLabels = [];
+  for (var mi = 0; mi < windowMonths; mi++) {
+    var md = new Date(windowStart.getFullYear(), windowStart.getMonth() + mi, 1);
+    monthLabels.push(md.toLocaleString('en-US', { month:'short' }) + (md.getMonth()===0 ? " '" + String(md.getFullYear()).slice(2) : ''));
+  }
+  function monthsFromWindowStart(dateStr) {
+    if (!dateStr) return null;
+    var d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return null;
+    var yearDiff = d.getFullYear() - windowStart.getFullYear();
+    var monthDiff = d.getMonth() - windowStart.getMonth();
+    var dayFrac = (d.getDate() - 1) / 30.44;
+    return yearDiff * 12 + monthDiff + dayFrac;
+  }
+  var rows = dated.slice().sort(function(a,b){ return (a.start||'').localeCompare(b.start||''); }).map(function(p) {
+    var startOffset = monthsFromWindowStart(p.start), endOffset = monthsFromWindowStart(p.end);
+    var hasBar = startOffset !== null && endOffset !== null && endOffset > 0 && startOffset < windowMonths;
+    var barHtml;
+    if (hasBar) {
+      var clampedStart = Math.max(0, startOffset), clampedEnd = Math.min(windowMonths, endOffset);
+      var widthPct = Math.max(1, clampedEnd - clampedStart) / windowMonths * 100;
+      var leftPct = clampedStart / windowMonths * 100;
+      barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:var(--accent)" title="' + fmtDate(p.start) + ' → ' + fmtDate(p.end) + '">' + fmtDate(p.end) + '</div></div>';
+    } else if (isProjectLate(p)) {
+      barHtml = '<div class="tl-wrap" style="padding-left:8px"><span style="color:var(--bad);font-size:12px;font-weight:600"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>Late by ' + daysLate(p) + ' day' + (daysLate(p)===1?'':'s') + '</span></div>';
+    } else {
+      barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">Outside this range</span></div>';
+    }
+    return '<div class="tl-row"><div class="tl-label" style="cursor:pointer" title="' + p.name + '" onclick="goToProject(\'' + p.id + '\')">' + p.name + '</div>' + barHtml + '</div>';
+  }).join('');
+  return '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">Must — timeline (' + dated.length + ' scheduled)</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:var(--text-faint);text-align:center">' + m + '</div>'; }).join('') + '</div>' +
+    rows +
+  '</div>';
+}
+
+function crCompleteness(list) {
+  return {
+    missingOwner: list.filter(function(p){ return !p.owner; }).length,
+    missingDates: list.filter(function(p){ return !p.start || !p.end; }).length,
+    staleUpdate: list.filter(function(p){ var d = crLastUpdatedMs(p); return d == null; }).length
+  };
+}
+
+function crRenderOverview() {
+  var must = crByTier('Must'), should = crByTier('Should'), want = crByTier('Want'), wont = crByTier("Won't");
+  var needsCommitment = crBase().filter(function(p){ return !p.commitment; });
+  var mustC = crCompleteness(must), shouldC = crCompleteness(should);
+  var stat = function(n, label, color) { return '<div class="card" style="flex:1;min-width:110px;text-align:center"><div style="font-weight:800;font-size:22px;color:' + color + '">' + n + '</div><div style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;margin-top:4px">' + label + '</div></div>'; };
+  var html = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">' +
+    stat(must.length, 'Must', 'var(--bad)') + stat(should.length, 'Should', 'var(--warn)') + stat(want.length, 'Want', 'var(--blue-tx)') + stat(wont.length, 'Won’t', 'var(--text-faint)') + stat(needsCommitment.length, 'Needs commitment', 'var(--text)') +
+  '</div>';
+  if (needsCommitment.length) {
+    html += '<div class="cr-callout cr-callout-warn"><strong>' + needsCommitment.length + ' project' + (needsCommitment.length===1?'':'s') + ' still has no Commitment set</strong> — ' +
+      needsCommitment.map(function(p){ return p.name; }).join(', ') + '. Worth a quick decision before or after the main review.' +
+      '<div style="margin-top:8px">' + needsCommitment.map(function(p){ return '<span style="margin-right:14px;display:inline-flex;align-items:center;gap:6px">' + p.name + ' ' + crCommitmentSelectHtml(p) + '</span>'; }).join('') + '</div>' +
+    '</div>';
+  }
+  html += '<div class="card">' +
+    '<div class="section-title">Where the data stands right now</div>' +
+    '<div class="section-note" style="color:var(--text-muted);font-size:12.5px;margin-bottom:14px">Live from PMO Hub. Use the Must and Should tabs to close these gaps during the call.</div>' +
+    '<div class="table-wrap"><table><thead><tr><th>Tier</th><th>Projects</th><th>Missing owner</th><th>Missing a date</th><th>Never edited</th></tr></thead><tbody>' +
+      '<tr><td>' + bdg('Must') + '</td><td>' + must.length + '</td><td>' + mustC.missingOwner + '</td><td>' + mustC.missingDates + '</td><td>' + mustC.staleUpdate + '</td></tr>' +
+      '<tr><td>' + bdg('Should') + '</td><td>' + should.length + '</td><td>' + shouldC.missingOwner + '</td><td>' + shouldC.missingDates + '</td><td>' + shouldC.staleUpdate + '</td></tr>' +
+    '</tbody></table></div>' +
+  '</div>' +
+  '<div class="cr-callout"><strong>Suggested pacing for the hour:</strong> ~30 min on Must (verify + walk the timeline), ~20 min on Should (assign owners/dates, re-triage anything that doesn’t belong), ~5 min on Want/Won’t if time allows, ~5 min to wrap up.</div>';
+  document.getElementById('crTabContent').innerHTML = html;
+}
+
+function crRenderMust() {
+  var must = crByTier('Must');
+  var dated = must.filter(function(p){ return p.start && p.end; });
+  var undated = must.filter(function(p){ return !p.start || !p.end; });
+  var html = '<div class="cr-callout"><strong>Job one:</strong> every Must item should have a real owner and real dates before it goes on the roadmap the Committee sees. ' + must.length + ' Must projects, ' + undated.length + ' still missing a date today. If something doesn’t actually belong at Must, re-triage it right in the Commitment column.</div>';
+  html += '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+    '<span class="chip-filter' + (crState.mustSub==='checklist'?' on':'') + '" onclick="window.crSetMustSub(\'checklist\')"><i class="ti ti-list-check"></i> Checklist</span>' +
+    '<span class="chip-filter' + (crState.mustSub==='timeline'?' on':'') + '" onclick="window.crSetMustSub(\'timeline\')"><i class="ti ti-calendar"></i> Timeline</span>' +
+  '</div>';
+  if (crState.mustSub === 'checklist') {
+    html += '<div class="card"><div class="section-title" style="margin-bottom:4px">Must — data verification</div><div style="color:var(--text-muted);font-size:12.5px;margin-bottom:14px">Click a name to expand full context, including its team. Every edit here writes straight to the project.</div>' + crTableHtml(must, 'must') + '</div>';
+  } else {
+    html += crTimelineHtml(dated);
+    if (undated.length) {
+      html += '<div class="card"><div class="section-title">Not yet scheduled (' + undated.length + ')</div><div style="color:var(--text-muted);font-size:12.5px;margin-bottom:10px">No start and/or end date yet, so these can’t show on the timeline above.</div>' +
+        undated.map(function(p){
+          return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 10px;background:var(--surface-2);border-radius:8px;font-size:12.5px;margin-bottom:6px">' +
+            '<span>' + p.name + '</span><span style="display:flex;gap:6px;align-items:center">' +
+            '<input type="date" style="width:140px" value="' + (p.start||'') + '" onchange="window.crSetDate(\'' + p.id + '\',\'start\',this.value)">' +
+            '<input type="date" style="width:140px" value="' + (p.end||'') + '" onchange="window.crSetDate(\'' + p.id + '\',\'end\',this.value)">' +
+            '</span></div>';
+        }).join('') + '</div>';
+    }
+  }
+  document.getElementById('crTabContent').innerHTML = html;
+}
+window.crSetMustSub = function(v) { crState.mustSub = v; withScrollPreserved(renderCommitmentReview); };
+
+function crRenderShould() {
+  var should = crByTier('Should');
+  var incomplete = should.filter(function(p){ return !p.owner || !p.start || !p.end; });
+  var list = crState.shouldFilter ? incomplete : should;
+  var c = crCompleteness(should);
+  var html = '<div class="cr-callout"><strong>Job two:</strong> ' + c.missingOwner + ' of ' + should.length + ' Should projects have no owner, ' + c.missingDates + ' are missing a date. Assign what you can live — and if something doesn’t belong at Should anymore, change its Commitment right here.</div>';
+  html += '<div style="margin-bottom:12px"><span class="chip-filter' + (crState.shouldFilter?' on':'') + '" onclick="window.crToggleShouldFilter()"><i class="ti ti-alert-circle"></i> Show only incomplete (' + incomplete.length + ')</span></div>';
+  html += '<div class="card"><div class="section-title">Should — assign &amp; triage</div>' + crTableHtml(list, 'should') + '</div>';
+  document.getElementById('crTabContent').innerHTML = html;
+}
+window.crToggleShouldFilter = function() { crState.shouldFilter = !crState.shouldFilter; withScrollPreserved(renderCommitmentReview); };
+
+function crRenderWantWont() {
+  function rowHtml(p) {
+    return '<div>' +
+      '<div class="cr-discuss-row">' +
+        '<span class="cr-discuss-name cr-name-cell" onclick="window.crToggleExpand(\'' + p.id + '\')"><span class="cr-expand-icon">' + (crState.expanded[p.id]?'▾':'▸') + '</span>' + p.name + '</span>' +
+        stagePill(p.stage) +
+        '<span class="badge badge-gray">' + (p.businessUnit || '—') + '</span>' +
+        '<span class="cr-discuss-desc">' + (p.description || 'No description on file') + '</span>' +
+        crCommitmentSelectHtml(p) +
+      '</div>' +
+      (crState.expanded[p.id] ? '<div class="cr-expand-detail">' + crTeamBlockHtml(p) + '</div>' : '') +
+    '</div>';
+  }
+  var want = crByTier('Want'), wont = crByTier("Won't");
+  var html = '<div class="cr-callout">Lightweight, on purpose — these are discussion points if there’s time left, not items to work through in detail. Re-triage to Must/Should right here if the conversation moves one up.</div>';
+  html += '<div class="card"><div class="section-title">Want (' + want.length + ')</div>' + want.map(rowHtml).join('') + '</div>';
+  html += '<div class="card"><div class="section-title">Won’t (' + wont.length + ')</div><div style="color:var(--text-muted);font-size:12.5px;margin-bottom:8px">On record as considered and declined.</div>' + wont.map(rowHtml).join('') + '</div>';
+  document.getElementById('crTabContent').innerHTML = html;
+}
+
+window.crSetTab = function(t) { crState.tab = t; renderCommitmentReview(); };
+
+function renderCommitmentReview() {
+  var must = crByTier('Must'), should = crByTier('Should'), want = crByTier('Want'), wont = crByTier("Won't");
+  var tabs = [
+    { key:'overview', label:'Overview' },
+    { key:'must', label:'Must — Verify & Timeline', cnt: must.length },
+    { key:'should', label:'Should — Assign & Triage', cnt: should.length },
+    { key:'wantwont', label:'Want / Won’t — Discussion', cnt: want.length + wont.length }
+  ];
+  var tabBarHtml = '<div class="tab-bar" id="crTabBar">' + tabs.map(function(t){
+    return '<div class="tab' + (crState.tab===t.key?' active':'') + '" onclick="window.crSetTab(\'' + t.key + '\')">' + t.label + (t.cnt != null ? ' <span class="badge badge-gray">' + t.cnt + '</span>' : '') + '</div>';
+  }).join('') + '</div>';
+  var ownerPoolHtml = '<datalist id="cr-owner-pool">' + individualResourceNames().map(function(n){ return '<option value="' + n.replace(/"/g,'&quot;') + '">'; }).join('') + '</datalist>';
+  var resourcePoolHtml = '<datalist id="cr-resource-pool">' + crTeamPool().map(function(n){ return '<option value="' + n.replace(/"/g,'&quot;') + '">'; }).join('') + '</datalist>';
+  document.getElementById('content').innerHTML = tabBarHtml + ownerPoolHtml + resourcePoolHtml + '<div id="crTabContent"></div>';
+  if (crState.tab === 'overview') crRenderOverview();
+  else if (crState.tab === 'must') crRenderMust();
+  else if (crState.tab === 'should') crRenderShould();
+  else if (crState.tab === 'wantwont') crRenderWantWont();
 }
 
 // ── Stakeholder: Submit ────────────────────────────────────────────────────────
