@@ -14,6 +14,15 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-22">
+  <h2>Added: Commitment Portfolio Review page</h2>
+  <p class="changelog-date">September 22, 2026</p>
+  <ul>
+    <li>New admin-only <strong>Commitment Review</strong> page under Overview, built for prepping and running an Executive Committee portfolio call: an Overview tab with completeness stats across tiers; a <strong>Must</strong> tab with a sortable data-verification checklist plus a roadmap-style timeline of scheduled Must projects; a <strong>Should</strong> tab for assigning owners/dates and re-triaging commitment, with a "show only incomplete" filter; and a lightweight <strong>Want/Won't</strong> discussion view. Every project's expandable detail panel, across all three tiers, includes a team viewer with an add/remove picker.</li>
+    <li>Every field edited here — owner, start/end dates, Commitment, team membership — writes straight to the same project record the rest of the app uses and goes through the normal change-log audit trail, so nothing is a separate draft that needs re-entering later.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-09-21">
   <h2>Fixed: request self-edit permissions, more line-break display gaps</h2>
   <p class="changelog-date">September 21, 2026</p>
