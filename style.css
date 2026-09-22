@@ -280,6 +280,24 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
 .stage-pill { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 .blocker-note { margin-top: 10px; font-size: 12px; color: var(--coral-strong-tx); background: var(--coral-soft); padding: 8px 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
 .team-chip { display: flex; align-items: center; gap: 6px; background: var(--surface-2); padding: 5px 10px; border-radius: 20px; }
+.team-chip .x { cursor: pointer; font-weight: 700; color: var(--text-muted); margin-left: 2px; }
+.team-chip .x:hover { color: var(--bad); }
+.cr-callout { border-radius: 10px; padding: 12px 16px; font-size: 12.5px; border: 1px solid var(--border); background: var(--accent-soft); color: var(--text-2); margin-bottom: 16px; }
+.cr-callout strong { color: var(--text); }
+.cr-callout-warn { background: var(--warn-soft); }
+.cr-name-cell { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; }
+.cr-expand-icon { color: var(--text-faint); font-size: 11px; flex: none; }
+.cr-row-flag { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--bad); margin-left: 6px; flex: none; }
+.cr-expand-detail { background: var(--surface-2); border-radius: 8px; padding: 10px 14px; font-size: 12px; color: var(--text-2); display: grid; grid-template-columns: repeat(4,1fr); gap: 8px 16px; margin: 0 8px 10px; }
+@media (max-width: 800px) { .cr-expand-detail { grid-template-columns: repeat(2,1fr); } }
+.cr-expand-detail .k { color: var(--text-faint); font-size: 10px; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+.cr-expand-detail .full { grid-column: 1 / -1; white-space: pre-wrap; }
+.cr-discuss-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--border-soft); font-size: 12.5px; flex-wrap: wrap; }
+.cr-discuss-row:last-child { border-bottom: none; }
+.cr-discuss-name { flex: 0 0 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-discuss-desc { flex: 1; min-width: 140px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cr-team-add-row { display: flex; gap: 6px; max-width: 340px; margin-top: 6px; }
+.cr-team-add-row input { flex: 1; }
 .tl-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .tl-label { width: 190px; min-width: 190px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
 .tl-wrap { flex: 1; height: 20px; background: var(--border-soft); border-radius: 4px; position: relative; }
