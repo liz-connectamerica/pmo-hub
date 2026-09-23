@@ -280,6 +280,11 @@ textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
 .stage-pill { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 .blocker-note { margin-top: 10px; font-size: 12px; color: var(--coral-strong-tx); background: var(--coral-soft); padding: 8px 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
 .team-chip { display: flex; align-items: center; gap: 6px; background: var(--surface-2); padding: 5px 10px; border-radius: 20px; }
+.seg { display: flex; border: 1px solid var(--border-input); border-radius: 8px; overflow: hidden; width: fit-content; }
+.seg button { border: none; background: var(--surface); color: var(--text-2); padding: 7px 16px; font-size: 12.5px; cursor: pointer; font-family: inherit; border-right: 1px solid var(--border-input); }
+.seg button:last-child { border-right: none; }
+.seg button.on { background: var(--accent-fill); color: #fff; font-weight: 600; }
+.seg button.on.danger-on { background: var(--bad); }
 .team-chip .x { cursor: pointer; font-weight: 700; color: var(--text-muted); margin-left: 2px; }
 .team-chip .x:hover { color: var(--bad); }
 .cr-callout { border-radius: 10px; padding: 12px 16px; font-size: 12.5px; border: 1px solid var(--border); background: var(--accent-soft); color: var(--text-2); margin-bottom: 16px; }
