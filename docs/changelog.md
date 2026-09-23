@@ -15,7 +15,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-23">
-  <h2>Portfolio: add Commitment filter; Commitment Review: Should timeline; Roadmap/Future Planning filters</h2>
+  <h2>Structured Blockers; Information tab: one Edit button; filter/timeline additions</h2>
   <p class="changelog-date">September 23, 2026</p>
   <ul>
     <li>The <strong>Portfolio</strong> page's filter bar now includes <strong>Commitment</strong>, alongside the existing Category/Stage/Owner/Tag filters — narrow any Value Area section down to just its Must, Should, Want, Won't, or Needs-commitment projects.</li>
@@ -25,6 +25,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li><strong>Home</strong>: an open blocker assigned to you now shows up under Needs Your Attention, the same way assigned RAID items already do.</li>
     <li><strong>Fixed:</strong> a long title in a Needs Your Attention card (a work request, a blocker, a to-do) could overflow the card instead of wrapping, since the main content area had no minimum-width guard against a flex layout quirk.</li>
     <li><strong>Fixed:</strong> the "New work request assigned to you" card on Home showed a blank icon instead of the clipboard icon used everywhere else for work requests.</li>
+    <li>A project's <strong>Information</strong> tab now has a single <strong>Edit</strong> button, pinned above the section nav so it's visible no matter which section you've scrolled to, instead of five separate Edit buttons scattered down the page. Clicking it puts every section you have permission to edit into its form at once — Financials only joins in if you separately have financial-view permission — and one <strong>Save</strong> writes all of it together. <strong>Delete project</strong> moved to the same spot.</li>
   </ul>
 </div>
 
