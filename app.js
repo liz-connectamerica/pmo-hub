@@ -848,18 +848,32 @@ function searchBoxHtml(value, placeholder, id, onInputFnName) {
   return '<div class="task-filter-bar" style="margin-bottom:12px"><input type="text" id="' + id + '" placeholder="' + placeholder + '" value="' + (value||'').replace(/"/g,'&quot;') + '" oninput="' + onInputFnName + '(this.value)"></div>';
 }
 
-function tagFilterBarHtml(activeTags, openFnName) {
-  return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
+function tagFilterBtnHtml(activeTags, openFnName) {
+  return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
     '<button class="btn btn-sm" onclick="' + openFnName + '()"><i class="ti ti-tag"></i> Filter by tag' + (activeTags.length ? ' (' + activeTags.length + ')' : '') + '</button>' +
     activeTags.map(function(t){ return tagBadge(t); }).join('') +
   '</div>';
 }
+function tagFilterBarHtml(activeTags, openFnName) {
+  return '<div style="margin-bottom:14px">' + tagFilterBtnHtml(activeTags, openFnName) + '</div>';
+}
 
-function commitmentFilterBarHtml(activeVals, openFnName) {
-  return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
+function commitmentFilterBtnHtml(activeVals, openFnName) {
+  return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
     '<button class="btn btn-sm" onclick="' + openFnName + '()"><i class="ti ti-list-check"></i> Filter by commitment' + (activeVals.length ? ' (' + activeVals.length + ')' : '') + '</button>' +
     activeVals.map(function(t){ return tagBadge(t); }).join('') +
   '</div>';
+}
+function commitmentFilterBarHtml(activeVals, openFnName) {
+  return '<div style="margin-bottom:14px">' + commitmentFilterBtnHtml(activeVals, openFnName) + '</div>';
+}
+
+// Puts several filter-button groups (tagFilterBtnHtml, commitmentFilterBtnHtml,
+// ...) side by side in one row with visible spacing between groups, instead of
+// each stacking on its own line the way a lone *BarHtml() call does.
+function filterBarRowHtml() {
+  var parts = Array.prototype.slice.call(arguments);
+  return '<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' + parts.join('') + '</div>';
 }
 
 function openTagPicker(currentTagNames, onSave, allowCreate) {
@@ -8624,8 +8638,10 @@ function pgFuturePlanning() {
   document.getElementById('content').innerHTML =
     dateRangeControlHtml(futurePlanningRangeMode, futurePlanningSelectedYear, 'setFuturePlanningRangeMode', 'setFuturePlanningYear') +
     categoryTabsHtml +
-    tagFilterBarHtml(futurePlanningTagFilter, 'openFuturePlanningTagFilter') +
-    commitmentFilterBarHtml(futurePlanningCommitmentFilter, 'openFuturePlanningCommitmentFilter') +
+    filterBarRowHtml(
+      tagFilterBtnHtml(futurePlanningTagFilter, 'openFuturePlanningTagFilter'),
+      commitmentFilterBtnHtml(futurePlanningCommitmentFilter, 'openFuturePlanningCommitmentFilter')
+    ) +
     timelineHtml2 +
     needsEstimateSection +
     missingScheduleSection;
@@ -8871,8 +8887,10 @@ function pgRoadmap() {
   document.getElementById('content').innerHTML =
     dateRangeControlHtml(roadmapRangeMode, roadmapSelectedYear, 'setRoadmapRangeMode', 'setRoadmapYear') +
     categoryTabsHtml +
-    tagFilterBarHtml(roadmapTagFilter, 'openRoadmapTagFilter') +
-    commitmentFilterBarHtml(roadmapCommitmentFilter, 'openRoadmapCommitmentFilter') +
+    filterBarRowHtml(
+      tagFilterBtnHtml(roadmapTagFilter, 'openRoadmapTagFilter'),
+      commitmentFilterBtnHtml(roadmapCommitmentFilter, 'openRoadmapCommitmentFilter')
+    ) +
     '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">' + windowMonths + '-month view — ' + rangeLabel + '</div>' +
     phaseLegend +
     '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:var(--text-faint);text-align:center">' + m + '</div>'; }).join('') + '</div>' +
