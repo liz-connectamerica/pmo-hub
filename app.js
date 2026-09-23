@@ -3438,6 +3438,18 @@ function pgHome() {
     });
   }
 
+  // Open blockers assigned to you personally, on any project -- not just
+  // ones you own, same "assigned to you" treatment as RAID items above.
+  if (myId) {
+    D.projects.forEach(function(p) {
+      (p.blockers || []).filter(function(b){ return b.ownerId === myId && !b.resolved; }).forEach(function(b) {
+        var overdue = !!(b.target && b.target < todayStr());
+        var sub = p.name + (overdue ? ' · target resolution was ' + fmtDate(b.target) : (b.target ? ' · target resolution ' + fmtDate(b.target) : ''));
+        addAttn(b.escalation || overdue ? 'bad' : 'warn', 'ti-alert-triangle', 'Blocker assigned to you: "' + b.title + '"', sub, 'viewBlockers(\'' + p.id + '\')');
+      });
+    });
+  }
+
   if (D.role === 'admin') {
     var pend = pendingCount();
     if (pend > 0) addAttn('blue', 'ti-inbox', pend + ' project request' + (pend===1?'':'s') + ' awaiting review', 'Oldest first', 'nav(\'requests\')');
