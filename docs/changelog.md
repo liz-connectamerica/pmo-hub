@@ -26,6 +26,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li><strong>Fixed:</strong> a long title in a Needs Your Attention card (a work request, a blocker, a to-do) could overflow the card instead of wrapping, since the main content area had no minimum-width guard against a flex layout quirk.</li>
     <li><strong>Fixed:</strong> the "New work request assigned to you" card on Home showed a blank icon instead of the clipboard icon used everywhere else for work requests.</li>
     <li>A project's <strong>Information</strong> tab now has a single <strong>Edit</strong> button, pinned above the section nav so it's visible no matter which section you've scrolled to, instead of five separate Edit buttons scattered down the page. Clicking it puts every section you have permission to edit into its form at once — Financials only joins in if you separately have financial-view permission — and one <strong>Save</strong> writes all of it together. <strong>Delete project</strong> moved to the same spot.</li>
+    <li>A program's own page now has a <strong>Timeline</strong> at the bottom — the same month-window Gantt view as Roadmap, scoped to that program's linked projects, with the same <strong>Next 12 months / Last 12 months / Specific year</strong> picker.</li>
   </ul>
 </div>
 
