@@ -13845,6 +13845,8 @@ function openNewProgramModal() {
 }
 
 var programEditing = false;
+var programTimelineRangeMode = 'next12'; // 'next12' | 'last12' | 'year'
+var programTimelineSelectedYear = new Date().getFullYear();
 
 function pgProgramDetail(id) {
   var prog = D.programs.find(function(x){ return x.id === id; });
@@ -13920,7 +13922,7 @@ function pgProgramDetail(id) {
   // as the milestones section above). A project with no real dates yet shows
   // "No schedule set" rather than being silently dropped from the list.
   function programTimelineHtml(projects) {
-    var win = computeDateWindow('next12');
+    var win = computeDateWindow(programTimelineRangeMode, programTimelineSelectedYear);
     var windowStart = win.windowStart, windowMonths = win.windowMonths;
     var windowEndLabel = new Date(windowStart.getFullYear(), windowStart.getMonth() + windowMonths - 1, 1);
     var rangeLabel = windowStart.toLocaleString('en-US', { month: 'long', year: 'numeric' }) + ' – ' + windowEndLabel.toLocaleString('en-US', { month: 'long', year: 'numeric' });
@@ -13976,7 +13978,8 @@ function pgProgramDetail(id) {
       (rows || '<div class="empty-state" style="padding:24px"><i class="ti ti-road"></i><p>No linked projects to show</p></div>') +
     '</div>';
   }
-  var timelineHtml2 = programTimelineHtml(linkedProjects.filter(function(p){ return p.stage !== 'complete'; }));
+  var timelineHtml2 = '<div class="mt-16">' + dateRangeControlHtml(programTimelineRangeMode, programTimelineSelectedYear, 'setProgramTimelineRangeMode', 'setProgramTimelineYear') + '</div>' +
+    programTimelineHtml(linkedProjects.filter(function(p){ return p.stage !== 'complete'; }));
 
   // ── Linked projects list ────────────────────────────────────────────────
   // View mode: grouped by stage, read-only, with a rank pill for anything
@@ -14095,6 +14098,8 @@ function pgProgramDetail(id) {
       row.style.display = row.getAttribute('data-name').indexOf(q) >= 0 ? 'flex' : 'none';
     });
   };
+  window.setProgramTimelineRangeMode = function(mode) { programTimelineRangeMode = mode; pgProgramDetail(prog.id); };
+  window.setProgramTimelineYear = function(year) { programTimelineSelectedYear = parseInt(year); pgProgramDetail(prog.id); };
 
   if (editingNow) attachProgramPriorityDragHandlers(prog.id, linkedProjects);
 }
