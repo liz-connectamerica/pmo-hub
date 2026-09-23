@@ -9747,7 +9747,7 @@ function pgAllProjects() {
   var rows = list.map(function(p) {
     return '<tr>' +
       '<td><input type="checkbox" ' + (st.selected[p.id] ? 'checked' : '') + ' onchange="toggleAllProjSelect(\'' + p.id + '\', this.checked)"></td>' +
-      '<td class="bold">' + p.name + '</td>' +
+      '<td class="bold" style="cursor:pointer" onclick="goToProject(\'' + p.id + '\')">' + p.name + '</td>' +
       '<td>' + ((p.categories && p.categories.length) ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.businessUnit || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.programId ? '<span style="cursor:pointer" onclick="goToProgram(\'' + p.programId + '\')">' + programLabelFor(p) + '</span>' : '<span class="text-muted">—</span>') + '</td>' +
