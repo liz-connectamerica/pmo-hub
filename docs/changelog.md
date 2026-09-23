@@ -27,6 +27,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li><strong>Fixed:</strong> the "New work request assigned to you" card on Home showed a blank icon instead of the clipboard icon used everywhere else for work requests.</li>
     <li>A project's <strong>Information</strong> tab now has a single <strong>Edit</strong> button, pinned above the section nav so it's visible no matter which section you've scrolled to, instead of five separate Edit buttons scattered down the page. Clicking it puts every section you have permission to edit into its form at once — Financials only joins in if you separately have financial-view permission — and one <strong>Save</strong> writes all of it together. <strong>Delete project</strong> moved to the same spot.</li>
     <li>A program's own page now has a <strong>Timeline</strong> at the bottom — the same month-window Gantt view as Roadmap, scoped to that program's linked projects, with the same <strong>Next 12 months / Last 12 months / Specific year</strong> picker.</li>
+    <li><strong>All Projects</strong> gains <strong>Program</strong> and <strong>Requirements Owner</strong> as sortable, filterable columns, and both can now be set from <strong>Bulk edit</strong> alongside every other field there.</li>
   </ul>
 </div>
 
