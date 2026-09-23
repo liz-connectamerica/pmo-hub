@@ -113,7 +113,7 @@ An admin-only page, also in the **Overview** section, built for prepping and run
 
 - **Overview** — project counts and data-completeness stats by Commitment tier, plus a callout listing any project still missing a Commitment altogether.
 - **Must — Verify & Timeline** — a sortable checklist of every Must-commitment project (owner, dates, last-updated, Commitment), meant to be walked live on the call, plus a roadmap-style timeline of the ones with both a start and end date. Undated Must projects are called out separately so they don't just silently disappear from the timeline.
-- **Should — Assign & Triage** — the same table for Should-commitment projects, with a "show only incomplete" filter to jump straight to the ones missing an owner or a date.
+- **Should — Assign & Triage** — the same table for Should-commitment projects, with a "show only incomplete" filter to jump straight to the ones missing an owner or a date, plus the same Checklist/Timeline toggle as Must for a roadmap-style view of the scheduled ones.
 - **Want / Won't — Discussion** — a lighter list of Want and Won't projects for reference if there's time, without the full data-verification table.
 - **Team viewer** — expanding any project's row (click the name) shows its health, progress, business unit, sponsor, T-shirt size, and description, plus its full team with an add/remove picker — the same team membership shown on the project's own People tab.
 - **Commitment** is re-assignable from a dropdown in every table and row, on all three tiers — re-triaging a project during the call takes effect immediately, everywhere else in the app.

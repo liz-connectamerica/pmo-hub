@@ -15,10 +15,11 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 <div id="changelog-list">
 
 <div class="changelog-entry" id="cl-2026-09-23">
-  <h2>Portfolio: add Commitment filter</h2>
+  <h2>Portfolio: add Commitment filter; Commitment Review: Should timeline</h2>
   <p class="changelog-date">September 23, 2026</p>
   <ul>
     <li>The <strong>Portfolio</strong> page's filter bar now includes <strong>Commitment</strong>, alongside the existing Category/Stage/Owner/Tag filters — narrow any Value Area section down to just its Must, Should, Want, Won't, or Needs-commitment projects.</li>
+    <li>The <strong>Commitment Review</strong> page's <strong>Should</strong> tab now has the same Checklist/Timeline toggle as Must — a roadmap-style timeline of scheduled Should projects, with undated ones broken out separately.</li>
   </ul>
 </div>
 
