@@ -2101,6 +2101,7 @@ var portfolioSearch = '';
 var portfolioCategoryFilter = [];
 var portfolioStageFilter = [];
 var portfolioOwnerFilter = [];
+var portfolioCommitmentFilter = [];
 var portfolioCollapsed = {};
 var prioritizeBacklogState = { category:'All', dragPid:null, search:'', materializing:false, lastMove:null };
 var backlogProjState = { sort:'name', dir:'asc', search:'', category:'All',
@@ -3652,6 +3653,7 @@ function pgPortfolio() {
   tb('Portfolio');
   var stageOrder = { active: 0, planned: 1, backlog: 2, hold: 3, complete: 4 };
   var stageChoices = ['active', 'planned', 'backlog', 'hold'];
+  var commitmentChoices = COMMITMENTS.concat(['Needs commitment']);
 
   var filtered = D.projects.filter(function(p){ return p.stage !== 'complete'; });
   if (portfolioSearch) { var q = portfolioSearch.toLowerCase(); filtered = filtered.filter(function(p){ return p.name.toLowerCase().indexOf(q) >= 0; }); }
@@ -3659,6 +3661,7 @@ function pgPortfolio() {
   if (portfolioCategoryFilter.length) filtered = filtered.filter(function(p){ return portfolioCategoryFilter.some(function(c){ return (p.categories||[]).indexOf(c) >= 0; }); });
   if (portfolioStageFilter.length) filtered = filtered.filter(function(p){ return portfolioStageFilter.indexOf(p.stage) >= 0; });
   if (portfolioOwnerFilter.length) filtered = filtered.filter(function(p){ return portfolioOwnerFilter.indexOf(p.owner || 'No Owner') >= 0; });
+  if (portfolioCommitmentFilter.length) filtered = filtered.filter(function(p){ return portfolioCommitmentFilter.indexOf(p.commitment || 'Needs commitment') >= 0; });
 
   var categoryChoices = []; filtered.forEach(function(p){ (p.categories||[]).forEach(function(c){ if (categoryChoices.indexOf(c) < 0) categoryChoices.push(c); }); }); categoryChoices.sort();
   var ownerChoices = []; filtered.forEach(function(p){ var o = p.owner || 'No Owner'; if (ownerChoices.indexOf(o) < 0) ownerChoices.push(o); }); ownerChoices.sort();
@@ -3721,7 +3724,8 @@ function pgPortfolio() {
       '<button class="btn btn-sm" onclick="openPortfolioStageFilter()"><i class="ti ti-flag"></i> Stage' + (portfolioStageFilter.length ? ' (' + portfolioStageFilter.length + ')' : '') + '</button>' +
       '<button class="btn btn-sm" onclick="openPortfolioOwnerFilter()"><i class="ti ti-user"></i> Owner' + (portfolioOwnerFilter.length ? ' (' + portfolioOwnerFilter.length + ')' : '') + '</button>' +
       '<button class="btn btn-sm" onclick="openPortfolioTagFilter()"><i class="ti ti-tag"></i> Tag' + (portfolioTagFilter.length ? ' (' + portfolioTagFilter.length + ')' : '') + '</button>' +
-      (portfolioTagFilter.concat(portfolioCategoryFilter).concat(portfolioStageFilter.map(function(s){ return EXPORT_STAGE_LABELS[s]||s; })).concat(portfolioOwnerFilter).map(function(t){ return tagBadge(t); }).join('')) +
+      '<button class="btn btn-sm" onclick="openPortfolioCommitmentFilter()"><i class="ti ti-list-check"></i> Commitment' + (portfolioCommitmentFilter.length ? ' (' + portfolioCommitmentFilter.length + ')' : '') + '</button>' +
+      (portfolioTagFilter.concat(portfolioCategoryFilter).concat(portfolioStageFilter.map(function(s){ return EXPORT_STAGE_LABELS[s]||s; })).concat(portfolioOwnerFilter).concat(portfolioCommitmentFilter).map(function(t){ return tagBadge(t); }).join('')) +
       '<div style="margin-left:auto"><span class="link-btn" style="font-size:12px;color:var(--accent);font-weight:600;cursor:pointer" onclick="setAllPortfolioSections(true)">Collapse all</span> · ' +
       '<span class="link-btn" style="font-size:12px;color:var(--accent);font-weight:600;cursor:pointer" onclick="setAllPortfolioSections(false)">Expand all</span></div>' +
     '</div>' +
@@ -3764,6 +3768,14 @@ function pgPortfolio() {
       function() { return portfolioOwnerFilter; },
       function(val) { var i2 = portfolioOwnerFilter.indexOf(val); if (i2>=0) portfolioOwnerFilter.splice(i2,1); else portfolioOwnerFilter.push(val); },
       function() { portfolioOwnerFilter = []; },
+      pgPortfolio
+    );
+  };
+  window.openPortfolioCommitmentFilter = function() {
+    openFilterModal('Commitment', commitmentChoices,
+      function() { return portfolioCommitmentFilter; },
+      function(val) { var i2 = portfolioCommitmentFilter.indexOf(val); if (i2>=0) portfolioCommitmentFilter.splice(i2,1); else portfolioCommitmentFilter.push(val); },
+      function() { portfolioCommitmentFilter = []; },
       pgPortfolio
     );
   };
