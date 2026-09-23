@@ -3461,7 +3461,7 @@ function pgHome() {
     });
     if (myId) {
       (D.workRequests || []).filter(function(w){ return w.resourceId === myId && w.status === 'New'; }).forEach(function(w) {
-        addAttn('blue', 'ti-inbox-down', 'New work request assigned to you: "' + w.title + '"', 'Not yet triaged', 'globalSearchGoWorkRequest(\'' + w.id + '\')');
+        addAttn('blue', 'ti-clipboard-list', 'New work request assigned to you: "' + w.title + '"', 'Not yet triaged', 'globalSearchGoWorkRequest(\'' + w.id + '\')');
       });
     }
   }
