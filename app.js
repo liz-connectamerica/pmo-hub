@@ -13188,9 +13188,9 @@ function crRenderOverview() {
     stat(must.length, 'Must', 'var(--bad)') + stat(should.length, 'Should', 'var(--warn)') + stat(want.length, 'Want', 'var(--blue-tx)') + stat(wont.length, 'Won’t', 'var(--text-faint)') + stat(needsCommitment.length, 'Needs commitment', 'var(--text)') +
   '</div>';
   if (needsCommitment.length) {
-    html += '<div class="cr-callout cr-callout-warn"><strong>' + needsCommitment.length + ' project' + (needsCommitment.length===1?'':'s') + ' still has no Commitment set</strong> — ' +
-      needsCommitment.map(function(p){ return p.name; }).join(', ') + '. Worth a quick decision before or after the main review.' +
-      '<div style="margin-top:8px">' + needsCommitment.map(function(p){ return '<span style="margin-right:14px;display:inline-flex;align-items:center;gap:6px">' + p.name + ' ' + crCommitmentSelectHtml(p) + '</span>'; }).join('') + '</div>' +
+    html += '<div class="card"><div class="section-title">' + needsCommitment.length + ' project' + (needsCommitment.length===1?'':'s') + ' still needs a Commitment</div>' +
+      '<div class="section-note" style="color:var(--text-muted);font-size:12.5px;margin-bottom:14px">Worth a quick decision before or after the main review.</div>' +
+      crTableHtml(needsCommitment, 'needscommitment') +
     '</div>';
   }
   html += '<div class="card">' +
@@ -13200,8 +13200,7 @@ function crRenderOverview() {
       '<tr><td>' + bdg('Must') + '</td><td>' + must.length + '</td><td>' + mustC.missingOwner + '</td><td>' + mustC.missingDates + '</td><td>' + mustC.staleUpdate + '</td></tr>' +
       '<tr><td>' + bdg('Should') + '</td><td>' + should.length + '</td><td>' + shouldC.missingOwner + '</td><td>' + shouldC.missingDates + '</td><td>' + shouldC.staleUpdate + '</td></tr>' +
     '</tbody></table></div>' +
-  '</div>' +
-  '<div class="cr-callout"><strong>Suggested pacing for the hour:</strong> ~30 min on Must (verify + walk the timeline), ~20 min on Should (assign owners/dates, re-triage anything that doesn’t belong), ~5 min on Want/Won’t if time allows, ~5 min to wrap up.</div>';
+  '</div>';
   document.getElementById('crTabContent').innerHTML = html;
 }
 
