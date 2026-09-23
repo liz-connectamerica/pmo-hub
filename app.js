@@ -288,7 +288,10 @@ async function loadAllProjects() {
     sb.from('decision_log').select('*'),
     sb.from('meeting_minutes').select('*'),
     sb.from('meeting_minutes_attendees').select('*'),
-    sb.from('meeting_log').select('*')
+    sb.from('meeting_log').select('*'),
+    sb.from('blockers').select('*'),
+    sb.from('blocker_comments').select('*'),
+    sb.from('blocker_log').select('*')
   ]);
 
   for (var i = 0; i < results.length; i++) {
@@ -335,6 +338,9 @@ async function loadAllProjects() {
   var meetingRows         = results[30].data || [];
   var meetingAttendeeRows = results[31].data || [];
   var meetingLogRows      = results[32].data || [];
+  var blockerRows         = results[33].data || [];
+  var blockerCommentRows  = results[34].data || [];
+  var blockerLogRows      = results[35].data || [];
   var priorityRankByProj = {};
   priorityRankRows.forEach(function(r){ priorityRankByProj[r.project_id] = { rank: r.rank, isOverride: r.is_override }; });
 
@@ -380,6 +386,9 @@ async function loadAllProjects() {
   var meetingByProj       = groupBy(meetingRows, 'project_id');
   var meetingAttendeesByMeeting = groupBy(meetingAttendeeRows, 'meeting_id');
   var meetingLogByMeeting = groupBy(meetingLogRows, 'meeting_id');
+  var blockersByProj      = groupBy(blockerRows, 'project_id');
+  var blockerCommentsByBlocker = groupBy(blockerCommentRows, 'blocker_id');
+  var blockerLogByBlocker = groupBy(blockerLogRows, 'blocker_id');
   var folderNameById     = {};
   folderRows.forEach(function(f){ folderNameById[f.id] = f.name; });
 
@@ -489,6 +498,19 @@ async function loadAllProjects() {
       };
     });
 
+    var blockers = (blockersByProj[pr.id] || []).map(function(b) {
+      return {
+        id: b.id, title: b.title, reason: b.reason,
+        since: b.blocked_since, target: b.target_resolution,
+        owner: b.owner_name || (b.owner_id ? (resourceNameById[b.owner_id] || '') : ''), ownerId: b.owner_id,
+        escalation: !!b.escalation_required, resolved: !!b.resolved, resolvedDate: b.resolved_at,
+        comments: (blockerCommentsByBlocker[b.id] || []).map(function(c) {
+          return { id: c.id, text: c.body, author: c.author_name, date: ymd(c.created_at) };
+        }),
+        log: mapLog(blockerLogByBlocker[b.id])
+      };
+    });
+
     var meetingMinutes = (meetingByProj[pr.id] || []).slice()
       .sort(function(a,b){ return (b.meeting_date||'').localeCompare(a.meeting_date||'') || (b.meeting_time||'').localeCompare(a.meeting_time||''); })
       .map(function(m) {
@@ -550,7 +572,7 @@ async function loadAllProjects() {
       status: pr.status, phase: pr.phase, progress: pr.progress,
       start: pr.start_date, end: pr.end_date, plannedStart: pr.planned_start,
       value: pr.value_area, commitment: pr.commitment, description: pr.description,
-      blockers: pr.blockers, health: pr.health, stage: pr.stage, requestId: pr.request_id,
+      blockers: blockers, health: pr.health, stage: pr.stage, requestId: pr.request_id,
       holdReason: pr.hold_reason, preHoldStage: pr.pre_hold_stage, heldAt: pr.held_at,
       targetQuarter: pr.target_quarter, targetYear: pr.target_year, completedAt: pr.completed_at,
       targetEndQuarter: pr.target_end_quarter, targetEndYear: pr.target_end_year,
@@ -2103,6 +2125,10 @@ var reqScopeCommentsOpen = {};
 var reqScopeDescOpen = {};
 var decisionLogOpen = {};
 var decisionRationaleOpen = {};
+var blockerViewState = {};
+var blockerLogOpen = {};
+var blockerCommentsOpen = {};
+var BLOCKER_REASONS = ['Resource / Capacity','Dependency','Decision Required','Requirements','Technical Issue','Vendor / Third Party','Data / Integration','Environment / Infrastructure','Security / Compliance','Procurement / Contracting','Change Management','Testing / Validation','Scheduling / Timing','Scope / Prioritization','Budget / Funding','Leadership / Executive Direction','Other'];
 var meetingSearchState = {};
 var meetingLogOpen = {};
 var meetingRecapOpen = {};
@@ -2229,7 +2255,7 @@ var CHANGE_LOG_FIELDS = {
   name: 'Project Name', stage: 'Stage', status: 'Status', phase: 'Phase', commitment: 'Commitment',
   value: 'Value Area', businessUnit: 'Business Unit', sponsor: 'Sponsor', owner: 'Owner', requirementsOwner: 'Requirements Owner',
   start: 'Start Date', end: 'Target End Date', progress: 'Progress %', health: 'Health',
-  description: 'Description', blockers: 'Blockers', holdReason: 'Hold Reason', deliveryMethodology: 'Delivery Methodology',
+  description: 'Description', holdReason: 'Hold Reason', deliveryMethodology: 'Delivery Methodology',
   tshirtSize: 'T-shirt Size'
 };
 
@@ -2784,6 +2810,20 @@ function commitmentBadge(p) {
 function hdot(h) {
   var c = { green:'var(--good)', amber:'var(--warn)', red:'var(--bad)' }[h] || 'var(--text-disabled)';
   return '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + c + ';margin-right:6px;vertical-align:middle"' + (h ? '' : ' title="Health not set"') + '></span>';
+}
+
+function openBlockers(p) { return (p.blockers || []).filter(function(b){ return !b.resolved; }); }
+function escalatedBlockers(p) { return openBlockers(p).filter(function(b){ return b.escalation; }); }
+
+// Shared compact summary used anywhere a project's blockers used to show as
+// a single free-text note -- Executive Summary, a linked project's mini
+// summary, Progress & Health. Escalated ones are called out; the full list
+// with reasons/owners/dates/comments lives on Documentation > Blockers.
+function blockerSummaryHtml(p) {
+  var open = openBlockers(p), esc2 = escalatedBlockers(p);
+  if (!open.length) return '';
+  var text = open.length + ' open blocker' + (open.length===1?'':'s') + (esc2.length ? ' — ' + esc2.length + ' need' + (esc2.length===1?'s':'') + ' escalation' : '');
+  return '<div class="blocker-note"><i class="ti ti-alert-triangle"></i> ' + text + '</div>';
 }
 
 // Compact stand-in for a text label: a colored dot, same visual language as
@@ -3658,7 +3698,7 @@ function pgExecSummary() {
         metaBox('Owner', (p.owner || '—') + inactiveNameBadge(p.owner)) + metaBox('Sponsor', (p.sponsor || '—') + inactiveNameBadge(p.sponsor)) + metaBox('Target end', p.end || '—') +
         metaBox('Progress', '<div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span style="font-size:11px">' + p.progress + '%</span></div>') +
       '</div>' +
-      (p.blockers ? '<div class="blocker-note"><i>Blocker:</i> ' + p.blockers + '</div>' : '') +
+      blockerSummaryHtml(p) +
       '<div style="font-size:12.5px;color:var(--text-2);margin-top:12px">' + raidSummaryHtml(p) + '</div>' +
       (p.execNote ? '<div style="background:var(--accent-soft);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--text-2);margin-top:10px;white-space:pre-wrap;word-break:break-word"><i class="ti ti-message-circle" style="color:var(--accent);margin-right:6px"></i>' + p.execNote + '</div>' : '') +
     '</div>';
@@ -3970,7 +4010,7 @@ function reviewRequest(id) {
         '</div>' +
         '<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:3px"><span>Progress</span><span>' + linkedP.progress + '%</span></div>' +
         '<div class="progress-bar"><div class="progress-fill" style="width:' + linkedP.progress + '%"></div></div></div>' +
-        (linkedP.blockers ? '<div class="blocker-note" style="margin-top:8px"><i class="ti ti-alert-triangle"></i> ' + linkedP.blockers + '</div>' : '') +
+        blockerSummaryHtml(linkedP) +
       '</div>';
   }
 
@@ -5484,15 +5524,21 @@ function pgProjectDetail(pid, tab) {
               '<div><div class="form-label">Progress (%)</div><input type="number" id="pfp-progress" value="' + p.progress + '" min="0" max="100"></div>' +
               '<div><div class="form-label">Health</div><select id="pfp-health"><option value=""' + (!p.health?' selected':'') + '>— Not set —</option><option value="green"' + (p.health==='green'?' selected':'') + '>Green</option><option value="amber"' + (p.health==='amber'?' selected':'') + '>Amber</option><option value="red"' + (p.health==='red'?' selected':'') + '>Red</option></select></div>' +
             '</div>' +
-            '<div class="form-group" style="margin-bottom:0"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="pfp-blocker" value="' + (p.blockers||'').replace(/"/g,'&quot;') + '"></div>' +
             saveCancelRow('saveProjectProgress');
         }
+        var openB = openBlockers(p);
         return editBtnRow('progress') +
             '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px;max-width:420px">' +
               fieldBox('Progress', '<div style="display:flex;align-items:center;gap:8px"><div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:' + p.progress + '%"></div></div><span class="text-muted">' + p.progress + '%</span></div>') +
               fieldBox('Health', hdot(p.health) + (p.health ? p.health.charAt(0).toUpperCase() + p.health.slice(1) : '<span class="text-muted">Not set</span>')) +
             '</div>' +
-            (p.blockers ? '<div class="blocker-note" style="margin-top:14px"><i class="ti ti-alert-triangle"></i> <strong>Blocker:</strong> ' + p.blockers + '</div>' : '');
+            '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+                '<div class="form-label" style="margin-bottom:0">Blockers</div>' +
+                '<button class="btn btn-sm" onclick="window.viewBlockers(\'' + p.id + '\')"><i class="ti ti-alert-triangle"></i> View blockers' + (openB.length ? ' (' + openB.length + ')' : '') + '</button>' +
+              '</div>' +
+              (openB.length ? blockerSummaryHtml(p) : '<div class="text-muted" style="font-size:12.5px;margin-top:8px">No open blockers</div>') +
+            '</div>';
       })();
 
       var financialsBody = canViewFin ? (function() {
@@ -6123,11 +6169,12 @@ function pgProjectDetail(pid, tab) {
         { key:'scope',        label:'Scope',           icon:'ti-target-arrow' },
         { key:'decisions',    label:'Decisions',       icon:'ti-gavel' },
         { key:'minutes',      label:'Meeting Minutes', icon:'ti-calendar-event' },
+        { key:'blockers',     label:'Blockers',        icon:'ti-alert-triangle' },
         { key:'attachments',  label:'Attachments',     icon:'ti-paperclip' }
       ];
       var docNavHtml = '<div style="width:180px;flex-shrink:0;display:flex;flex-direction:column;gap:2px">' +
         docNavItems.map(function(n){
-          var cnt = REQ_SCOPE_CONFIG[n.key] ? reqScopeOpenCount(p, n.key) : 0;
+          var cnt = REQ_SCOPE_CONFIG[n.key] ? reqScopeOpenCount(p, n.key) : (n.key === 'blockers' ? openBlockers(p).length : 0);
           var badge = cnt > 0 ? '<span class="nav-badge">' + cnt + '</span>' : '';
           return '<div class="nav-item' + (docSub===n.key?' active':'') + '" onclick="setDocSubTab(\'' + p.id + '\',\'' + n.key + '\')"><i class="ti ' + n.icon + '"></i>' + n.label + badge + '</div>';
         }).join('') +
@@ -6135,6 +6182,7 @@ function pgProjectDetail(pid, tab) {
       var docPanelHtml = docSub === 'attachments' ? attachmentsPanelHtml()
         : docSub === 'decisions' ? renderDecisionsPanel(p, editable)
         : docSub === 'minutes' ? renderMeetingMinutesPanel(p, editable)
+        : docSub === 'blockers' ? renderBlockersPanel(p, editable)
         : renderReqScopePanel(p, docSub, canEditRequirements(p));
       return '<div style="display:flex;gap:24px;align-items:flex-start">' + docNavHtml + '<div style="flex:1;min-width:0">' + docPanelHtml + '</div></div>';
     }
@@ -7326,6 +7374,13 @@ function setDocSubTab(pid2, subTab) {
   refreshTaskView();
 }
 
+// From Progress & Health's "View blockers" button -- jumps straight to
+// Documentation's Blockers sub-tab instead of landing on Requirements.
+window.viewBlockers = function(pid2) {
+  docSubTabState[pid2] = 'blockers';
+  goToProject(pid2, 'documentation');
+};
+
 function setRaidSubTab(pid2, subTab) {
   raidSubTabState[pid2] = subTab;
   refreshTaskView();
@@ -7753,6 +7808,294 @@ function toggleDecisionLog(pid2, itemId) {
   refreshTaskView();
 }
 
+// ── Blockers: structured items replacing the old free-text blocker field --
+// title, reason, dates, owner, an escalation flag, its own comment thread,
+// and a change log, the same shape Requirements/Scope/Decisions already
+// have. Permission follows canEdit(p) (the "editable" passed in), matching
+// Decisions -- not the Requirements-Owner carve-out Requirements/Scope get.
+function blockerRowHtml(p, b, editable) {
+  var key = p.id + '|' + b.id;
+  var logOpenNow = !!blockerLogOpen[key];
+  var logRow = '';
+  if (logOpenNow) {
+    var entries = (b.log && b.log.length) ? b.log.slice().reverse().map(function(e){
+      return '<div class="raid-log-entry"><strong>' + e.date + '</strong> — ' + e.actor + ': ' + e.action + (e.detail ? ' (' + e.detail + ')' : '') + '</div>';
+    }).join('') : '<div class="raid-log-entry text-muted">No history recorded</div>';
+    logRow = '<tr><td colspan="6" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' + entries + '</div></td></tr>';
+  }
+  var itComments = b.comments || [];
+  var cOpenNow = !!blockerCommentsOpen[key];
+  var commentsRow = '';
+  if (cOpenNow) {
+    var commentEntries = itComments.length ? itComments.slice().reverse().map(function(c) {
+      var mine = c.author === actorName();
+      return '<div class="comment-item">' +
+        '<div class="comment-meta"><strong>' + c.author + '</strong> <span class="text-muted">' + c.date + '</span></div>' +
+        '<div class="comment-text">' + c.text + '</div>' +
+        ((editable || mine) ? '<div class="comment-actions"><button class="btn btn-sm" onclick="openEditBlockerComment(\'' + p.id + '\',\'' + b.id + '\',\'' + c.id + '\')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteBlockerComment(\'' + p.id + '\',\'' + b.id + '\',\'' + c.id + '\')"><i class="ti ti-trash"></i></button></div>' : '') +
+        '</div>';
+    }).join('') : '<div class="text-muted" style="font-size:12px;margin-bottom:8px">No comments yet</div>';
+    commentsRow = '<tr><td colspan="6" style="padding:0"><div class="raid-log" style="margin:0 0 10px">' +
+      commentEntries +
+      '<div class="comment-add-row"><textarea id="bl-cmt-input-' + b.id + '" placeholder="Add a comment…" rows="2"></textarea><button class="btn btn-sm btn-primary" onclick="addBlockerComment(\'' + p.id + '\',\'' + b.id + '\')"><i class="ti ti-send"></i> Post</button></div>' +
+      '</div></td></tr>';
+  }
+
+  var since = b.since ? fmtDate(b.since) : '—';
+  var overdue = (!b.resolved && b.target && b.target < todayStr());
+  var target = b.target ? (fmtDate(b.target) + (overdue ? ' <span style="color:var(--bad-tx);font-weight:600">(overdue)</span>' : '')) : '—';
+
+  return '<tr>' +
+    '<td><span style="font-size:13px;font-weight:600">' + b.title + '</span>' + (b.escalation && !b.resolved ? ' <span class="badge badge-red" style="margin-left:4px">Escalation required</span>' : '') + '</td>' +
+    '<td>' + bdg(b.reason) + '</td>' +
+    '<td class="text-muted">' + (b.owner || '—') + inactiveNameBadge(b.owner) + '</td>' +
+    '<td class="text-muted">' + since + '</td>' +
+    '<td class="text-muted">' + target + '</td>' +
+    '<td><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:flex-end">' +
+    '<button class="btn btn-sm" title="Comments" onclick="toggleBlockerComments(\'' + p.id + '\',\'' + b.id + '\')"><i class="ti ' + (cOpenNow?'ti-chevron-up':'ti-message-circle') + '"></i>' + (itComments.length ? ' ' + itComments.length : '') + '</button>' +
+    '<button class="btn btn-sm" title="Change log" onclick="toggleBlockerLog(\'' + p.id + '\',\'' + b.id + '\')"><i class="ti ' + (logOpenNow?'ti-chevron-up':'ti-history') + '"></i></button>' +
+    (editable ? (b.resolved
+      ? '<button class="btn btn-sm" title="Reopen" onclick="reopenBlocker(\'' + p.id + '\',\'' + b.id + '\')"><i class="ti ti-rotate"></i></button>'
+      : '<button class="btn btn-sm btn-good" title="Mark resolved" onclick="resolveBlocker(\'' + p.id + '\',\'' + b.id + '\')"><i class="ti ti-check"></i></button>') : '') +
+    (editable ? '<button class="btn btn-sm" onclick="openBlockerModal(\'' + p.id + '\',\'' + b.id + '\')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteBlockerItem(\'' + p.id + '\',\'' + b.id + '\')"><i class="ti ti-trash"></i></button>' : '') +
+    '</div></td>' +
+  '</tr>' + commentsRow + logRow;
+}
+
+function renderBlockersPanel(p, editable) {
+  var view = blockerViewState[p.id] || 'open';
+  var open = openBlockers(p), resolved = (p.blockers || []).filter(function(b){ return b.resolved; });
+  var list = view === 'open' ? open : resolved;
+
+  var addBtnHtml = editable ? '<button class="btn btn-primary btn-sm mb-12" onclick="openBlockerModal(\'' + p.id + '\',null)"><i class="ti ti-plus"></i> Add Blocker</button>' : '';
+
+  var tabsHtml = '<div class="tab-bar" style="margin-bottom:16px">' +
+    '<div class="tab' + (view==='open'?' active':'') + '" onclick="setBlockerView(\'' + p.id + '\',\'open\')"><i class="ti ti-alert-triangle"></i> Open <span class="badge badge-gray">' + open.length + '</span></div>' +
+    '<div class="tab' + (view==='resolved'?' active':'') + '" onclick="setBlockerView(\'' + p.id + '\',\'resolved\')"><i class="ti ti-circle-check"></i> Resolved <span class="badge badge-gray">' + resolved.length + '</span></div>' +
+    '</div>';
+
+  var header = '<tr><th>Blocker</th><th>Reason</th><th>Owner</th><th>Blocked since</th><th>Target resolution</th><th></th></tr>';
+  var panelHtml = list.length
+    ? '<table class="tasks-table"><thead>' + header + '</thead><tbody>' + list.map(function(b){ return blockerRowHtml(p, b, editable); }).join('') + '</tbody></table>'
+    : '<div class="empty-state" style="padding:30px"><i class="ti ti-alert-triangle"></i><p>' + (view==='open' ? 'No open blockers.' : 'Nothing resolved yet.') + '</p></div>';
+
+  return addBtnHtml + tabsHtml + panelHtml;
+}
+
+function setBlockerView(pid2, view) {
+  blockerViewState[pid2] = view;
+  refreshTaskView();
+}
+
+function toggleBlockerComments(pid2, itemId) {
+  var key = pid2 + '|' + itemId;
+  blockerCommentsOpen[key] = !blockerCommentsOpen[key];
+  refreshTaskView();
+}
+
+function toggleBlockerLog(pid2, itemId) {
+  var key = pid2 + '|' + itemId;
+  blockerLogOpen[key] = !blockerLogOpen[key];
+  refreshTaskView();
+}
+
+function getBlockerItem(pid2, itemId) {
+  var p = D.projects.find(function(x){ return x.id === pid2; });
+  return (p.blockers || []).find(function(x){ return x.id === itemId; });
+}
+
+function openBlockerModal(pid, itemId) {
+  var p = D.projects.find(function(x){ return x.id === pid; });
+  p.blockers = p.blockers || [];
+  var isEdit = itemId != null;
+  var it = isEdit ? p.blockers.find(function(x){ return x.id === itemId; }) : null;
+
+  var reasonOpts = '<option value="">— Select a reason —</option>' + BLOCKER_REASONS.map(function(r){
+    return '<option' + (it && it.reason === r ? ' selected' : '') + '>' + r + '</option>';
+  }).join('');
+
+  var ownerPool = individualResourceNames();
+  if (it && it.owner && ownerPool.indexOf(it.owner) < 0) ownerPool = ownerPool.concat([it.owner]);
+  var ownerOpts = '<option value="">— None —</option>' + ownerPool.map(function(n){
+    return '<option value="' + n.replace(/"/g,'&quot;') + '"' + (it && it.owner===n ? ' selected' : '') + '>' + n + '</option>';
+  }).join('');
+
+  var escVal = it ? !!it.escalation : false;
+  var resVal = it ? !!it.resolved : false;
+
+  showModal('<div class="modal-title">' + (isEdit ? 'Edit blocker' : 'Add blocker') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    '<div class="form-group"><div class="form-label">Title *</div><input type="text" id="bm-title" value="' + (it ? it.title.replace(/"/g,'&quot;') : '') + '" placeholder="What’s blocked?"></div>' +
+    '<div class="form-group"><div class="form-label">Reason *</div><select id="bm-reason">' + reasonOpts + '</select></div>' +
+    '<div class="grid-2">' +
+      '<div class="form-group"><div class="form-label">Blocked since</div><input type="date" id="bm-since" value="' + (it ? (it.since||'') : todayStr()) + '"></div>' +
+      '<div class="form-group"><div class="form-label">Target resolution</div><input type="date" id="bm-target" value="' + (it ? (it.target||'') : '') + '"></div>' +
+    '</div>' +
+    '<div class="form-group"><div class="form-label">Blocker owner</div><select id="bm-owner">' + ownerOpts + '</select></div>' +
+    '<div class="form-group"><div class="form-label">Escalation required</div>' +
+      '<div class="seg" id="bm-esc-seg">' +
+        '<button type="button" class="' + (escVal?'on danger-on':'') + '" onclick="window.__bmSetEsc(true)">Yes</button>' +
+        '<button type="button" class="' + (!escVal?'on':'') + '" onclick="window.__bmSetEsc(false)">No</button>' +
+      '</div>' +
+    '</div>' +
+    (isEdit ? '<div class="form-group"><div class="form-label">Resolved</div>' +
+      '<div class="seg" id="bm-res-seg">' +
+        '<button type="button" class="' + (resVal?'on':'') + '" style="' + (resVal?'background:var(--good);border-color:var(--good)':'') + '" onclick="window.__bmSetRes(true)">Yes</button>' +
+        '<button type="button" class="' + (!resVal?'on':'') + '" onclick="window.__bmSetRes(false)">No</button>' +
+      '</div>' +
+    '</div>' : '') +
+    '<div class="modal-footer">' +
+      (isEdit ? '<button class="btn btn-danger" style="margin-right:auto" onclick="deleteBlockerItem(\'' + pid + '\',\'' + it.id + '\')">Delete</button>' : '') +
+      '<button class="btn" onclick="closeModal()">Cancel</button>' +
+      '<button class="btn btn-primary" id="bm-save">' + (isEdit ? 'Save changes' : 'Add blocker') + '</button>' +
+    '</div>');
+
+  window.__bmEsc = escVal;
+  window.__bmRes = resVal;
+  window.__bmSetEsc = function(v) {
+    window.__bmEsc = v;
+    var seg = document.getElementById('bm-esc-seg');
+    seg.children[0].className = v ? 'on danger-on' : '';
+    seg.children[1].className = v ? '' : 'on';
+  };
+  window.__bmSetRes = function(v) {
+    window.__bmRes = v;
+    var seg = document.getElementById('bm-res-seg');
+    seg.children[0].className = v ? 'on' : '';
+    seg.children[0].style.background = v ? 'var(--good)' : '';
+    seg.children[0].style.borderColor = v ? 'var(--good)' : '';
+    seg.children[1].className = v ? '' : 'on';
+  };
+
+  document.getElementById('bm-save').onclick = async function() {
+    var title = document.getElementById('bm-title').value.trim();
+    var reason = document.getElementById('bm-reason').value;
+    if (!title || !reason) { showToast('Title and reason are required'); return; }
+    var since = document.getElementById('bm-since').value || null;
+    var target = document.getElementById('bm-target').value || null;
+    var ownerName = document.getElementById('bm-owner').value;
+    var ownerResource = ownerName ? resolveResource(ownerName) : null;
+    var escalation = !!window.__bmEsc;
+    var btn = document.getElementById('bm-save'); btn.disabled = true;
+
+    if (isEdit) {
+      var resolved = !!window.__bmRes;
+      var payload = {
+        title: title, reason: reason, blocked_since: since, target_resolution: target,
+        owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
+        escalation_required: escalation, resolved: resolved,
+        resolved_at: resolved ? (it.resolvedDate || todayStr()) : null
+      };
+      var result = await sb.from('blockers').update(payload).eq('id', it.id);
+      if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
+
+      var changes = [];
+      if (it.title !== title) changes.push('Title: "' + it.title + '" → "' + title + '"');
+      if (it.reason !== reason) changes.push('Reason: ' + it.reason + ' → ' + reason);
+      if ((it.since||'') !== (since||'')) changes.push('Blocked since: ' + (it.since?fmtDate(it.since):'—') + ' → ' + (since?fmtDate(since):'—'));
+      if ((it.target||'') !== (target||'')) changes.push('Target resolution: ' + (it.target?fmtDate(it.target):'—') + ' → ' + (target?fmtDate(target):'—'));
+      if ((it.owner||'') !== (ownerName||'')) changes.push('Owner: ' + (it.owner||'—') + ' → ' + (ownerName||'—'));
+      if (!!it.escalation !== escalation) changes.push('Escalation required: ' + (it.escalation?'Yes':'No') + ' → ' + (escalation?'Yes':'No'));
+      if (!!it.resolved !== resolved) changes.push('Resolved: ' + (it.resolved?'Yes':'No') + ' → ' + (resolved?'Yes':'No'));
+
+      it.title = title; it.reason = reason; it.since = since; it.target = target;
+      it.owner = ownerName; it.ownerId = ownerResource ? ownerResource.id : null;
+      it.escalation = escalation; it.resolved = resolved; it.resolvedDate = payload.resolved_at;
+      it.log = it.log || [];
+      if (changes.length) it.log.push(await writeLog('blocker_log', 'blocker_id', it.id, 'Updated', changes.join('; ')));
+      showToast('Blocker updated');
+    } else {
+      var insertResult = await sb.from('blockers').insert({
+        project_id: pid, title: title, reason: reason, blocked_since: since, target_resolution: target,
+        owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName || null,
+        escalation_required: escalation, resolved: false,
+        created_by: D.currentProfile.id, created_by_name: D.currentProfile.display_name
+      }).select().single();
+      if (insertResult.error) { showToast('Could not save: ' + insertResult.error.message); btn.disabled = false; return; }
+      var newIt = {
+        id: insertResult.data.id, title: title, reason: reason, since: since, target: target,
+        owner: ownerName, ownerId: ownerResource ? ownerResource.id : null,
+        escalation: escalation, resolved: false, resolvedDate: null, comments: [], log: []
+      };
+      newIt.log.push(await writeLog('blocker_log', 'blocker_id', newIt.id, 'Added', ''));
+      p.blockers.push(newIt);
+      showToast('Blocker added');
+    }
+    closeModal(); if (window.switchPTab) window.switchPTab('documentation');
+  };
+}
+
+async function deleteBlockerItem(pid2, itemId) {
+  var p = D.projects.find(function(x){ return x.id === pid2; });
+  var it = getBlockerItem(pid2, itemId);
+  if (!it) return;
+  if (!confirm('Delete "' + it.title + '"? This removes its comments and change log too.')) return;
+  var result = await sb.from('blockers').delete().eq('id', itemId);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  p.blockers = p.blockers.filter(function(x){ return x.id !== itemId; });
+  closeModal();
+  refreshTaskView();
+  showToast('Blocker deleted');
+}
+
+async function resolveBlocker(pid2, itemId) {
+  var it = getBlockerItem(pid2, itemId);
+  var today = todayStr();
+  var result = await sb.from('blockers').update({ resolved: true, resolved_at: today }).eq('id', itemId);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  it.resolved = true; it.resolvedDate = today;
+  it.log = it.log || [];
+  it.log.push(await writeLog('blocker_log', 'blocker_id', itemId, 'Updated', 'Resolved: No → Yes'));
+  refreshTaskView();
+  showToast('Blocker marked resolved');
+}
+
+async function reopenBlocker(pid2, itemId) {
+  var it = getBlockerItem(pid2, itemId);
+  var result = await sb.from('blockers').update({ resolved: false, resolved_at: null }).eq('id', itemId);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  it.resolved = false; it.resolvedDate = null;
+  it.log = it.log || [];
+  it.log.push(await writeLog('blocker_log', 'blocker_id', itemId, 'Updated', 'Resolved: Yes → No (reopened)'));
+  refreshTaskView();
+  showToast('Blocker reopened');
+}
+
+async function addBlockerComment(pid2, itemId) {
+  var it = getBlockerItem(pid2, itemId);
+  var el = document.getElementById('bl-cmt-input-' + itemId);
+  var text = el ? el.value.trim() : '';
+  if (!text) { showToast('Comment cannot be empty'); return; }
+  var result = await sb.from('blocker_comments').insert({ blocker_id: itemId, author_id: D.currentProfile.id, author_name: D.currentProfile.display_name, body: text }).select().single();
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  it.comments = it.comments || [];
+  it.comments.push({ id: result.data.id, text: text, author: D.currentProfile.display_name, date: ymd(result.data.created_at) });
+  refreshTaskView();
+  showToast('Comment added');
+}
+
+async function openEditBlockerComment(pid2, itemId, cid) {
+  var it = getBlockerItem(pid2, itemId);
+  var c = it.comments.find(function(x){ return x.id === cid; });
+  var text = prompt('Edit comment:', c.text);
+  if (text == null) return;
+  text = text.trim();
+  if (!text) { showToast('Comment cannot be empty'); return; }
+  var result = await sb.from('blocker_comments').update({ body: text }).eq('id', cid);
+  if (result.error) { showToast('Could not save: ' + result.error.message); return; }
+  c.text = text;
+  refreshTaskView();
+  showToast('Comment updated');
+}
+
+async function deleteBlockerComment(pid2, itemId, cid) {
+  var it = getBlockerItem(pid2, itemId);
+  var result = await sb.from('blocker_comments').delete().eq('id', cid);
+  if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
+  it.comments = it.comments.filter(function(x){ return x.id !== cid; });
+  refreshTaskView();
+  showToast('Comment deleted');
+}
+
 // ── Meeting Minutes: searchable meeting notes -- date/time, attendees (picked
 // from the resource roster), and a free-form recap.
 function renderMeetingMinutesPanel(p, editable) {
@@ -8081,22 +8424,21 @@ window.saveProjectSchedule = async function(pid) {
 
 window.saveProjectProgress = async function(pid) {
   var p = D.projects.find(function(x){ return x.id === pid; });
-  var beforeSnapshot = { progress: p.progress, health: p.health, blockers: p.blockers };
+  var beforeSnapshot = { progress: p.progress, health: p.health };
   var newVals = {
     progress: parseInt(document.getElementById('pfp-progress').value) || 0,
-    health: document.getElementById('pfp-health').value || null,
-    blockers: document.getElementById('pfp-blocker').value
+    health: document.getElementById('pfp-health').value || null
   };
   var btn = document.getElementById('pf-save'); if (btn) btn.disabled = true;
   var result = await sb.from('projects').update(newVals).eq('id', pid);
   if (result.error) { showToast('Could not save: ' + result.error.message); if (btn) btn.disabled = false; return; }
 
-  p.progress = newVals.progress; p.health = newVals.health; p.blockers = newVals.blockers;
+  p.progress = newVals.progress; p.health = newVals.health;
   projectInfoEditing = null;
   showToast('Saved'); pgProjectDetail(pid, 'overview');
 
   try {
-    await logProjectChanges(pid, beforeSnapshot, { progress: newVals.progress, health: newVals.health, blockers: newVals.blockers }, 'edit');
+    await logProjectChanges(pid, beforeSnapshot, { progress: newVals.progress, health: newVals.health }, 'edit');
   } catch (e) { console.error('Could not record change history:', e); }
 };
 
@@ -8187,7 +8529,6 @@ function editProject(pid) {
     '</div>' +
     '<div class="form-group"><div class="form-label">Categories</div><div>' + catCheckboxes + '</div></div>' +
     '<div class="form-group"><div class="form-label">Description</div><textarea id="ep-desc">' + (p.description||'') + '</textarea></div>' +
-    '<div class="form-group"><div class="form-label">Current blocker (leave blank if none)</div><input type="text" id="ep-blocker" value="' + (p.blockers||'') + '"></div>' +
     '<div class="divider"></div>' +
     '<div class="grid-2">' +
     '<div class="form-group"><div class="form-label">Sponsor</div>' + (D.role === 'admin' ? '<select id="ep-sponsor">' + sponsorOpts + '</select>' : '<div style="padding:8px 0;color:var(--text-2)">' + (p.sponsor || '—') + inactiveNameBadge(p.sponsor) + '<div class="form-sub" style="margin-top:2px">Only a PMO Admin can reassign the sponsor</div></div>') + '</div>' +
@@ -8206,7 +8547,7 @@ async function saveProject(pid) {
   var beforeSnapshot = {
     name: p.name, stage: p.stage, status: p.status, phase: p.phase, value: p.value,
     businessUnit: p.businessUnit, sponsor: p.sponsor, owner: p.owner, ownerId: p.ownerId, start: p.start, end: p.end,
-    progress: p.progress, health: p.health, description: p.description, blockers: p.blockers,
+    progress: p.progress, health: p.health, description: p.description,
     deliveryMethodology: p.deliveryMethodology, tshirtSize: p.tshirtSize
   };
   var newVals = {
@@ -8220,8 +8561,7 @@ async function saveProject(pid) {
     end_date: document.getElementById('ep-end').value || null,
     progress: parseInt(document.getElementById('ep-progress').value) || 0,
     health: document.getElementById('ep-health').value || null,
-    description: document.getElementById('ep-desc').value,
-    blockers: document.getElementById('ep-blocker').value
+    description: document.getElementById('ep-desc').value
   };
   var buEl = document.getElementById('ep-bu'); if (buEl) newVals.business_unit = buEl.value || null;
   var spEl = document.getElementById('ep-sponsor');
@@ -8273,7 +8613,7 @@ async function saveProject(pid) {
   p.value = newVals.value_area; p.start = newVals.start_date; p.end = newVals.end_date; p.progress = newVals.progress;
   p.deliveryMethodology = newVals.delivery_methodology;
   p.tshirtSize = newVals.tshirt_size;
-  p.health = newVals.health; p.description = newVals.description; p.blockers = newVals.blockers;
+  p.health = newVals.health; p.description = newVals.description;
   if (buEl) p.businessUnit = newVals.business_unit;
   if (spEl) { p.sponsor = newVals.sponsor; p.sponsorResourceId = newVals.sponsor_resource_id; }
   if (pmEl) { p.owner = pmEl.value; p.ownerId = newVals.owner_id; }
@@ -8288,7 +8628,7 @@ async function saveProject(pid) {
       name: newVals.name, status: newVals.status, phase: newVals.phase, value: newVals.value_area,
       businessUnit: newVals.business_unit, sponsor: newVals.sponsor,
       start: newVals.start_date, end: newVals.end_date, progress: newVals.progress, health: newVals.health,
-      description: newVals.description, blockers: newVals.blockers, stage: newVals.stage || beforeSnapshot.stage,
+      description: newVals.description, stage: newVals.stage || beforeSnapshot.stage,
       deliveryMethodology: newVals.delivery_methodology, tshirtSize: newVals.tshirt_size
     };
     if (pmEl) afterSnapshot.owner = newVals.owner_name;
@@ -11498,7 +11838,7 @@ function exportProjectsToExcel() {
       'Pre-Hold Stage': EXPORT_STAGE_LABELS[p.preHoldStage] || p.preHoldStage || '',
       'Held At': p.heldAt || '',
       'Description': p.description || '',
-      'Blockers': p.blockers || '',
+      'Open Blockers': openBlockers(p).map(function(b){ return b.title; }).join('; '),
       'Opportunity Type': p.estimatedType || '',
       'Estimated Amount': p.estimatedAmount != null ? p.estimatedAmount : '',
       'Estimated Frequency': p.estimatedFrequency || '',
@@ -13830,7 +14170,7 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + inactiveNameBadge(p.owner) + '</td>' +
       '<td>' + (p.end || '<span class="text-muted">TBD</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td class="text-muted">' + doneTasks + '/' + myTasks.length + ' done</td>' +
-      '<td>' + (p.blockers ? '<span style="color:var(--coral-strong-tx);font-size:12px"><i class="ti ti-alert-triangle"></i> Yes</span>' : '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (openBlockers(p).length ? '<span style="color:var(--coral-strong-tx);font-size:12px"><i class="ti ti-alert-triangle"></i> ' + openBlockers(p).length + '</span>' : '<span class="text-muted">—</span>') + '</td>' +
       '<td><button class="btn btn-sm" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i> View</button></td>' +
       '</tr>';
   }).join('');
