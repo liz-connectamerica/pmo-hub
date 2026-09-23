@@ -2169,7 +2169,7 @@ var futurePlanningTagFilter = [];
 var futurePlanningCommitmentFilter = [];
 var allProjectsState = {
   search: '', sort: 'name', dir: 'asc', selected: {},
-  filters: { category:[], businessUnit:[], stage:[], status:[], phase:[], commitment:[], value:[], sponsor:[], owner:[],
+  filters: { category:[], businessUnit:[], stage:[], status:[], phase:[], commitment:[], value:[], sponsor:[], owner:[], requirementsOwner:[], program:[],
     tshirtSize:[], health:[], deliveryMethodology:[], estimatedType:[], valueConfidence:[], costConfidence:[] },
   openFilter: null
 };
@@ -9687,12 +9687,20 @@ function pgAllProjects() {
   }
   var st = allProjectsState;
 
-  var sponsorChoices = [], ownerChoices = [];
+  function programLabelFor(p) {
+    var prog = p.programId ? D.programs.find(function(x){ return x.id === p.programId; }) : null;
+    return prog ? (programLabel(prog) + ' — ' + prog.name) : '';
+  }
+
+  var sponsorChoices = [], ownerChoices = [], reqOwnerChoices = [], programChoices = [];
   D.projects.forEach(function(p) {
     if (p.sponsor && sponsorChoices.indexOf(p.sponsor) < 0) sponsorChoices.push(p.sponsor);
     if (p.owner && ownerChoices.indexOf(p.owner) < 0) ownerChoices.push(p.owner);
+    if (p.requirementsOwner && reqOwnerChoices.indexOf(p.requirementsOwner) < 0) reqOwnerChoices.push(p.requirementsOwner);
+    var progLbl = programLabelFor(p);
+    if (progLbl && programChoices.indexOf(progLbl) < 0) programChoices.push(progLbl);
   });
-  sponsorChoices.sort(); ownerChoices.sort();
+  sponsorChoices.sort(); ownerChoices.sort(); reqOwnerChoices.sort(); programChoices.sort();
 
   var stageChoices = ['backlog','planned','active','hold','complete'];
 
@@ -9710,6 +9718,8 @@ function pgAllProjects() {
   if (st.filters.value.length) list = list.filter(function(p){ return st.filters.value.indexOf(fv(p.value)) >= 0; });
   if (st.filters.sponsor.length) list = list.filter(function(p){ return st.filters.sponsor.indexOf(fv(p.sponsor)) >= 0; });
   if (st.filters.owner.length) list = list.filter(function(p){ return st.filters.owner.indexOf(fv(p.owner)) >= 0; });
+  if (st.filters.requirementsOwner.length) list = list.filter(function(p){ return st.filters.requirementsOwner.indexOf(fv(p.requirementsOwner)) >= 0; });
+  if (st.filters.program.length) list = list.filter(function(p){ return st.filters.program.indexOf(fv(programLabelFor(p))) >= 0; });
   if (st.filters.tshirtSize.length) list = list.filter(function(p){ return st.filters.tshirtSize.indexOf(fv(p.tshirtSize)) >= 0; });
   if (st.filters.health.length) list = list.filter(function(p){ return st.filters.health.indexOf(fv(p.health)) >= 0; });
   if (st.filters.deliveryMethodology.length) list = list.filter(function(p){ return st.filters.deliveryMethodology.indexOf(fv(p.deliveryMethodology)) >= 0; });
@@ -9718,7 +9728,8 @@ function pgAllProjects() {
   if (st.filters.costConfidence.length) list = list.filter(function(p){ return st.filters.costConfidence.indexOf(fv(p.costConfidence)) >= 0; });
 
   list.sort(function(a,b) {
-    var av = a[st.sort]; var bv = b[st.sort];
+    var av = st.sort === 'program' ? programLabelFor(a) : a[st.sort];
+    var bv = st.sort === 'program' ? programLabelFor(b) : b[st.sort];
     av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
     if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
     var cmp = av < bv ? -1 : av > bv ? 1 : 0;
@@ -9739,6 +9750,7 @@ function pgAllProjects() {
       '<td class="bold">' + p.name + '</td>' +
       '<td>' + ((p.categories && p.categories.length) ? p.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.businessUnit || '<span class="text-muted">—</span>') + '</td>' +
+      '<td>' + (p.programId ? '<span style="cursor:pointer" onclick="goToProgram(\'' + p.programId + '\')">' + programLabelFor(p) + '</span>' : '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + stagePill(p.stage) + '</td>' +
       '<td>' + (p.status ? bdg(p.status) : '<span class="text-muted">—</span>') + ' ' + lateBadgeHtml(isProjectLate(p)) + '</td>' +
       '<td>' + (p.phase || '<span class="text-muted">—</span>') + '</td>' +
@@ -9746,6 +9758,7 @@ function pgAllProjects() {
       '<td>' + (p.value || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + (p.sponsor || '<span class="text-muted">—</span>') + inactiveNameBadge(p.sponsor) + '</td>' +
       '<td>' + (p.owner || '<span class="text-muted">—</span>') + inactiveNameBadge(p.owner) + '</td>' +
+      '<td>' + (p.requirementsOwner || '<span class="text-muted">—</span>') + inactiveNameBadge(p.requirementsOwner) + '</td>' +
       '<td>' + (p.tshirtSize || '<span class="text-muted">—</span>') + '</td>' +
       '<td>' + hdot(p.health) + (EXPORT_HEALTH_LABELS[p.health] || '<span class="text-muted">Not set</span>') + '</td>' +
       '<td>' + (p.deliveryMethodology || '<span class="text-muted">—</span>') + '</td>' +
@@ -9768,6 +9781,7 @@ function pgAllProjects() {
       '<th class="sortable-th" onclick="setAllProjSort(\'name\')">Project ' + arrow('name') + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'categories\')">Category ' + arrow('categories') + '</span>' + filterIcon('category', st.filters.category.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'program\')">Program ' + arrow('program') + '</span>' + filterIcon('program', st.filters.program.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'stage\')">Stage ' + arrow('stage') + '</span>' + filterIcon('stage', st.filters.stage.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'phase\')">Phase ' + arrow('phase') + '</span>' + filterIcon('phase', st.filters.phase.length>0) + '</th>' +
@@ -9775,6 +9789,7 @@ function pgAllProjects() {
       '<th class="sortable-th"><span onclick="setAllProjSort(\'value\')">Value Area ' + arrow('value') + '</span>' + filterIcon('value', st.filters.value.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'sponsor\')">Sponsor ' + arrow('sponsor') + '</span>' + filterIcon('sponsor', st.filters.sponsor.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'owner\')">Owner ' + arrow('owner') + '</span>' + filterIcon('owner', st.filters.owner.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setAllProjSort(\'requirementsOwner\')">Requirements Owner ' + arrow('requirementsOwner') + '</span>' + filterIcon('requirementsOwner', st.filters.requirementsOwner.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'tshirtSize\')">T-shirt Size ' + arrow('tshirtSize') + '</span>' + filterIcon('tshirtSize', st.filters.tshirtSize.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'health\')">Health ' + arrow('health') + '</span>' + filterIcon('health', st.filters.health.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'deliveryMethodology\')">Delivery Methodology ' + arrow('deliveryMethodology') + '</span>' + filterIcon('deliveryMethodology', st.filters.deliveryMethodology.length>0) + '</th>' +
@@ -9782,7 +9797,7 @@ function pgAllProjects() {
       '<th class="sortable-th"><span onclick="setAllProjSort(\'valueConfidence\')">Opportunity Type Confidence ' + arrow('valueConfidence') + '</span>' + filterIcon('valueConfidence', st.filters.valueConfidence.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setAllProjSort(\'costConfidence\')">Cost Estimate Confidence ' + arrow('costConfidence') + '</span>' + filterIcon('costConfidence', st.filters.costConfidence.length>0) + '</th>' +
       '<th></th>' +
-    '</tr></thead><tbody>' + (rows || '<tr><td colspan="18" class="text-muted" style="text-align:center;padding:20px">No projects match these filters</td></tr>') + '</tbody></table></div></div>';
+    '</tr></thead><tbody>' + (rows || '<tr><td colspan="20" class="text-muted" style="text-align:center;padding:20px">No projects match these filters</td></tr>') + '</tbody></table></div></div>';
 
   window.onAllProjSearch = function(v) {
     st.search = v; pgAllProjects();
@@ -9798,9 +9813,9 @@ function pgAllProjects() {
   window.clearAllProjSelection = function() { st.selected = {}; withScrollPreserved(pgAllProjects); };
 
   window.toggleAllProjFilter = function(col) {
-    var labelMap = { category:'Category', businessUnit:'Business Unit', stage:'Stage', status:'Status', phase:'Phase', commitment:'Commitment', value:'Value Area', sponsor:'Sponsor', owner:'Owner',
+    var labelMap = { category:'Category', businessUnit:'Business Unit', program:'Program', stage:'Stage', status:'Status', phase:'Phase', commitment:'Commitment', value:'Value Area', sponsor:'Sponsor', owner:'Owner', requirementsOwner:'Requirements Owner',
       tshirtSize:'T-shirt Size', health:'Health', deliveryMethodology:'Delivery Methodology', estimatedType:'Opportunity Type', valueConfidence:'Opportunity Type Confidence', costConfidence:'Cost Estimate Confidence' };
-    var baseChoicesMap = { category:CATEGORIES, businessUnit:BUSINESS_UNITS, stage:stageChoices, status:STATUSES, phase:PHASES, commitment:COMMITMENTS, value:VALUE_AREAS, sponsor:sponsorChoices, owner:ownerChoices,
+    var baseChoicesMap = { category:CATEGORIES, businessUnit:BUSINESS_UNITS, program:programChoices, stage:stageChoices, status:STATUSES, phase:PHASES, commitment:COMMITMENTS, value:VALUE_AREAS, sponsor:sponsorChoices, owner:ownerChoices, requirementsOwner:reqOwnerChoices,
       tshirtSize:TSHIRT_SIZES, health:['green','amber','red'], deliveryMethodology:['Agile','Waterfall','Hybrid'], estimatedType:['Revenue','Savings'], valueConfidence:CONFIDENCE_LEVELS, costConfidence:CONFIDENCE_LEVELS };
     // Stage can never actually be blank (defaults to Backlog), so it's the
     // one column that doesn't get a "Not set" option -- every other column
@@ -9827,7 +9842,7 @@ function pgAllProjects() {
     var selectedIds = Object.keys(st.selected).filter(function(id){ return st.selected[id]; });
     if (!selectedIds.length) return;
     window.__bulkEditSelectedIds = selectedIds;
-    var fieldOpts = '<option value="sponsor">Sponsor</option><option value="owner">Owner</option><option value="businessUnit">Business Unit</option>' +
+    var fieldOpts = '<option value="sponsor">Sponsor</option><option value="owner">Owner</option><option value="requirementsOwner">Requirements Owner</option><option value="businessUnit">Business Unit</option><option value="program">Program</option>' +
       '<option value="value">Value Area</option><option value="commitment">Commitment</option><option value="status">Status</option><option value="phase">Phase</option>' +
       '<option value="tshirtSize">T-shirt Size</option><option value="health">Health</option><option value="deliveryMethodology">Delivery Methodology</option>' +
       '<option value="estimatedType">Opportunity Type</option><option value="valueConfidence">Opportunity Type Confidence</option><option value="costConfidence">Cost Estimate Confidence</option>';
@@ -9848,6 +9863,14 @@ function pgAllProjects() {
     } else if (field === 'owner') {
       var ownerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
       html = '<div class="form-group"><div class="form-label">New owner</div><select id="bulk-value-input">' + ownerOpts + '</select></div>';
+    } else if (field === 'requirementsOwner') {
+      var reqOwnerOpts = '<option value="">— None —</option>' + individualResourceNames().map(function(n){ return '<option>' + n + '</option>'; }).join('');
+      html = '<div class="form-group"><div class="form-label">New requirements owner</div><select id="bulk-value-input">' + reqOwnerOpts + '</select></div>';
+    } else if (field === 'program') {
+      var progOpts = '<option value="">— None —</option>' + D.programs.slice().sort(function(a,b){ return programLabel(a).localeCompare(programLabel(b)); }).map(function(prog){
+        return '<option value="' + prog.id + '">' + programLabel(prog) + ' — ' + prog.name + '</option>';
+      }).join('');
+      html = '<div class="form-group"><div class="form-label">New program</div><select id="bulk-value-input">' + progOpts + '</select></div>';
     } else if (field === 'tshirtSize') {
       html = '<div class="form-group"><div class="form-label">New T-shirt size</div><select id="bulk-value-input"><option value="">— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>';
     } else if (field === 'health') {
@@ -9875,6 +9898,7 @@ function pgAllProjects() {
       tshirtSize:'tshirt_size', health:'health', deliveryMethodology:'delivery_methodology', estimatedType:'estimated_type', valueConfidence:'value_confidence', costConfidence:'cost_confidence' };
     var ownerResource = null;
     var sponsorResource = null;
+    var reqOwnerResource = null;
     var updatePayload = {};
     if (field === 'owner') {
       ownerResource = resolveResource(value);
@@ -9882,6 +9906,11 @@ function pgAllProjects() {
     } else if (field === 'sponsor') {
       sponsorResource = resolveResource(value);
       updatePayload = { sponsor_resource_id: sponsorResource ? sponsorResource.id : null, sponsor: value || null };
+    } else if (field === 'requirementsOwner') {
+      reqOwnerResource = resolveResource(value);
+      updatePayload = { requirements_owner_id: reqOwnerResource ? reqOwnerResource.id : null, requirements_owner_name: value || null };
+    } else if (field === 'program') {
+      updatePayload = { program_id: value || null };
     } else {
       updatePayload[columnMap[field]] = value || null;
     }
@@ -9894,6 +9923,8 @@ function pgAllProjects() {
       if (!proj) continue;
       if (field === 'owner') { proj.owner = value || ''; proj.ownerId = ownerResource ? ownerResource.id : null; if (ownerResource) await applyOwnerAsLead(proj); }
       else if (field === 'sponsor') { proj.sponsor = value || ''; proj.sponsorResourceId = sponsorResource ? sponsorResource.id : null; }
+      else if (field === 'requirementsOwner') { proj.requirementsOwner = value || ''; proj.requirementsOwnerId = reqOwnerResource ? reqOwnerResource.id : null; }
+      else if (field === 'program') proj.programId = value || null;
       else if (field === 'businessUnit') proj.businessUnit = value;
       else if (field === 'value') proj.value = value;
       else proj[field] = value;

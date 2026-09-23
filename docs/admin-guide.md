@@ -187,10 +187,10 @@ Similar timeline to Roadmap, but scoped to backlog projects with only a target-q
 
 ## All Projects
 
-A single admin-only table of every project regardless of stage, with a column — sortable and filterable — for every field Bulk Edit can set: category, business unit, stage, status, phase, commitment, value area, sponsor, owner, T-shirt size, health, delivery methodology, opportunity type, and both confidence ratings. Every filter also offers a **Not set** option, to isolate exactly which projects are missing a given field — Stage is the one exception, since it can never actually be blank. Two things live here that don't exist elsewhere:
+A single admin-only table of every project regardless of stage, with a column — sortable and filterable — for every field Bulk Edit can set: category, business unit, program, stage, status, phase, commitment, value area, sponsor, owner, requirements owner, T-shirt size, health, delivery methodology, opportunity type, and both confidence ratings. Every filter also offers a **Not set** option, to isolate exactly which projects are missing a given field — Stage is the one exception, since it can never actually be blank. Two things live here that don't exist elsewhere:
 
 - **New project** — create a project directly, bypassing the request/approval workflow entirely (useful for adding already-in-flight work).
-- **Bulk edit** — select multiple rows and set one field across all of them at once: Sponsor, Owner, Business Unit, Value Area, Commitment, Status, Phase, T-shirt Size, Health, Delivery Methodology, Opportunity Type, Opportunity Type Confidence, or Cost Estimate Confidence.
+- **Bulk edit** — select multiple rows and set one field across all of them at once: Sponsor, Owner, Requirements Owner, Business Unit, Program, Value Area, Commitment, Status, Phase, T-shirt Size, Health, Delivery Methodology, Opportunity Type, Opportunity Type Confidence, or Cost Estimate Confidence. Program is the same reassignment a program's own Add/Change picker does, just across many projects at once — it doesn't touch a program-scoped priority order.
 
 ## Import Projects
 
