@@ -41,7 +41,7 @@ A read-only, portfolio-wide "what's going on" pulse — everyone sees the same t
 A month-by-month timeline (Gantt-style) of active and planned projects, grouped by category. You can:
 
 - Switch the date window between **Next 12 months**, **Last 12 months**, or a **specific year**
-- Filter by category tab or by tag
+- Filter by category tab, by tag, or by Commitment (Must/Should/Want/Won't/Needs commitment)
 - Click the eye icon on any row to jump to that project
 
 A project's timeline row normally shows a colored bar for its current phase. If its target end date has already passed, that's replaced with a red **"Late by N days"** note and the actual target end date; a project with real dates that just fall entirely outside the window you're viewing shows **"Outside this range"** instead.

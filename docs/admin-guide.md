@@ -183,6 +183,7 @@ Similar timeline to Roadmap, but scoped to backlog projects with only a target-q
 - Click the calendar icon on an estimated project to **change its target quarter** (a simple dropdown, not drag-and-drop)
 - **Schedule now** to convert an estimate into real start/end dates
 - See two callout lists: **Needs an estimate** (backlog projects with no target quarter at all) and **Missing a schedule** (active/planned projects with no start/end date — usually a sign of a bad import)
+- Filter by tag or by Commitment (Must/Should/Want/Won't/Needs commitment), same as Roadmap
 
 ## All Projects
 
