@@ -855,6 +855,13 @@ function tagFilterBarHtml(activeTags, openFnName) {
   '</div>';
 }
 
+function commitmentFilterBarHtml(activeVals, openFnName) {
+  return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px">' +
+    '<button class="btn btn-sm" onclick="' + openFnName + '()"><i class="ti ti-list-check"></i> Filter by commitment' + (activeVals.length ? ' (' + activeVals.length + ')' : '') + '</button>' +
+    activeVals.map(function(t){ return tagBadge(t); }).join('') +
+  '</div>';
+}
+
 function openTagPicker(currentTagNames, onSave, allowCreate) {
   if (allowCreate === undefined) allowCreate = true;
   var selected = currentTagNames.slice();
@@ -2112,11 +2119,14 @@ var activeProjState = { sort:'name', dir:'asc', search:'', category:'All',
   filters: { tags:[], status:[], commitment:[], phase:[], owner:[] }, openFilter:null };
 var completedProjState = { sort:'completedAt', dir:'desc', search:'', category:'All', tagFilter:[] };
 var roadmapTagFilter = [];
+var roadmapCommitmentFilter = [];
 var roadmapRangeMode = 'next12'; // 'next12' | 'last12' | 'year'
 var roadmapSelectedYear = new Date().getFullYear();
 var futurePlanningRangeMode = 'next12';
 var futurePlanningSelectedYear = new Date().getFullYear();
 var futurePlanningCategoryFilter = 'All';
+var futurePlanningTagFilter = [];
+var futurePlanningCommitmentFilter = [];
 var allProjectsState = {
   search: '', sort: 'name', dir: 'asc', selected: {},
   filters: { category:[], businessUnit:[], stage:[], status:[], phase:[], commitment:[], value:[], sponsor:[], owner:[],
@@ -8508,6 +8518,12 @@ function pgFuturePlanning() {
   if (futurePlanningCategoryFilter !== 'All') {
     eligibleProjects = eligibleProjects.filter(function(p){ return projectMatchesCategory(p, futurePlanningCategoryFilter); });
   }
+  if (futurePlanningTagFilter.length) {
+    eligibleProjects = eligibleProjects.filter(function(p){ return futurePlanningTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
+  }
+  if (futurePlanningCommitmentFilter.length) {
+    eligibleProjects = eligibleProjects.filter(function(p){ return futurePlanningCommitmentFilter.indexOf(p.commitment || 'Needs commitment') >= 0; });
+  }
 
   eligibleProjects.forEach(function(p) {
     if (p.start && p.end) {
@@ -8608,6 +8624,8 @@ function pgFuturePlanning() {
   document.getElementById('content').innerHTML =
     dateRangeControlHtml(futurePlanningRangeMode, futurePlanningSelectedYear, 'setFuturePlanningRangeMode', 'setFuturePlanningYear') +
     categoryTabsHtml +
+    tagFilterBarHtml(futurePlanningTagFilter, 'openFuturePlanningTagFilter') +
+    commitmentFilterBarHtml(futurePlanningCommitmentFilter, 'openFuturePlanningCommitmentFilter') +
     timelineHtml2 +
     needsEstimateSection +
     missingScheduleSection;
@@ -8615,6 +8633,22 @@ function pgFuturePlanning() {
   window.setFuturePlanningRangeMode = function(mode) { futurePlanningRangeMode = mode; pgFuturePlanning(); };
   window.setFuturePlanningYear = function(year) { futurePlanningSelectedYear = parseInt(year); pgFuturePlanning(); };
   window.setFuturePlanningCategory = function(cat) { futurePlanningCategoryFilter = cat; pgFuturePlanning(); };
+  window.openFuturePlanningTagFilter = function() {
+    openFilterModal('Tags', D.tags.map(function(t){ return t.name; }),
+      function() { return futurePlanningTagFilter; },
+      function(val) { var i = futurePlanningTagFilter.indexOf(val); if (i>=0) futurePlanningTagFilter.splice(i,1); else futurePlanningTagFilter.push(val); },
+      function() { futurePlanningTagFilter = []; },
+      pgFuturePlanning
+    );
+  };
+  window.openFuturePlanningCommitmentFilter = function() {
+    openFilterModal('Commitment', COMMITMENTS.concat(['Needs commitment']),
+      function() { return futurePlanningCommitmentFilter; },
+      function(val) { var i = futurePlanningCommitmentFilter.indexOf(val); if (i>=0) futurePlanningCommitmentFilter.splice(i,1); else futurePlanningCommitmentFilter.push(val); },
+      function() { futurePlanningCommitmentFilter = []; },
+      pgFuturePlanning
+    );
+  };
 
 
   window.openSetQuarterModal = function(pid) {
@@ -8718,6 +8752,7 @@ function pgRoadmap() {
   }
   var visibleProjects = roadmapCategoryFilter === 'All' ? all : all.filter(function(p){ return projectMatchesCategory(p, roadmapCategoryFilter); });
   if (roadmapTagFilter.length) visibleProjects = visibleProjects.filter(function(p){ return roadmapTagFilter.some(function(t){ return (p.tags||[]).indexOf(t) >= 0; }); });
+  if (roadmapCommitmentFilter.length) visibleProjects = visibleProjects.filter(function(p){ return roadmapCommitmentFilter.indexOf(p.commitment || 'Needs commitment') >= 0; });
   visibleProjects = visibleProjects.slice().sort(function(a,b){
     if (!a.end && !b.end) return 0;
     if (!a.end) return 1;
@@ -8778,7 +8813,7 @@ function pgRoadmap() {
   var msItems = [];
   D.projects.filter(function(p){ return p.stage==='active'; }).forEach(function(p) {
     p.milestones.filter(function(m){ return !m.done; }).forEach(function(m) {
-      msItems.push({ project:p.name, milestone:m.name, due:m.date, owner: p.owner || 'Unassigned', late: isMilestoneLate(m), categories: p.categories || [], tags: p.tags || [] });
+      msItems.push({ project:p.name, milestone:m.name, due:m.date, owner: p.owner || 'Unassigned', late: isMilestoneLate(m), categories: p.categories || [], tags: p.tags || [], commitment: p.commitment || 'Needs commitment' });
     });
   });
   if (roadmapCategoryFilter !== 'All') {
@@ -8788,6 +8823,9 @@ function pgRoadmap() {
   }
   if (roadmapTagFilter.length) {
     msItems = msItems.filter(function(it){ return roadmapTagFilter.some(function(t){ return it.tags.indexOf(t) >= 0; }); });
+  }
+  if (roadmapCommitmentFilter.length) {
+    msItems = msItems.filter(function(it){ return roadmapCommitmentFilter.indexOf(it.commitment) >= 0; });
   }
 
   var st = roadmapMsState;
@@ -8834,6 +8872,7 @@ function pgRoadmap() {
     dateRangeControlHtml(roadmapRangeMode, roadmapSelectedYear, 'setRoadmapRangeMode', 'setRoadmapYear') +
     categoryTabsHtml +
     tagFilterBarHtml(roadmapTagFilter, 'openRoadmapTagFilter') +
+    commitmentFilterBarHtml(roadmapCommitmentFilter, 'openRoadmapCommitmentFilter') +
     '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">' + windowMonths + '-month view — ' + rangeLabel + '</div>' +
     phaseLegend +
     '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:var(--text-faint);text-align:center">' + m + '</div>'; }).join('') + '</div>' +
@@ -8852,6 +8891,14 @@ function pgRoadmap() {
       function() { return roadmapTagFilter; },
       function(val) { var i = roadmapTagFilter.indexOf(val); if (i>=0) roadmapTagFilter.splice(i,1); else roadmapTagFilter.push(val); },
       function() { roadmapTagFilter = []; },
+      pgRoadmap
+    );
+  };
+  window.openRoadmapCommitmentFilter = function() {
+    openFilterModal('Commitment', COMMITMENTS.concat(['Needs commitment']),
+      function() { return roadmapCommitmentFilter; },
+      function(val) { var i = roadmapCommitmentFilter.indexOf(val); if (i>=0) roadmapCommitmentFilter.splice(i,1); else roadmapCommitmentFilter.push(val); },
+      function() { roadmapCommitmentFilter = []; },
       pgRoadmap
     );
   };
