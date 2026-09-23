@@ -12923,6 +12923,7 @@ async function saveResource(rid) {
 // project_change_log via logProjectChanges) -- there's no separate draft/session
 // state, so a change made here is immediately live everywhere else.
 var crState = { ready:false, lastTouched:{}, expanded:{}, sort:{}, tab:'overview', mustSub:'checklist', shouldSub:'checklist', shouldFilter:false };
+var crGroupCollapsed = {};
 
 async function pgCommitmentReview() {
   tb('Commitment Portfolio Review');
@@ -13110,6 +13111,31 @@ function crSortRows(list, tableKey, defaultCol) {
   });
 }
 
+// Groups a project list into collapsible-by-Value-Area cards, same chevron/
+// badge/count header Portfolio uses. innerHtmlFn(groupList, groupKey) renders
+// whatever goes inside each group -- crTableHtml for the checklist tables,
+// a plain row-mapper for Want/Won't's lighter list.
+window.crToggleGroup = function(key) { crGroupCollapsed[key] = !crGroupCollapsed[key]; withScrollPreserved(renderCommitmentReview); };
+function crGroupByValueHtml(list, keyPrefix, innerHtmlFn) {
+  var byVal = {};
+  list.forEach(function(p){ var v = p.value || 'Not set'; (byVal[v] = byVal[v] || []).push(p); });
+  var valNames = Object.keys(byVal).sort();
+  if (!valNames.length) return '';
+  return valNames.map(function(v) {
+    var groupKey = keyPrefix + '|' + v;
+    var collapsed = !!crGroupCollapsed[groupKey];
+    var groupList = byVal[v];
+    return '<div class="card mb-12" style="padding:0;overflow:hidden">' +
+      '<div style="display:flex;align-items:center;gap:10px;padding:14px 18px;cursor:pointer" onclick="window.crToggleGroup(\'' + groupKey.replace(/'/g,"\\'") + '\')">' +
+        '<i class="ti ti-chevron-' + (collapsed ? 'right' : 'down') + '" style="font-size:12px;color:var(--text-faint)"></i>' +
+        '<span class="badge badge-purple" style="font-size:12.5px;padding:4px 12px">' + v + '</span>' +
+        '<span class="text-muted" style="font-size:12px">' + groupList.length + ' project' + (groupList.length===1?'':'s') + '</span>' +
+      '</div>' +
+      (collapsed ? '' : '<div style="padding:0 18px 18px">' + innerHtmlFn(groupList, groupKey) + '</div>') +
+    '</div>';
+  }).join('');
+}
+
 function crTableHtml(list, tableKey) {
   var sorted = crSortRows(list, tableKey, 'name');
   function th(col, label) { return '<th class="sortable-th" onclick="window.crSetSort(\'' + tableKey + '\',\'' + col + '\')">' + label + crSortArrow(tableKey, col) + '</th>'; }
@@ -13188,12 +13214,11 @@ function crRenderOverview() {
     stat(must.length, 'Must', 'var(--bad)') + stat(should.length, 'Should', 'var(--warn)') + stat(want.length, 'Want', 'var(--blue-tx)') + stat(wont.length, 'Won’t', 'var(--text-faint)') + stat(needsCommitment.length, 'Needs commitment', 'var(--text)') +
   '</div>';
   if (needsCommitment.length) {
-    html += '<div class="card"><div class="section-title">' + needsCommitment.length + ' project' + (needsCommitment.length===1?'':'s') + ' still needs a Commitment</div>' +
-      '<div class="section-note" style="color:var(--text-muted);font-size:12.5px;margin-bottom:14px">Worth a quick decision before or after the main review.</div>' +
-      crTableHtml(needsCommitment, 'needscommitment') +
-    '</div>';
+    html += '<div class="section-title" style="margin-bottom:2px">' + needsCommitment.length + ' project' + (needsCommitment.length===1?'':'s') + ' still needs a Commitment</div>' +
+      '<div style="color:var(--text-muted);font-size:12.5px;margin-bottom:14px">Worth a quick decision before or after the main review.</div>' +
+      crGroupByValueHtml(needsCommitment, 'needscommitment', crTableHtml);
   }
-  html += '<div class="card">' +
+  html += '<div class="card mt-16">' +
     '<div class="section-title">Where the data stands right now</div>' +
     '<div class="section-note" style="color:var(--text-muted);font-size:12.5px;margin-bottom:14px">Live from PMO Hub. Use the Must and Should tabs to close these gaps during the call.</div>' +
     '<div class="table-wrap"><table><thead><tr><th>Tier</th><th>Projects</th><th>Missing owner</th><th>Missing a date</th><th>Never edited</th></tr></thead><tbody>' +
@@ -13214,7 +13239,7 @@ function crRenderMust() {
     '<span class="chip-filter' + (crState.mustSub==='timeline'?' on':'') + '" onclick="window.crSetMustSub(\'timeline\')"><i class="ti ti-calendar"></i> Timeline</span>' +
   '</div>';
   if (crState.mustSub === 'checklist') {
-    html += '<div class="card"><div class="section-title" style="margin-bottom:4px">Must — data verification</div><div style="color:var(--text-muted);font-size:12.5px;margin-bottom:14px">Click a name to expand full context, including its team. Every edit here writes straight to the project.</div>' + crTableHtml(must, 'must') + '</div>';
+    html += '<div class="section-title" style="margin-bottom:4px">Must — data verification</div><div style="color:var(--text-muted);font-size:12.5px;margin-bottom:14px">Click a name to expand full context, including its team. Every edit here writes straight to the project.</div>' + crGroupByValueHtml(must, 'must', crTableHtml);
   } else {
     html += crTimelineHtml(dated, 'Must');
     if (undated.length) {
@@ -13246,7 +13271,7 @@ function crRenderShould() {
   '</div>';
   if (crState.shouldSub === 'checklist') {
     html += '<div style="margin-bottom:12px"><span class="chip-filter' + (crState.shouldFilter?' on':'') + '" onclick="window.crToggleShouldFilter()"><i class="ti ti-alert-circle"></i> Show only incomplete (' + incomplete.length + ')</span></div>';
-    html += '<div class="card"><div class="section-title">Should — assign &amp; triage</div>' + crTableHtml(list, 'should') + '</div>';
+    html += '<div class="section-title">Should — assign &amp; triage</div>' + crGroupByValueHtml(list, 'should', crTableHtml);
   } else {
     html += crTimelineHtml(dated, 'Should');
     if (undated.length) {
@@ -13278,10 +13303,12 @@ function crRenderWantWont() {
       (crState.expanded[p.id] ? '<div class="cr-expand-detail">' + crTeamBlockHtml(p) + '</div>' : '') +
     '</div>';
   }
+  function rowList(groupList) { return groupList.map(rowHtml).join(''); }
   var want = crByTier('Want'), wont = crByTier("Won't");
   var html = '<div class="cr-callout">Lightweight, on purpose — these are discussion points if there’s time left, not items to work through in detail. Re-triage to Must/Should right here if the conversation moves one up.</div>';
-  html += '<div class="card"><div class="section-title">Want (' + want.length + ')</div>' + want.map(rowHtml).join('') + '</div>';
-  html += '<div class="card"><div class="section-title">Won’t (' + wont.length + ')</div><div style="color:var(--text-muted);font-size:12.5px;margin-bottom:8px">On record as considered and declined.</div>' + wont.map(rowHtml).join('') + '</div>';
+  html += '<div class="section-title" style="margin-bottom:4px">Want (' + want.length + ')</div>' + (want.length ? crGroupByValueHtml(want, 'want', rowList) : '<div class="card text-muted" style="font-size:13px">Nothing here</div>');
+  html += '<div class="section-title mt-16" style="margin-bottom:2px">Won’t (' + wont.length + ')</div><div style="color:var(--text-muted);font-size:12.5px;margin-bottom:14px">On record as considered and declined.</div>' +
+    (wont.length ? crGroupByValueHtml(wont, 'wont', rowList) : '<div class="card text-muted" style="font-size:13px">Nothing here</div>');
   document.getElementById('crTabContent').innerHTML = html;
 }
 
