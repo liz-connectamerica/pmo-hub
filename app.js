@@ -13915,6 +13915,69 @@ function pgProgramDetail(id) {
       : '<div class="text-muted" style="font-size:13px">No upcoming or late milestones</div>') +
   '</div>';
 
+  // ── Timeline (view mode only) -- same month-window Gantt as Roadmap,
+  // scoped to this program's own linked projects (excluding Completed, same
+  // as the milestones section above). A project with no real dates yet shows
+  // "No schedule set" rather than being silently dropped from the list.
+  function programTimelineHtml(projects) {
+    var win = computeDateWindow('next12');
+    var windowStart = win.windowStart, windowMonths = win.windowMonths;
+    var windowEndLabel = new Date(windowStart.getFullYear(), windowStart.getMonth() + windowMonths - 1, 1);
+    var rangeLabel = windowStart.toLocaleString('en-US', { month: 'long', year: 'numeric' }) + ' – ' + windowEndLabel.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    var monthLabels = [];
+    for (var mi = 0; mi < windowMonths; mi++) {
+      var md = new Date(windowStart.getFullYear(), windowStart.getMonth() + mi, 1);
+      monthLabels.push(md.toLocaleString('en-US', { month: 'short' }) + (md.getMonth() === 0 ? " '" + String(md.getFullYear()).slice(2) : ''));
+    }
+    function monthsFromWindowStart(dateStr) {
+      if (!dateStr) return null;
+      var d = new Date(dateStr + 'T00:00:00');
+      if (isNaN(d.getTime())) return null;
+      var yearDiff = d.getFullYear() - windowStart.getFullYear();
+      var monthDiff = d.getMonth() - windowStart.getMonth();
+      var dayFrac = (d.getDate() - 1) / 30.44;
+      return yearDiff * 12 + monthDiff + dayFrac;
+    }
+    var sorted = projects.slice().sort(function(a, b) {
+      if (!a.end && !b.end) return 0;
+      if (!a.end) return 1;
+      if (!b.end) return -1;
+      return a.end < b.end ? -1 : a.end > b.end ? 1 : 0;
+    });
+    var rows = sorted.map(function(p) {
+      var startOffset = monthsFromWindowStart(p.start), endOffset = monthsFromWindowStart(p.end);
+      var hasBar = startOffset !== null && endOffset !== null && endOffset > 0 && startOffset < windowMonths;
+      var barHtml;
+      if (hasBar) {
+        var clampedStart = Math.max(0, startOffset), clampedEnd = Math.min(windowMonths, endOffset);
+        var widthPct = Math.max(1, clampedEnd - clampedStart) / windowMonths * 100;
+        var leftPct = clampedStart / windowMonths * 100;
+        var barColor = PHASE_COLORS[p.phase] || 'var(--accent)';
+        barHtml = '<div class="tl-wrap"><div class="tl-bar" style="left:' + leftPct + '%;width:' + widthPct + '%;background:' + barColor + '">' + (p.phase||'') + '</div></div>';
+      } else if (isProjectLate(p)) {
+        var lateDays = daysLate(p);
+        barHtml = '<div class="tl-wrap" style="padding-left:8px"><span style="color:var(--bad);font-size:12px;font-weight:600"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>Late by ' + lateDays + ' day' + (lateDays === 1 ? '' : 's') + ' — target end ' + fmtDate(p.end) + '</span></div>';
+      } else if (p.start && p.end) {
+        barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">Outside this range</span></div>';
+      } else {
+        barHtml = '<div class="tl-wrap"><span class="text-muted" style="font-size:12px">No schedule set</span></div>';
+      }
+      return '<div class="tl-row"><div class="tl-label" title="' + p.name + '">' +
+        '<button class="btn btn-sm" style="padding:2px 6px;margin-right:6px" title="View project" onclick="goToProject(\'' + p.id + '\')"><i class="ti ti-eye"></i></button>' +
+        p.name + '</div>' + barHtml + '</div>';
+    }).join('');
+    var phaseLegend = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px">' + PHASES.map(function(ph) {
+      return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-2)"><span style="width:10px;height:10px;border-radius:3px;background:' + (PHASE_COLORS[ph]||'var(--accent)') + ';display:inline-block"></span>' + ph + '</div>';
+    }).join('') + '</div>';
+    return '<div class="card mt-16"><div class="section-title" style="margin-bottom:4px">Timeline</div>' +
+      '<div class="text-muted" style="font-size:12px;margin-bottom:16px">' + rangeLabel + '</div>' +
+      phaseLegend +
+      '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:var(--text-faint);text-align:center">' + m + '</div>'; }).join('') + '</div>' +
+      (rows || '<div class="empty-state" style="padding:24px"><i class="ti ti-road"></i><p>No linked projects to show</p></div>') +
+    '</div>';
+  }
+  var timelineHtml2 = programTimelineHtml(linkedProjects.filter(function(p){ return p.stage !== 'complete'; }));
+
   // ── Linked projects list ────────────────────────────────────────────────
   // View mode: grouped by stage, read-only, with a rank pill for anything
   // that's been given a priority order. Edit mode: one flat, drag-orderable
@@ -14023,7 +14086,8 @@ function pgProgramDetail(id) {
         : (stageSectionsHtml || '<div class="text-muted" style="font-size:13px">No projects linked yet</div>')) +
     '</div>' +
     addPanelHtml +
-    (!editingNow ? upcomingMsHtml : '');
+    (!editingNow ? upcomingMsHtml : '') +
+    (!editingNow ? timelineHtml2 : '');
 
   window.filterProgramAddList = function(query) {
     var q = query.trim().toLowerCase();
