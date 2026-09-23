@@ -12486,7 +12486,7 @@ async function saveResource(rid) {
 // the same tables/columns the rest of the app uses (projects, resource_projects,
 // project_change_log via logProjectChanges) -- there's no separate draft/session
 // state, so a change made here is immediately live everywhere else.
-var crState = { ready:false, lastTouched:{}, expanded:{}, sort:{}, tab:'overview', mustSub:'checklist', shouldFilter:false };
+var crState = { ready:false, lastTouched:{}, expanded:{}, sort:{}, tab:'overview', mustSub:'checklist', shouldSub:'checklist', shouldFilter:false };
 
 async function pgCommitmentReview() {
   tb('Commitment Portfolio Review');
@@ -12695,7 +12695,7 @@ function crTableHtml(list, tableKey) {
   return '<div class="table-wrap"><table><thead><tr>' + th('name','Project') + th('stage','Stage') + th('owner','Owner') + th('start','Start') + th('end','End') + th('lastUpdated','Last updated') + th('tier','Commitment') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
 
-function crTimelineHtml(dated) {
+function crTimelineHtml(dated, title) {
   var now = new Date();
   var windowStart = new Date(now.getFullYear(), now.getMonth(), 1);
   var windowMonths = 13;
@@ -12729,7 +12729,7 @@ function crTimelineHtml(dated) {
     }
     return '<div class="tl-row"><div class="tl-label" style="cursor:pointer" title="' + p.name + '" onclick="goToProject(\'' + p.id + '\')">' + p.name + '</div>' + barHtml + '</div>';
   }).join('');
-  return '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">Must — timeline (' + dated.length + ' scheduled)</div>' +
+  return '<div class="card mb-16"><div class="section-title" style="margin-bottom:20px">' + title + ' — timeline (' + dated.length + ' scheduled)</div>' +
     '<div style="display:flex;gap:8px;margin-bottom:10px;padding-left:202px">' + monthLabels.map(function(m){ return '<div style="flex:1;font-size:11px;color:var(--text-faint);text-align:center">' + m + '</div>'; }).join('') + '</div>' +
     rows +
   '</div>';
@@ -12781,7 +12781,7 @@ function crRenderMust() {
   if (crState.mustSub === 'checklist') {
     html += '<div class="card"><div class="section-title" style="margin-bottom:4px">Must — data verification</div><div style="color:var(--text-muted);font-size:12.5px;margin-bottom:14px">Click a name to expand full context, including its team. Every edit here writes straight to the project.</div>' + crTableHtml(must, 'must') + '</div>';
   } else {
-    html += crTimelineHtml(dated);
+    html += crTimelineHtml(dated, 'Must');
     if (undated.length) {
       html += '<div class="card"><div class="section-title">Not yet scheduled (' + undated.length + ')</div><div style="color:var(--text-muted);font-size:12.5px;margin-bottom:10px">No start and/or end date yet, so these can’t show on the timeline above.</div>' +
         undated.map(function(p){
@@ -12801,12 +12801,33 @@ function crRenderShould() {
   var should = crByTier('Should');
   var incomplete = should.filter(function(p){ return !p.owner || !p.start || !p.end; });
   var list = crState.shouldFilter ? incomplete : should;
+  var dated = should.filter(function(p){ return p.start && p.end; });
+  var undated = should.filter(function(p){ return !p.start || !p.end; });
   var c = crCompleteness(should);
   var html = '<div class="cr-callout"><strong>Job two:</strong> ' + c.missingOwner + ' of ' + should.length + ' Should projects have no owner, ' + c.missingDates + ' are missing a date. Assign what you can live — and if something doesn’t belong at Should anymore, change its Commitment right here.</div>';
-  html += '<div style="margin-bottom:12px"><span class="chip-filter' + (crState.shouldFilter?' on':'') + '" onclick="window.crToggleShouldFilter()"><i class="ti ti-alert-circle"></i> Show only incomplete (' + incomplete.length + ')</span></div>';
-  html += '<div class="card"><div class="section-title">Should — assign &amp; triage</div>' + crTableHtml(list, 'should') + '</div>';
+  html += '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+    '<span class="chip-filter' + (crState.shouldSub==='checklist'?' on':'') + '" onclick="window.crSetShouldSub(\'checklist\')"><i class="ti ti-list-check"></i> Checklist</span>' +
+    '<span class="chip-filter' + (crState.shouldSub==='timeline'?' on':'') + '" onclick="window.crSetShouldSub(\'timeline\')"><i class="ti ti-calendar"></i> Timeline</span>' +
+  '</div>';
+  if (crState.shouldSub === 'checklist') {
+    html += '<div style="margin-bottom:12px"><span class="chip-filter' + (crState.shouldFilter?' on':'') + '" onclick="window.crToggleShouldFilter()"><i class="ti ti-alert-circle"></i> Show only incomplete (' + incomplete.length + ')</span></div>';
+    html += '<div class="card"><div class="section-title">Should — assign &amp; triage</div>' + crTableHtml(list, 'should') + '</div>';
+  } else {
+    html += crTimelineHtml(dated, 'Should');
+    if (undated.length) {
+      html += '<div class="card"><div class="section-title">Not yet scheduled (' + undated.length + ')</div><div style="color:var(--text-muted);font-size:12.5px;margin-bottom:10px">No start and/or end date yet, so these can’t show on the timeline above.</div>' +
+        undated.map(function(p){
+          return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 10px;background:var(--surface-2);border-radius:8px;font-size:12.5px;margin-bottom:6px">' +
+            '<span>' + p.name + '</span><span style="display:flex;gap:6px;align-items:center">' +
+            '<input type="date" style="width:140px" value="' + (p.start||'') + '" onchange="window.crSetDate(\'' + p.id + '\',\'start\',this.value)">' +
+            '<input type="date" style="width:140px" value="' + (p.end||'') + '" onchange="window.crSetDate(\'' + p.id + '\',\'end\',this.value)">' +
+            '</span></div>';
+        }).join('') + '</div>';
+    }
+  }
   document.getElementById('crTabContent').innerHTML = html;
 }
+window.crSetShouldSub = function(v) { crState.shouldSub = v; withScrollPreserved(renderCommitmentReview); };
 window.crToggleShouldFilter = function() { crState.shouldFilter = !crState.shouldFilter; withScrollPreserved(renderCommitmentReview); };
 
 function crRenderWantWont() {
