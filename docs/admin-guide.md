@@ -14,7 +14,7 @@ Opening a pending request shows a single **"Review & finalize"** form — every 
 
 - Project title, description, expected value, and sponsor — whatever the submitter entered, editable in place
 - Tags and proposed team, same pickers as the submission form
-- Commitment (Must/Should/Want/Won't — optional, admin-only, defaults to "Needs commitment"), Value Area, Business Unit, T-shirt size, Delivery Methodology (Agile/Waterfall/Hybrid — optional, since a request never collects this itself), Categories
+- Commitment (Must/Must - In Flight/Should/Want/Won't — optional, admin-only, defaults to "Needs commitment"; Must - In Flight is for a Must that's already underway), Value Area, Business Unit, T-shirt size, Delivery Methodology (Agile/Waterfall/Hybrid — optional, since a request never collects this itself), Categories
 - Either real Start/Target-End dates, **or**, if the timeline isn't known yet, an optional target quarter range (this just keeps it visible on the Future Planning timeline while it sits in Backlog)
 - For a request submitted as "actively being worked": Status, Phase, Progress %, and Health, pre-filled from what the submitter reported instead of starting blank
 - Owner — pre-filled if the submitter named one
@@ -190,7 +190,7 @@ Similar timeline to Roadmap, but scoped to backlog projects with only a target-q
 - Click the calendar icon on an estimated project to **change its target quarter** (a simple dropdown, not drag-and-drop)
 - **Schedule now** to convert an estimate into real start/end dates
 - See two callout lists: **Needs an estimate** (backlog projects with no target quarter at all) and **Missing a schedule** (active/planned projects with no start/end date — usually a sign of a bad import)
-- Filter by tag or by Commitment (Must/Should/Want/Won't/Needs commitment), same as Roadmap
+- Filter by tag or by Commitment (Must/Must - In Flight/Should/Want/Won't/Needs commitment), same as Roadmap
 
 ## All Projects
 

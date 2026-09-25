@@ -27,6 +27,7 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li>Both request-form branches now list fields in the same order, and <strong>Tags</strong> is available on "new request to prioritize" too (it was previously active-only).</li>
     <li>Editing a still-Pending request, or editing and resubmitting a Rejected/Revoked one, now opens the same guided, branch-aware form described above instead of the old flat form with conditional financial fields.</li>
     <li>A request's read-only <strong>Details</strong> view now shows every field with a dash for anything left blank (start/target end dates, owner, status, phase, progress, health, tags, team), instead of silently hiding whichever ones happened to be empty.</li>
+    <li>Added a <strong>Must - In Flight</strong> Commitment value, for a Must project that's already underway. It shows up everywhere Commitment does (project edit, bulk edit, filters), and counts as Must on the Commitment Review page's stats and Must tab.</li>
   </ul>
 </div>
 
