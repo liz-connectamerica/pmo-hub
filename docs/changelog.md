@@ -24,6 +24,9 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li>Both branches now ask for Business Unit and Category, and note that contractual date requirements should be called out in the description rather than relied on from the date fields alone. The "new request" branch also gains optional requested-start/target-end dates.</li>
     <li>Removed "Corporate Functions" from the Business Unit picklist everywhere in the app.</li>
     <li>Reviewing a pending request as an admin is now one consistent editable form instead of a read-only top half plus an inline-editable "Finalize before approving" bottom half — title, description, expected value, sponsor, tags, and team are editable right alongside business unit, value area, dates, status, and the rest, and submitted values (owner, t-shirt size, category, status, phase, progress, health) pre-fill the finalize step instead of starting blank. Edits are saved whether the request is approved or rejected.</li>
+    <li>Both request-form branches now list fields in the same order, and <strong>Tags</strong> is available on "new request to prioritize" too (it was previously active-only).</li>
+    <li>Editing a still-Pending request, or editing and resubmitting a Rejected/Revoked one, now opens the same guided, branch-aware form described above instead of the old flat form with conditional financial fields.</li>
+    <li>A request's read-only <strong>Details</strong> view now shows every field with a dash for anything left blank (start/target end dates, owner, status, phase, progress, health, tags, team), instead of silently hiding whichever ones happened to be empty.</li>
   </ul>
 </div>
 
