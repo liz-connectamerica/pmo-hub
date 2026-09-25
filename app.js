@@ -4005,7 +4005,7 @@ function reviewRequest(id) {
       '<div style="font-size:16px;font-weight:600;margin-bottom:8px">' + r.title + '</div>' +
       '<div style="display:flex;gap:6px">' + bdg(r.status) + (r.priority ? ' ' + bdg(r.priority) : '') + '</div>' +
     '</div><div style="display:flex;gap:6px">' +
-      (canEditRequest ? '<button class="btn btn-sm" onclick="closeModal();openEditRequestModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
+      (canEditRequest ? '<button class="btn btn-sm" onclick="closeModal();openGuidedRequestModal(\'' + r.id + '\',\'edit\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
       (isAdmin ? '<button class="btn btn-sm btn-danger" onclick="deleteRequest(\'' + r.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
       '<button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button>' +
     '</div></div>' +
@@ -4163,158 +4163,212 @@ function reviewRequest(id) {
       }, false);
     };
   } else if (canResubmit) {
-    html += '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditResubmitModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit &amp; resubmit</button></div>';
+    html += '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="closeModal();openGuidedRequestModal(\'' + r.id + '\',\'resubmit\')"><i class="ti ti-edit"></i> Edit &amp; resubmit</button></div>';
   } else {
     html += '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button></div>';
   }
   showModal(html);
 }
 
-function openEditRequestModal(id, overrides) {
+// Same guided intake fields used on the main Submit Request page, adapted
+// for a modal so a requestor editing a Pending request (mode 'edit') or
+// resubmitting a Rejected/Revoked one (mode 'resubmit') sees the same
+// branch-aware form they originally filled out, not the old flat one.
+function openGuidedRequestModal(id, mode) { openGuidedRequestModalWithState(id, mode, {}); }
+
+function openGuidedRequestModalWithState(id, mode, v) {
   var r = D.requests.find(function(x){ return x.id === id; });
-  var v = overrides || {};
-  var curTitle = 'title' in v ? v.title : r.title;
-  var curBu = 'bu' in v ? v.bu : r.businessUnit;
-  var curSponsor = 'sponsor' in v ? v.sponsor : (r.sponsor || '');
-  var curDesc = 'desc' in v ? v.desc : (r.description || '');
-  var curOppType = 'oppType' in v ? v.oppType : r.opportunityType;
-  var curOppOther = 'oppOther' in v ? v.oppOther : (r.opportunityTypeOther || '');
-  var curEstFreq = 'estFreq' in v ? v.estFreq : r.estimatedFrequency;
-  var curEstAmount = 'estAmount' in v ? v.estAmount : r.estimatedAmount;
-  var curValueConfidence = 'valueConfidence' in v ? v.valueConfidence : r.valueConfidence;
-  var curCostAmount = 'costAmount' in v ? v.costAmount : r.costEstimate;
-  var curCostConfidence = 'costConfidence' in v ? v.costConfidence : r.costConfidence;
-  var curJustification = 'justification' in v ? v.justification : (r.valueJustification || '');
-  var buOpts = BUSINESS_UNITS.map(function(bu){ return '<option' + (curBu===bu?' selected':'') + '>' + bu + '</option>'; }).join('');
-  var hasFinancial = canViewFinancials();
-  var oppOpts = ['Revenue opportunity','Cost savings opportunity'].map(function(o){ return '<option' + (curOppType===o?' selected':'') + '>' + o + '</option>'; }).join('');
-  var showEstimate = curOppType === 'Revenue opportunity' || curOppType === 'Cost savings opportunity';
-  var estimateLabel = curOppType === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
-  var isLegacyOther = curOppType === 'Something else';
-  var selectedTags = ('tags' in v ? v.tags : r.tags) || [];
-  var selectedTeam = (('team' in v ? v.team : r.team) || []).slice();
-
-  var valueSectionHtml = hasFinancial
-    ? (isLegacyOther ? '<div class="info-banner info-blue" style="margin-bottom:12px"><i class="ti ti-info-circle"></i><div>Originally submitted as: "' + curOppOther.replace(/</g,'&lt;') + '". Choose a value type below to add structured detail, or leave it unselected to keep this as-is.</div></div>' : '') +
-      '<div class="form-group"><div class="form-label">Value type' + (isLegacyOther ? '' : ' *') + '</div><select id="er2-opp-type" onchange="onEditReqOppTypeChange()"><option value="">— Select —</option>' + oppOpts + '</select></div>' +
-      '<div class="form-group" id="er2-estimate-row" style="display:' + (showEstimate?'block':'none') + '">' +
-        '<div class="form-label" id="er2-estimate-label">' + estimateLabel + '</div>' +
-        '<div class="grid-2"><select id="er2-est-freq"><option' + (curEstFreq==='Monthly'?' selected':'') + '>Monthly</option><option' + (curEstFreq==='Annually'?' selected':'') + '>Annually</option></select>' +
-        '<input type="text" id="er2-est-amount" value="' + (curEstAmount!=null?curEstAmount:'') + '" placeholder="$ amount (optional)"></div>' +
-        '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="er2-value-confidence">' + confidenceOptsHtml(curValueConfidence) + '</select></div>' +
-      '</div>' +
-      '<div class="form-group"><div class="form-label">Value justification</div><div class="form-sub">How did you arrive at the estimated value?</div><textarea id="er2-justification" rows="3">' + curJustification.replace(/</g,'&lt;') + '</textarea></div>' +
-      '<div class="form-group"><div class="form-label">Cost estimate</div>' +
-        '<div class="grid-2"><input type="text" id="er2-cost-amount" value="' + (curCostAmount!=null?curCostAmount:'') + '" placeholder="$ amount (optional)"><select id="er2-cost-confidence">' + confidenceOptsHtml(curCostConfidence) + '</select></div>' +
-      '</div>'
-    : '<div class="form-group"><div class="form-label">What\'s the expected value? *</div><textarea id="er2-value-desc" rows="3">' + curOppOther.replace(/</g,'&lt;') + '</textarea></div>';
-
-  showModal('<div class="modal-title">Edit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="er2-title" value="' + curTitle.replace(/"/g,'&quot;') + '"></div>' +
-    '<div class="form-group"><div class="form-label">Business Unit *</div><select id="er2-bu">' + buOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="er2-sponsor" value="' + curSponsor.replace(/"/g,'&quot;') + '" placeholder="Optional"></div>' +
-    '<div class="form-group"><div class="form-label">Description *</div><textarea id="er2-desc" rows="4">' + curDesc.replace(/</g,'&lt;') + '</textarea></div>' +
-    valueSectionHtml +
-    '<div class="form-group"><div class="form-label">Tags</div><div id="er2-tags-chips" style="margin-bottom:8px">' + (selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>') + '</div><button class="btn btn-sm" onclick="openEditReqTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
-    teamPickerHtml('er2', 'toggleEditReqTeamMember', selectedTeam) +
-    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" id="er2-save">Save changes</button></div>');
-
-  window.onEditReqOppTypeChange = function() {
-    var type = document.getElementById('er2-opp-type').value;
-    document.getElementById('er2-estimate-row').style.display = type ? 'block' : 'none';
-    if (type) document.getElementById('er2-estimate-label').textContent = type === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
+  var isResubmit = mode === 'resubmit';
+  var isLegacyFinancial = !!(r.opportunityType && r.opportunityType !== 'Something else');
+  var branchState = { value: v.branch || ((r.reportedStatus || r.phase || r.progressPct != null || r.health) ? 'active' : 'new') };
+  var selectedCategories = ('categories' in v ? v.categories : (r.categories || [])).slice();
+  var selectedTags = ('tags' in v ? v.tags : (r.tags || [])).slice();
+  var selectedTeam = ('team' in v ? v.team : (r.team || [])).slice();
+  var sponsorPicker = makePersonPicker('gmSponsor', 'sponsor' in v ? v.sponsor : (r.sponsor || ''));
+  var ownerPicker = makePersonPicker('gmOwner', 'owner' in v ? v.owner : (r.ownerName || ''));
+  var fieldVals = {
+    title: 'title' in v ? v.title : r.title,
+    desc: 'desc' in v ? v.desc : (r.description || ''),
+    valueDesc: 'valueDesc' in v ? v.valueDesc : (r.opportunityTypeOther || ''),
+    valueArea: 'valueArea' in v ? v.valueArea : (r.value || ''),
+    bu: 'bu' in v ? v.bu : (r.businessUnit || ''),
+    tshirt: 'tshirt' in v ? v.tshirt : (r.tshirtSize || ''),
+    status: 'status' in v ? v.status : (r.reportedStatus || ''),
+    phase: 'phase' in v ? v.phase : (r.phase || ''),
+    progress: 'progress' in v ? v.progress : (r.progressPct != null ? r.progressPct : ''),
+    health: 'health' in v ? v.health : (r.health || ''),
+    start: 'start' in v ? v.start : (r.startDate || ''),
+    end: 'end' in v ? v.end : (r.targetEndDate || '')
   };
-  window.toggleEditReqTeamMember = function(el) {
+
+  function opts(list, sel) { return '<option value="">— Select —</option>' + list.map(function(x){ return '<option' + (x===sel?' selected':'') + '>' + x + '</option>'; }).join(''); }
+  function captureFieldVals() {
+    fieldVals.title = document.getElementById('gm-title').value;
+    fieldVals.desc = document.getElementById('gm-desc').value;
+    var vdEl = document.getElementById('gm-valuedesc'); if (vdEl) fieldVals.valueDesc = vdEl.value;
+    fieldVals.valueArea = document.getElementById('gm-value').value;
+    fieldVals.bu = document.getElementById('gm-bu').value;
+    fieldVals.tshirt = document.getElementById('gm-tshirt').value;
+    var stEl = document.getElementById('gm-status'); if (stEl) fieldVals.status = stEl.value;
+    var phEl = document.getElementById('gm-phase'); if (phEl) fieldVals.phase = phEl.value;
+    var prEl = document.getElementById('gm-progress'); if (prEl) fieldVals.progress = prEl.value;
+    var hEl = document.getElementById('gm-health'); if (hEl) fieldVals.health = hEl.value;
+    fieldVals.start = document.getElementById('gm-start').value;
+    fieldVals.end = document.getElementById('gm-end').value;
+  }
+  function captureAllForReopen() {
+    captureFieldVals();
+    return {
+      branch: branchState.value, title: fieldVals.title, desc: fieldVals.desc, valueDesc: fieldVals.valueDesc,
+      valueArea: fieldVals.valueArea, bu: fieldVals.bu, tshirt: fieldVals.tshirt, status: fieldVals.status,
+      phase: fieldVals.phase, progress: fieldVals.progress, health: fieldVals.health, start: fieldVals.start, end: fieldVals.end,
+      categories: selectedCategories.slice(), team: selectedTeam.slice(), tags: selectedTags.slice(),
+      sponsor: sponsorPicker.state.value, owner: ownerPicker.state.value
+    };
+  }
+
+  function renderBranchRow() {
+    document.getElementById('gm-branch-row').innerHTML =
+      '<div class="branch-card' + (branchState.value==='new'?' on':'') + '" onclick="window.setGmBranch(\'new\')">' +
+        '<div class="branch-icon new"><i class="ti ti-bulb"></i></div>' +
+        '<div class="branch-text"><div class="branch-title">New request to prioritize</div>' +
+        '<div class="branch-sub">Hasn’t started. We’ll ask for enough to evaluate and schedule it.</div></div>' +
+      '</div>' +
+      '<div class="branch-card' + (branchState.value==='active'?' on':'') + '" onclick="window.setGmBranch(\'active\')">' +
+        '<div class="branch-icon active"><i class="ti ti-player-play"></i></div>' +
+        '<div class="branch-text"><div class="branch-title">Actively being worked</div>' +
+        '<div class="branch-sub">Already underway — has dates, an owner, and known progress. We’ll ask for the current state.</div></div>' +
+      '</div>';
+  }
+  window.setGmBranch = function(b) { captureFieldVals(); branchState.value = b; renderBranchRow(); renderFields(); };
+
+  function renderFields() {
+    var isActive = branchState.value === 'active';
+    var catRow = CATEGORIES.map(function(c){
+      return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="gm-category-cb" value="' + c + '"' + (selectedCategories.indexOf(c)>=0?' checked':'') + '> ' + c + '</label>';
+    }).join('');
+
+    var nameField = '<div class="form-group"><div class="form-label">Project title <span class="req-star">*</span></div><input type="text" id="gm-title" value="' + fieldVals.title.replace(/"/g,'&quot;') + '"></div>';
+    var descField = '<div class="form-group"><div class="form-label">Description <span class="req-star">*</span></div><textarea id="gm-desc" rows="4">' + fieldVals.desc.replace(/</g,'&lt;') + '</textarea></div>';
+    var valueDescField = isLegacyFinancial
+      ? '<div class="info-banner info-blue" style="margin-bottom:12px"><i class="ti ti-info-circle"></i><div>This request has a structured dollar estimate from before financial data collection moved out of this form. It\'s unaffected by this edit — see the request review page to view it.</div></div>'
+      : '<div class="form-group"><div class="form-label">What\'s the expected value? <span class="req-star">*</span></div><textarea id="gm-valuedesc" rows="3">' + fieldVals.valueDesc.replace(/</g,'&lt;') + '</textarea></div>';
+    var valueAreaField = '<div class="form-group">' + fieldLabel('gm-value', 'Value area', true, defsHtml(VALUE_AREA_DEFS, VALUE_AREAS)) + '<select id="gm-value">' + opts(VALUE_AREAS, fieldVals.valueArea) + '</select></div>';
+    var tshirtField = '<div class="form-group">' + fieldLabel('gm-tshirt', 'T-shirt size', false, defsHtml(TSHIRT_DEFS, TSHIRT_SIZES) + '<div style="color:var(--text-muted);font-style:italic;margin-top:6px">Rough sizing for prioritization, not a formal estimate.</div>') +
+      '<select id="gm-tshirt"><option value="">— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option' + (fieldVals.tshirt===s?' selected':'') + '>' + s + '</option>'; }).join('') + '</select></div>';
+    var categoryField = '<div class="form-group">' + fieldLabel('gm-category', 'Category', true, defsHtml(CATEGORY_DEFS, CATEGORIES)) + '<div>' + catRow + '</div></div>';
+    var buField = '<div class="form-group">' + fieldLabel('gm-bu', 'Business Unit', true, null) + '<select id="gm-bu">' + opts(BUSINESS_UNITS, fieldVals.bu) + '</select></div>';
+    var tagsField = '<div class="form-group"><div class="form-label">Tags</div><div id="gm-tags-chips" style="margin-bottom:8px">' + (selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>') + '</div><button type="button" class="btn btn-sm" onclick="window.openGmTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>';
+    var sponsorField = '<div class="form-group">' + fieldLabel('gm-sponsor', 'Sponsor', false, REQ_SPONSOR_HELP) + '<div id="pp-field-gmSponsor">' + sponsorPicker.fieldInner() + '</div></div>';
+    var ownerField = '<div class="form-group">' + fieldLabel('gm-owner', 'Owner', isActive, REQ_OWNER_HELP) + '<div id="pp-field-gmOwner">' + ownerPicker.fieldInner() + '</div></div>';
+    var teamFieldHtml = teamPickerHtml('gm', 'toggleGmTeamMember', selectedTeam, REQ_TEAM_HELP);
+    var contractualHint = '<div class="form-sub" style="margin-top:-8px">If there are contractual date requirements, please note them in the description above.</div>';
+    var statusPhaseHtml = '<div class="grid-2">' +
+      '<div class="form-group">' + fieldLabel('gm-status', 'Status', false, defsHtml(REQ_STATUS_DEFS, STATUSES)) + '<select id="gm-status"><option value="">— Not set —</option>' + STATUSES.map(function(s){ return '<option' + (fieldVals.status===s?' selected':'') + '>' + s + '</option>'; }).join('') + '</select></div>' +
+      '<div class="form-group">' + fieldLabel('gm-phase', 'Phase', false, defsHtml(REQ_PHASE_DEFS, PHASES)) + '<select id="gm-phase"><option value="">— Not set —</option>' + PHASES.map(function(s){ return '<option' + (fieldVals.phase===s?' selected':'') + '>' + s + '</option>'; }).join('') + '</select></div>' +
+    '</div>';
+    var dateFieldsHtml = '<div class="grid-2">' +
+      '<div class="form-group">' + fieldLabel('gm-start', isActive ? 'Start date' : 'Requested start date', isActive, null) + '<input type="date" id="gm-start" value="' + fieldVals.start + '"></div>' +
+      '<div class="form-group">' + fieldLabel('gm-end', 'Target end date', isActive, null) + '<input type="date" id="gm-end" value="' + fieldVals.end + '"></div>' +
+    '</div>' +
+    (isActive ? '<div class="form-sub" style="margin-top:-8px">Estimates/targets, not commitments — these may shift based on current portfolio priorities.</div>' : '') +
+    contractualHint;
+    var progressHealthHtml = '<div class="grid-2">' +
+      '<div class="form-group">' + fieldLabel('gm-progress', 'Progress %', true, null) + '<input type="number" id="gm-progress" min="0" max="100" value="' + fieldVals.progress + '"></div>' +
+      '<div class="form-group">' + fieldLabel('gm-health', 'Health', true, defsHtml(REQ_HEALTH_DEFS, ['green','amber','red'])) + '<select id="gm-health"><option value=""' + (!fieldVals.health?' selected':'') + '>— Select —</option><option value="green"' + (fieldVals.health==='green'?' selected':'') + '>Green</option><option value="amber"' + (fieldVals.health==='amber'?' selected':'') + '>Amber</option><option value="red"' + (fieldVals.health==='red'?' selected':'') + '>Red</option></select></div>' +
+    '</div>';
+
+    document.getElementById('gm-form-fields').innerHTML = nameField + descField + valueDescField +
+      '<div class="grid-2">' + valueAreaField + tshirtField + '</div>' +
+      '<div class="grid-2">' + categoryField + buField + '</div>' +
+      tagsField +
+      (isActive ? statusPhaseHtml : '') +
+      dateFieldsHtml +
+      (isActive ? progressHealthHtml : '') +
+      sponsorField + ownerField + teamFieldHtml;
+
+    document.querySelectorAll('.gm-category-cb').forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        var i = selectedCategories.indexOf(cb.value);
+        if (cb.checked && i < 0) selectedCategories.push(cb.value);
+        else if (!cb.checked && i >= 0) selectedCategories.splice(i, 1);
+      });
+    });
+  }
+
+  showModal('<div class="modal-title">' + (isResubmit ? 'Edit &amp; resubmit request' : 'Edit request') + ' <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
+    (isResubmit && r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:var(--coral-soft);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--coral-strong-tx);white-space:pre-wrap;word-break:break-word">' + r.feedback + '</div></div>' : '') +
+    '<div class="branch-row" id="gm-branch-row"></div>' +
+    '<div id="gm-form-fields"></div>' +
+    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
+    '<button class="btn btn-primary" id="gm-save">' + (isResubmit ? '<i class="ti ti-send"></i> Resubmit request' : 'Save changes') + '</button></div>');
+
+  renderBranchRow();
+  renderFields();
+
+  window.toggleGmTeamMember = function(el) {
     var name = el.getAttribute('data-name');
     var i = selectedTeam.indexOf(name);
     if (el.checked && i < 0) selectedTeam.push(name);
     else if (!el.checked && i >= 0) selectedTeam.splice(i, 1);
   };
-  window.openEditReqTagPicker = function() {
-    var captured = {
-      title: document.getElementById('er2-title').value,
-      bu: document.getElementById('er2-bu').value,
-      sponsor: document.getElementById('er2-sponsor').value,
-      desc: document.getElementById('er2-desc').value,
-      team: selectedTeam.slice()
-    };
-    if (hasFinancial) {
-      captured.oppType = document.getElementById('er2-opp-type').value;
-      captured.oppOther = isLegacyOther ? curOppOther : '';
-      captured.estFreq = document.getElementById('er2-est-freq') ? document.getElementById('er2-est-freq').value : curEstFreq;
-      captured.estAmount = document.getElementById('er2-est-amount') ? document.getElementById('er2-est-amount').value : curEstAmount;
-      captured.valueConfidence = document.getElementById('er2-value-confidence') ? document.getElementById('er2-value-confidence').value : curValueConfidence;
-      captured.costAmount = document.getElementById('er2-cost-amount').value;
-      captured.costConfidence = document.getElementById('er2-cost-confidence').value;
-      captured.justification = document.getElementById('er2-justification').value;
-    } else {
-      captured.oppType = 'Something else';
-      captured.oppOther = document.getElementById('er2-value-desc').value;
-    }
+  window.openGmTagPicker = function() {
+    var captured = captureAllForReopen();
     openTagPicker(selectedTags, function(newTags) {
       captured.tags = newTags;
-      openEditRequestModal(id, captured);
+      openGuidedRequestModalWithState(id, mode, captured);
     }, false);
   };
 
-  document.getElementById('er2-save').onclick = async function() {
-    var title = document.getElementById('er2-title').value.trim();
-    var bu = document.getElementById('er2-bu').value;
-    var desc = document.getElementById('er2-desc').value.trim();
-    if (!title || !bu || !desc) { showToast('Please fill in all required fields', 'error'); return; }
+  document.getElementById('gm-save').onclick = async function() {
+    captureFieldVals();
+    var isActive = branchState.value === 'active';
+    var title = fieldVals.title.trim();
+    var desc = fieldVals.desc.trim();
+    var valueDesc = isLegacyFinancial ? null : fieldVals.valueDesc.trim();
+    var valueArea = fieldVals.valueArea;
+    var bu = fieldVals.bu;
+    var tshirt = fieldVals.tshirt || null;
+    var startDate = fieldVals.start || null;
+    var endDate = fieldVals.end || null;
+
+    var missing = [];
+    if (!title) missing.push('Project title');
+    if (!desc) missing.push('Description');
+    if (!isLegacyFinancial && !valueDesc) missing.push('Expected value');
+    if (!valueArea) missing.push('Value area');
+    if (!bu) missing.push('Business Unit');
+    if (!selectedCategories.length) missing.push('Category');
 
     var updates = {
-      title: title, business_unit: bu, sponsor: document.getElementById('er2-sponsor').value.trim() || null, description: desc
+      title: title, description: desc, value_area: valueArea, business_unit: bu, tshirt_size: tshirt,
+      start_date: startDate, target_end_date: endDate,
+      sponsor: sponsorPicker.state.value || null, owner_name: ownerPicker.state.value || null
     };
+    if (!isLegacyFinancial) { updates.opportunity_type = 'Something else'; updates.opportunity_type_other = valueDesc; }
 
-    if (hasFinancial) {
-      var oppType = document.getElementById('er2-opp-type').value;
-      var justification = document.getElementById('er2-justification').value.trim();
-      var estAmountRaw = oppType ? document.getElementById('er2-est-amount').value.trim() : '';
-      var costAmountRaw = document.getElementById('er2-cost-amount').value.trim();
-      if (costAmountRaw && isNaN(Number(costAmountRaw))) { showToast('Please enter a valid cost amount', 'error'); return; }
-
-      if (!oppType && isLegacyOther) {
-        // Left unselected on a legacy "Something else" request - preserve it as-is rather than forcing a re-categorization.
-        updates.opportunity_type = r.opportunityType;
-        updates.opportunity_type_other = r.opportunityTypeOther;
-        updates.estimated_frequency = r.estimatedFrequency;
-        updates.estimated_type = r.estimatedType;
-        updates.estimated_amount = r.estimatedAmount;
-        updates.value_confidence = r.valueConfidence;
-      } else if (!oppType) {
-        showToast('Please select a value type', 'error'); return;
-      } else {
-        updates.opportunity_type = oppType;
-        updates.opportunity_type_other = null;
-        updates.estimated_frequency = document.getElementById('er2-est-freq').value;
-        updates.estimated_type = oppType === 'Revenue opportunity' ? 'Revenue' : 'Savings';
-        updates.estimated_amount = estAmountRaw ? Number(estAmountRaw) : null;
-        updates.value_confidence = document.getElementById('er2-value-confidence').value || null;
-      }
-      updates.cost_estimate = costAmountRaw ? Number(costAmountRaw) : null;
-      updates.cost_confidence = document.getElementById('er2-cost-confidence').value || null;
-      updates.value_justification = justification || null;
+    if (isActive) {
+      updates.reported_status = fieldVals.status || null;
+      updates.phase = fieldVals.phase || null;
+      updates.progress_pct = fieldVals.progress === '' ? null : Number(fieldVals.progress);
+      updates.health = fieldVals.health || null;
+      if (!startDate) missing.push('Start date');
+      if (!endDate) missing.push('Target end date');
+      if (updates.progress_pct == null) missing.push('Progress %');
+      if (!updates.health) missing.push('Health');
+      if (!ownerPicker.state.value) missing.push('Owner');
     } else {
-      var valueDesc = document.getElementById('er2-value-desc').value.trim();
-      if (!valueDesc) { showToast('Please describe the expected value', 'error'); return; }
-      updates.opportunity_type = 'Something else';
-      updates.opportunity_type_other = valueDesc;
-      updates.estimated_frequency = null;
-      updates.estimated_type = null;
-      updates.estimated_amount = null;
-      updates.value_confidence = null;
-      updates.cost_estimate = null;
-      updates.cost_confidence = null;
-      updates.value_justification = null;
+      updates.reported_status = null; updates.phase = null; updates.progress_pct = null; updates.health = null;
     }
 
-    var btn = document.getElementById('er2-save'); btn.disabled = true;
-    var isSelfEdit = D.currentProfile.id === r.submitterId;
-    var editorName = isSelfEdit ? r.editedByName : D.currentProfile.display_name;
-    var editedAt = isSelfEdit ? r.editedAt : new Date().toISOString();
-    updates.edited_by_name = editorName; updates.edited_at = editedAt;
+    if (missing.length) { showToast('Missing: ' + missing.join(', '), 'error'); return; }
 
+    var isSelfEdit = D.currentProfile.id === r.submitterId;
+    updates.edited_by_name = isResubmit ? null : (isSelfEdit ? r.editedByName : D.currentProfile.display_name);
+    updates.edited_at = isResubmit ? null : (isSelfEdit ? r.editedAt : new Date().toISOString());
+    if (isResubmit) { updates.status = 'Pending'; updates.feedback = null; updates.rejected_date = null; }
+
+    var btn = document.getElementById('gm-save'); btn.disabled = true;
     var result = await sb.from('requests').update(updates).eq('id', id);
     if (result.error) { showToast('Could not save: ' + result.error.message); btn.disabled = false; return; }
 
@@ -4328,204 +4382,26 @@ function openEditRequestModal(id, overrides) {
       var teamRows = selectedTeam.map(function(name){ var res = resolveResource(name); return res ? { request_id: id, resource_id: res.id } : null; }).filter(Boolean);
       if (teamRows.length) await sb.from('request_team').insert(teamRows);
     }
-
-    r.title = title; r.businessUnit = bu; r.sponsor = updates.sponsor; r.description = desc; r.opportunityType = updates.opportunity_type;
-    r.opportunityTypeOther = updates.opportunity_type_other; r.estimatedFrequency = updates.estimated_frequency;
-    r.estimatedType = updates.estimated_type; r.estimatedAmount = updates.estimated_amount;
-    r.valueConfidence = updates.value_confidence; r.costEstimate = updates.cost_estimate; r.costConfidence = updates.cost_confidence;
-    r.valueJustification = justification; r.tags = selectedTags; r.team = selectedTeam;
-    r.editedByName = editorName; r.editedAt = editedAt;
-
-    showToast('Request updated'); closeModal(); reviewRequest(id);
-  };
-}
-
-function openEditResubmitModal(id, overrides) {
-  var r = D.requests.find(function(x){ return x.id === id; });
-  var v = overrides || {};
-  var curTitle = 'title' in v ? v.title : r.title;
-  var curBu = 'bu' in v ? v.bu : r.businessUnit;
-  var curSponsor = 'sponsor' in v ? v.sponsor : (r.sponsor || '');
-  var curDesc = 'desc' in v ? v.desc : (r.description || '');
-  var curOppType = 'oppType' in v ? v.oppType : r.opportunityType;
-  var curOppOther = 'oppOther' in v ? v.oppOther : (r.opportunityTypeOther || '');
-  var curEstFreq = 'estFreq' in v ? v.estFreq : r.estimatedFrequency;
-  var curEstAmount = 'estAmount' in v ? v.estAmount : r.estimatedAmount;
-  var curValueConfidence = 'valueConfidence' in v ? v.valueConfidence : r.valueConfidence;
-  var curCostAmount = 'costAmount' in v ? v.costAmount : r.costEstimate;
-  var curCostConfidence = 'costConfidence' in v ? v.costConfidence : r.costConfidence;
-  var curJustification = 'justification' in v ? v.justification : (r.valueJustification || '');
-  var buOpts = BUSINESS_UNITS.map(function(bu){ return '<option' + (curBu===bu?' selected':'') + '>' + bu + '</option>'; }).join('');
-  var hasFinancial = canViewFinancials();
-  var oppOpts = ['Revenue opportunity','Cost savings opportunity'].map(function(o){ return '<option' + (curOppType===o?' selected':'') + '>' + o + '</option>'; }).join('');
-  var showEstimate = curOppType === 'Revenue opportunity' || curOppType === 'Cost savings opportunity';
-  var estimateLabel = curOppType === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
-  var isLegacyOther = curOppType === 'Something else';
-  var selectedTags = ('tags' in v ? v.tags : r.tags) || [];
-  var selectedTeam = (('team' in v ? v.team : r.team) || []).slice();
-
-  var valueSectionHtml = hasFinancial
-    ? (isLegacyOther ? '<div class="info-banner info-blue" style="margin-bottom:12px"><i class="ti ti-info-circle"></i><div>Originally submitted as: "' + curOppOther.replace(/</g,'&lt;') + '". Choose a value type below to add structured detail, or leave it unselected to keep this as-is.</div></div>' : '') +
-      '<div class="form-group"><div class="form-label">Value type' + (isLegacyOther ? '' : ' *') + '</div><select id="erq-opp-type" onchange="onResubmitOppTypeChange()"><option value="">— Select —</option>' + oppOpts + '</select></div>' +
-      '<div class="form-group" id="erq-estimate-row" style="display:' + (showEstimate?'block':'none') + '">' +
-        '<div class="form-label" id="erq-estimate-label">' + estimateLabel + '</div>' +
-        '<div class="grid-2"><select id="erq-est-freq"><option' + (curEstFreq==='Monthly'?' selected':'') + '>Monthly</option><option' + (curEstFreq==='Annually'?' selected':'') + '>Annually</option></select>' +
-        '<input type="text" id="erq-est-amount" value="' + (curEstAmount!=null?curEstAmount:'') + '" placeholder="$ amount (optional)"></div>' +
-        '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="erq-value-confidence">' + confidenceOptsHtml(curValueConfidence) + '</select></div>' +
-        '<div id="erq-est-err" style="color:var(--danger);font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
-      '</div>' +
-      '<div class="form-group"><div class="form-label">Value justification</div><div class="form-sub">How did you arrive at the estimated value?</div><textarea id="erq-justification" rows="3">' + curJustification.replace(/</g,'&lt;') + '</textarea></div>' +
-      '<div class="form-group"><div class="form-label">Cost estimate</div>' +
-        '<div class="grid-2"><input type="text" id="erq-cost-amount" value="' + (curCostAmount!=null?curCostAmount:'') + '" placeholder="$ amount (optional)"><select id="erq-cost-confidence">' + confidenceOptsHtml(curCostConfidence) + '</select></div>' +
-        '<div id="erq-cost-err" style="color:var(--danger);font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
-      '</div>'
-    : '<div class="form-group"><div class="form-label">What\'s the expected value? *</div><textarea id="erq-value-desc" rows="3">' + curOppOther.replace(/</g,'&lt;') + '</textarea></div>';
-
-  showModal('<div class="modal-title">Edit &amp; resubmit request <button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button></div>' +
-    (r.feedback ? '<div class="form-group"><div class="form-label">Why it was rejected</div><div style="background:var(--coral-soft);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--coral-strong-tx);white-space:pre-wrap;word-break:break-word">' + r.feedback + '</div></div>' : '') +
-    '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="erq-title" value="' + curTitle.replace(/"/g,'&quot;') + '"></div>' +
-    '<div class="form-group"><div class="form-label">Business Unit *</div><select id="erq-bu">' + buOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="erq-sponsor" value="' + curSponsor.replace(/"/g,'&quot;') + '" placeholder="Optional"></div>' +
-    '<div class="form-group"><div class="form-label">Description *</div><textarea id="erq-desc" rows="4">' + curDesc.replace(/</g,'&lt;') + '</textarea></div>' +
-    valueSectionHtml +
-    '<div class="form-group"><div class="form-label">Tags</div><div id="erq-tags-chips" style="margin-bottom:8px">' + (selectedTags.length ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>') + '</div><button class="btn btn-sm" onclick="openResubmitTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
-    teamPickerHtml('erq', 'toggleResubmitTeamMember', selectedTeam) +
-    '<div class="modal-footer"><button class="btn" onclick="closeModal()">Cancel</button>' +
-    '<button class="btn btn-primary" id="erq-save"><i class="ti ti-send"></i> Resubmit request</button></div>');
-
-  window.onResubmitOppTypeChange = function() {
-    var type = document.getElementById('erq-opp-type').value;
-    document.getElementById('erq-estimate-row').style.display = type ? 'block' : 'none';
-    if (type) document.getElementById('erq-estimate-label').textContent = type === 'Revenue opportunity' ? 'Estimated Revenue' : 'Estimated Savings';
-  };
-  if (hasFinancial) {
-    document.getElementById('erq-est-amount').addEventListener('input', function() {
-      this.value = this.value.replace(/[^0-9]/g,'');
-      document.getElementById('erq-est-err').style.display = 'none';
-    });
-    document.getElementById('erq-cost-amount').addEventListener('input', function() {
-      this.value = this.value.replace(/[^0-9]/g,'');
-      document.getElementById('erq-cost-err').style.display = 'none';
-    });
-  }
-  window.toggleResubmitTeamMember = function(el) {
-    var name = el.getAttribute('data-name');
-    var i = selectedTeam.indexOf(name);
-    if (el.checked && i < 0) selectedTeam.push(name);
-    else if (!el.checked && i >= 0) selectedTeam.splice(i, 1);
-  };
-  window.openResubmitTagPicker = function() {
-    var captured = {
-      title: document.getElementById('erq-title').value,
-      bu: document.getElementById('erq-bu').value,
-      sponsor: document.getElementById('erq-sponsor').value,
-      desc: document.getElementById('erq-desc').value,
-      team: selectedTeam.slice()
-    };
-    if (hasFinancial) {
-      captured.oppType = document.getElementById('erq-opp-type').value;
-      captured.oppOther = isLegacyOther ? curOppOther : '';
-      captured.estFreq = document.getElementById('erq-est-freq') ? document.getElementById('erq-est-freq').value : curEstFreq;
-      captured.estAmount = document.getElementById('erq-est-amount') ? document.getElementById('erq-est-amount').value : curEstAmount;
-      captured.valueConfidence = document.getElementById('erq-value-confidence') ? document.getElementById('erq-value-confidence').value : curValueConfidence;
-      captured.costAmount = document.getElementById('erq-cost-amount').value;
-      captured.costConfidence = document.getElementById('erq-cost-confidence').value;
-      captured.justification = document.getElementById('erq-justification').value;
-    } else {
-      captured.oppType = 'Something else';
-      captured.oppOther = document.getElementById('erq-value-desc').value;
+    await sb.from('request_categories').delete().eq('request_id', id);
+    if (selectedCategories.length) {
+      await sb.from('request_categories').insert(selectedCategories.map(function(c){ return { request_id: id, category: c }; }));
     }
-    openTagPicker(selectedTags, function(newTags) {
-      captured.tags = newTags;
-      openEditResubmitModal(id, captured);
-    }, false);
-  };
 
-  document.getElementById('erq-save').onclick = function(){ return resubmitRequest(id, selectedTags, selectedTeam); };
-}
+    r.title = title; r.description = desc; r.value = valueArea; r.businessUnit = bu; r.tshirtSize = tshirt;
+    r.sponsor = updates.sponsor; r.ownerName = updates.owner_name; r.startDate = startDate; r.targetEndDate = endDate;
+    r.reportedStatus = updates.reported_status; r.phase = updates.phase; r.progressPct = updates.progress_pct; r.health = updates.health;
+    r.categories = selectedCategories.slice(); r.tags = selectedTags.slice(); r.team = selectedTeam.slice();
+    if (!isLegacyFinancial) { r.opportunityType = updates.opportunity_type; r.opportunityTypeOther = updates.opportunity_type_other; }
+    r.editedByName = updates.edited_by_name; r.editedAt = updates.edited_at;
 
-async function resubmitRequest(id, selectedTags, selectedTeam) {
-  var r = D.requests.find(function(x){ return x.id === id; });
-  var title = document.getElementById('erq-title').value.trim();
-  var bu = document.getElementById('erq-bu').value;
-  var desc = document.getElementById('erq-desc').value.trim();
-  if (!title || !bu || !desc) { showToast('Please fill in all required fields', 'error'); return; }
-
-  var hasFinancial = canViewFinancials();
-  var isLegacyOther = r.opportunityType === 'Something else';
-  var updates = {
-    title: title, business_unit: bu, sponsor: document.getElementById('erq-sponsor').value.trim() || null, description: desc,
-    status: 'Pending', feedback: null, priority: null, value_area: null, start_date: null, target_end_date: null,
-    edited_by_name: null, edited_at: null
-  };
-
-  if (hasFinancial) {
-    var oppType = document.getElementById('erq-opp-type').value;
-    var justification = document.getElementById('erq-justification').value.trim();
-    var estAmountRaw = oppType ? document.getElementById('erq-est-amount').value.trim() : '';
-    if (estAmountRaw && isNaN(Number(estAmountRaw))) { document.getElementById('erq-est-err').style.display = 'block'; return; }
-    var costAmountRaw = document.getElementById('erq-cost-amount').value.trim();
-    if (costAmountRaw && isNaN(Number(costAmountRaw))) { document.getElementById('erq-cost-err').style.display = 'block'; return; }
-
-    if (!oppType && isLegacyOther) {
-      updates.opportunity_type = r.opportunityType;
-      updates.opportunity_type_other = r.opportunityTypeOther;
-      updates.estimated_frequency = r.estimatedFrequency;
-      updates.estimated_type = r.estimatedType;
-      updates.estimated_amount = r.estimatedAmount;
-      updates.value_confidence = r.valueConfidence;
-    } else if (!oppType) {
-      showToast('Please select a value type', 'error'); return;
+    if (isResubmit) {
+      r.status = 'Pending'; r.feedback = ''; r.rejectedDate = null;
+      showToast('Request resubmitted for review'); closeModal(); renderNav();
+      if (currentPage === 'my-requests') pgMyRequests(); else if (currentPage === 'requests') pgRequests();
     } else {
-      updates.opportunity_type = oppType;
-      updates.opportunity_type_other = null;
-      updates.estimated_frequency = document.getElementById('erq-est-freq').value;
-      updates.estimated_type = oppType === 'Revenue opportunity' ? 'Revenue' : 'Savings';
-      updates.estimated_amount = estAmountRaw ? Number(estAmountRaw) : null;
-      updates.value_confidence = document.getElementById('erq-value-confidence').value || null;
+      showToast('Request updated'); closeModal(); reviewRequest(id);
     }
-    updates.cost_estimate = costAmountRaw ? Number(costAmountRaw) : null;
-    updates.cost_confidence = document.getElementById('erq-cost-confidence').value || null;
-    updates.value_justification = justification || null;
-  } else {
-    var valueDesc = document.getElementById('erq-value-desc').value.trim();
-    if (!valueDesc) { showToast('Please describe the expected value', 'error'); return; }
-    updates.opportunity_type = 'Something else';
-    updates.opportunity_type_other = valueDesc;
-    updates.estimated_frequency = null;
-    updates.estimated_type = null;
-    updates.estimated_amount = null;
-    updates.value_confidence = null;
-    updates.cost_estimate = null;
-    updates.cost_confidence = null;
-    updates.value_justification = null;
-  }
-
-  var btn = document.getElementById('erq-save'); btn.disabled = true;
-  var result = await sb.from('requests').update(updates).eq('id', id);
-  if (result.error) { showToast('Could not resubmit: ' + result.error.message); btn.disabled = false; return; }
-
-  await sb.from('request_tags').delete().eq('request_id', id);
-  if (selectedTags.length) {
-    var tagRows = selectedTags.map(function(name){ var t = D.tags.find(function(x){ return x.name === name; }); return t ? { request_id: id, tag_id: t.id } : null; }).filter(Boolean);
-    if (tagRows.length) await sb.from('request_tags').insert(tagRows);
-  }
-  await sb.from('request_team').delete().eq('request_id', id);
-  if (selectedTeam.length) {
-    var teamRows = selectedTeam.map(function(name){ var res = resolveResource(name); return res ? { request_id: id, resource_id: res.id } : null; }).filter(Boolean);
-    if (teamRows.length) await sb.from('request_team').insert(teamRows);
-  }
-
-  r.title = title; r.businessUnit = bu; r.sponsor = updates.sponsor; r.description = desc; r.opportunityType = updates.opportunity_type;
-  r.opportunityTypeOther = updates.opportunity_type_other; r.estimatedFrequency = updates.estimated_frequency;
-  r.estimatedType = updates.estimated_type; r.estimatedAmount = updates.estimated_amount;
-  r.valueConfidence = updates.value_confidence; r.costEstimate = updates.cost_estimate; r.costConfidence = updates.cost_confidence;
-  r.valueJustification = updates.value_justification; r.tags = selectedTags; r.team = selectedTeam;
-  r.status = 'Pending'; r.feedback = ''; r.priority = null; r.value = null;
-  r.startDate = null; r.targetEndDate = null; r.editedByName = null; r.editedAt = null;
-
-  showToast('Request resubmitted for review'); closeModal(); renderNav();
-  if (currentPage === 'my-requests') pgMyRequests(); else if (currentPage === 'requests') pgRequests();
+  };
 }
 
 async function deleteRequest(id) {
