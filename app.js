@@ -13624,6 +13624,7 @@ function renderSubmitProjectRequestForm() {
     var tagsField = '<div class="form-group"><div class="form-label">Tags</div><div id="f-tags-chips" style="margin-bottom:8px"></div><button type="button" class="btn btn-sm" onclick="openRequestTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>';
     var sponsorField = '<div class="form-group">' + fieldLabel('f-sponsor', 'Sponsor', false, REQ_SPONSOR_HELP) + '<div id="pp-field-sponsor">' + sponsorPicker.fieldInner() + '</div></div>';
     var teamFieldHtml = teamPickerHtml('f', 'toggleRequestTeamMember', selectedTeam, REQ_TEAM_HELP);
+    var contractualHint = '<div class="form-sub" style="margin-top:-8px">If there are contractual date requirements, please note them in the description above.</div>';
 
     var html;
     if (branch === 'active') {
@@ -13640,6 +13641,7 @@ function renderSubmitProjectRequestForm() {
           '<div class="form-group">' + fieldLabel('f-end', 'Target end date', true, null) + '<input type="date" id="f-end"></div>' +
         '</div>' +
         '<div class="form-sub" style="margin-top:-8px">Estimates/targets, not commitments — these may shift based on current portfolio priorities.</div>' +
+        contractualHint +
         '<div class="grid-2">' +
           '<div class="form-group">' + fieldLabel('f-progress', 'Progress %', true, null) + '<input type="number" id="f-progress" min="0" max="100" placeholder="0–100"></div>' +
           '<div class="form-group">' + fieldLabel('f-health', 'Health', true, defsHtml(REQ_HEALTH_DEFS, ['green','amber','red'])) + '<select id="f-health"><option value="">— Select —</option><option value="green">Green</option><option value="amber">Amber</option><option value="red">Red</option></select></div>' +
@@ -13650,6 +13652,11 @@ function renderSubmitProjectRequestForm() {
       html = nameField + descField + valueDescField +
         '<div class="grid-2">' + valueAreaField + buField + '</div>' +
         '<div class="grid-2">' + tshirtField + categoryField + '</div>' +
+        '<div class="grid-2">' +
+          '<div class="form-group">' + fieldLabel('f-start', 'Requested start date', false, null) + '<input type="date" id="f-start"></div>' +
+          '<div class="form-group">' + fieldLabel('f-end', 'Target end date', false, null) + '<input type="date" id="f-end"></div>' +
+        '</div>' +
+        contractualHint +
         sponsorField + ownerFieldNew + teamFieldHtml;
     }
 
@@ -13703,6 +13710,8 @@ function renderSubmitProjectRequestForm() {
     var valueArea = document.getElementById('f-value').value;
     var bu = document.getElementById('f-bu').value;
     var tshirt = document.getElementById('f-tshirt').value || null;
+    var startDate = document.getElementById('f-start').value || null;
+    var endDate = document.getElementById('f-end').value || null;
 
     var missing = [];
     if (!title) missing.push('Project title');
@@ -13715,20 +13724,18 @@ function renderSubmitProjectRequestForm() {
     var record = {
       title: title, submitter_id: D.currentProfile.id, submitter_name: currentUser() || 'Current User',
       status: 'Pending', description: desc, opportunity_type: 'Something else', opportunity_type_other: valueDesc,
-      value_area: valueArea, business_unit: bu, tshirt_size: tshirt,
+      value_area: valueArea, business_unit: bu, tshirt_size: tshirt, start_date: startDate, target_end_date: endDate,
       sponsor: sponsorPicker.state.value || null, owner_name: ownerPicker.state.value || null
     };
 
     if (branch === 'active') {
       record.reported_status = document.getElementById('f-status').value || null;
       record.phase = document.getElementById('f-phase').value || null;
-      record.start_date = document.getElementById('f-start').value || null;
-      record.target_end_date = document.getElementById('f-end').value || null;
       var progressRaw = document.getElementById('f-progress').value;
       record.progress_pct = progressRaw === '' ? null : Number(progressRaw);
       record.health = document.getElementById('f-health').value || null;
-      if (!record.start_date) missing.push('Start date');
-      if (!record.target_end_date) missing.push('Target end date');
+      if (!startDate) missing.push('Start date');
+      if (!endDate) missing.push('Target end date');
       if (record.progress_pct == null) missing.push('Progress %');
       if (!record.health) missing.push('Health');
       if (!ownerPicker.state.value) missing.push('Owner');
