@@ -13530,8 +13530,8 @@ function renderSubmitProjectRequestForm() {
       return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="freq-category-cb" value="' + c + '"' + (selectedCategories.indexOf(c)>=0?' checked':'') + '> ' + c + '</label>';
     }).join('');
 
-    var nameField = '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="f-title" placeholder="e.g. Customer onboarding redesign"></div>';
-    var descField = '<div class="form-group"><div class="form-label">Description *</div><div class="form-sub">What is the problem or opportunity?</div><textarea id="f-desc" rows="4" placeholder="Describe the situation and why this project is needed…"></textarea></div>';
+    var nameField = '<div class="form-group"><div class="form-label">Project title <span class="req-star">*</span></div><input type="text" id="f-title" placeholder="e.g. Customer onboarding redesign"></div>';
+    var descField = '<div class="form-group"><div class="form-label">Description <span class="req-star">*</span></div><div class="form-sub">What is the problem or opportunity?</div><textarea id="f-desc" rows="4" placeholder="Describe the situation and why this project is needed…"></textarea></div>';
     var valueAreaField = '<div class="form-group">' + fieldLabel('f-value', 'Value area', true, defsHtml(VALUE_AREA_DEFS, VALUE_AREAS)) + '<select id="f-value">' + opts(VALUE_AREAS, '') + '</select></div>';
     var tshirtField = '<div class="form-group">' + fieldLabel('f-tshirt', 'T-shirt size', false, defsHtml(TSHIRT_DEFS, TSHIRT_SIZES) + '<div style="color:var(--text-muted);font-style:italic;margin-top:6px">Rough sizing for prioritization, not a formal estimate.</div>') +
       '<select id="f-tshirt"><option value="">— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>';
