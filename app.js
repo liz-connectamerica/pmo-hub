@@ -13532,6 +13532,7 @@ function renderSubmitProjectRequestForm() {
 
     var nameField = '<div class="form-group"><div class="form-label">Project title <span class="req-star">*</span></div><input type="text" id="f-title" placeholder="e.g. Customer onboarding redesign"></div>';
     var descField = '<div class="form-group"><div class="form-label">Description <span class="req-star">*</span></div><div class="form-sub">What is the problem or opportunity?</div><textarea id="f-desc" rows="4" placeholder="Describe the situation and why this project is needed…"></textarea></div>';
+    var valueDescField = '<div class="form-group"><div class="form-label">What\'s the expected value? <span class="req-star">*</span></div><div class="form-sub">Describe the benefit in your own words.</div><textarea id="f-valuedesc" rows="3" placeholder="e.g. Saves the team several hours a week on manual reconciliation"></textarea></div>';
     var valueAreaField = '<div class="form-group">' + fieldLabel('f-value', 'Value area', true, defsHtml(VALUE_AREA_DEFS, VALUE_AREAS)) + '<select id="f-value">' + opts(VALUE_AREAS, '') + '</select></div>';
     var tshirtField = '<div class="form-group">' + fieldLabel('f-tshirt', 'T-shirt size', false, defsHtml(TSHIRT_DEFS, TSHIRT_SIZES) + '<div style="color:var(--text-muted);font-style:italic;margin-top:6px">Rough sizing for prioritization, not a formal estimate.</div>') +
       '<select id="f-tshirt"><option value="">— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>';
@@ -13544,7 +13545,7 @@ function renderSubmitProjectRequestForm() {
     var html;
     if (branch === 'active') {
       var ownerField = '<div class="form-group">' + fieldLabel('f-owner', 'Owner', true, REQ_OWNER_HELP) + '<div id="pp-field-owner">' + ownerPicker.fieldInner() + '</div></div>';
-      html = nameField + descField +
+      html = nameField + descField + valueDescField +
         '<div class="grid-2">' + valueAreaField + tshirtField + '</div>' +
         categoryField + buField + tagsField +
         '<div class="grid-2">' +
@@ -13563,7 +13564,7 @@ function renderSubmitProjectRequestForm() {
         sponsorField + ownerField + teamFieldHtml;
     } else {
       var ownerFieldNew = '<div class="form-group">' + fieldLabel('f-owner', 'Owner', false, REQ_OWNER_HELP) + '<div id="pp-field-owner">' + ownerPicker.fieldInner() + '</div></div>';
-      html = nameField + descField +
+      html = nameField + descField + valueDescField +
         '<div class="grid-2">' + valueAreaField + buField + '</div>' +
         '<div class="grid-2">' + tshirtField + categoryField + '</div>' +
         sponsorField + ownerFieldNew + teamFieldHtml;
@@ -13615,6 +13616,7 @@ function renderSubmitProjectRequestForm() {
     var branch = st.reqBranch;
     var title = document.getElementById('f-title').value.trim();
     var desc = document.getElementById('f-desc').value.trim();
+    var valueDesc = document.getElementById('f-valuedesc').value.trim();
     var valueArea = document.getElementById('f-value').value;
     var bu = document.getElementById('f-bu').value;
     var tshirt = document.getElementById('f-tshirt').value || null;
@@ -13622,13 +13624,15 @@ function renderSubmitProjectRequestForm() {
     var missing = [];
     if (!title) missing.push('Project title');
     if (!desc) missing.push('Description');
+    if (!valueDesc) missing.push('Expected value');
     if (!valueArea) missing.push('Value area');
     if (!bu) missing.push('Business Unit');
     if (!selectedCategories.length) missing.push('Category');
 
     var record = {
       title: title, submitter_id: D.currentProfile.id, submitter_name: currentUser() || 'Current User',
-      status: 'Pending', description: desc, value_area: valueArea, business_unit: bu, tshirt_size: tshirt,
+      status: 'Pending', description: desc, opportunity_type: 'Something else', opportunity_type_other: valueDesc,
+      value_area: valueArea, business_unit: bu, tshirt_size: tshirt,
       sponsor: sponsorPicker.state.value || null, owner_name: ownerPicker.state.value || null
     };
 
@@ -13670,7 +13674,7 @@ function renderSubmitProjectRequestForm() {
     D.requests.push({
       id: result.data.id, title: title, submitter: record.submitter_name, submitterId: D.currentProfile.id,
       date: result.data.submitted_at, status: 'Pending', priority: null, value: valueArea, sponsor: record.sponsor,
-      businessUnit: bu, description: desc, opportunityType: null, opportunityTypeOther: null,
+      businessUnit: bu, description: desc, opportunityType: record.opportunity_type, opportunityTypeOther: record.opportunity_type_other,
       estimatedFrequency: null, estimatedType: null, estimatedAmount: null,
       valueConfidence: null, costEstimate: null, costConfidence: null, valueJustification: null,
       tshirtSize: tshirt, categories: selectedCategories.slice(), reportedStatus: record.reported_status || null,
