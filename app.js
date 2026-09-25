@@ -4016,27 +4016,38 @@ function reviewRequest(id) {
       (!canApprove ? '<div><div class="form-label">Business Unit</div>' + (r.businessUnit || '—') + '</div>' +
       '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '—') + inactiveNameBadge(r.sponsor) + '</div>' : '') +
     '</div>' +
-    (!canApprove ? '<div class="form-group"><div class="form-label">Description</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (r.description||'') + '</div></div>' : '') +
-    (!canApprove && (r.value || r.opportunityType) ?
+    (!canApprove ? '<div class="form-group"><div class="form-label">Description</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (r.description||'—') + '</div></div>' : '') +
+    (!canApprove ?
       '<div class="grid-2 mb-16">' +
-        (r.opportunityType ? '<div><div class="form-label">Value type</div><div style="white-space:pre-wrap;word-break:break-word">' + opportunityDisplay + '</div></div>' : '') +
-        (r.value ? '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + r.value + '</span></div>' : '') +
-        estimateDisplay +
+        (isLegacyFinancial
+          ? '<div><div class="form-label">Value type</div><div style="white-space:pre-wrap;word-break:break-word">' + opportunityDisplay + '</div></div>' + estimateDisplay
+          : '<div><div class="form-label">Expected value</div><div style="white-space:pre-wrap;word-break:break-word">' + (r.opportunityTypeOther || '—') + '</div></div>') +
+        '<div><div class="form-label">Value area</div>' + (r.value ? '<span class="badge badge-purple">' + r.value + '</span>' : '—') + '</div>' +
       '</div>' : '') +
     (r.valueJustification && canFinancials ? '<div class="form-group"><div class="form-label">Value justification</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + r.valueJustification + '</div></div>' : '') +
     (costDisplay ? '<div class="mb-16">' + costDisplay + '</div>' : '') +
-    (!canApprove && (r.ownerName || r.tshirtSize || (r.categories && r.categories.length) || r.reportedStatus || r.phase || r.progressPct != null || r.health) ?
+    (!canApprove ?
       '<div class="grid-2 mb-16">' +
-        (r.ownerName ? '<div><div class="form-label">Owner</div>' + r.ownerName + inactiveNameBadge(r.ownerName) + '</div>' : '') +
-        (r.tshirtSize ? '<div><div class="form-label">T-shirt size</div><span class="badge badge-gray">' + r.tshirtSize + '</span></div>' : '') +
-        ((r.categories && r.categories.length) ? '<div><div class="form-label">Category</div>' + r.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') + '</div>' : '') +
-        (r.reportedStatus ? '<div><div class="form-label">Reported status</div>' + bdg(r.reportedStatus) + '</div>' : '') +
-        (r.phase ? '<div><div class="form-label">Phase</div><span class="badge badge-gray">' + r.phase + '</span></div>' : '') +
-        (r.progressPct != null ? '<div><div class="form-label">Progress</div>' + r.progressPct + '%</div>' : '') +
-        (r.health ? '<div><div class="form-label">Health</div>' + hdot(r.health) + r.health.charAt(0).toUpperCase() + r.health.slice(1) + '</div>' : '') +
-      '</div>' : '') +
-    (!canApprove && r.tags && r.tags.length ? '<div class="form-group"><div class="form-label">Tags</div>' + r.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
-    (!canApprove && r.team && r.team.length ? '<div class="form-group"><div class="form-label">Proposed team</div>' + r.team.join(', ') + '</div>' : '') +
+        '<div><div class="form-label">T-shirt size</div>' + (r.tshirtSize ? '<span class="badge badge-gray">' + r.tshirtSize + '</span>' : '—') + '</div>' +
+        '<div><div class="form-label">Category</div>' + ((r.categories && r.categories.length) ? r.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') : '—') + '</div>' +
+      '</div>' +
+      '<div class="grid-2 mb-16">' +
+        '<div><div class="form-label">Start date</div>' + (r.startDate ? fmtDate(r.startDate) : '—') + '</div>' +
+        '<div><div class="form-label">Target end date</div>' + (r.targetEndDate ? fmtDate(r.targetEndDate) : '—') + '</div>' +
+      '</div>' +
+      (r.reportedStatus || r.phase || r.progressPct != null || r.health ?
+        '<div class="grid-2 mb-16">' +
+          '<div><div class="form-label">Reported status</div>' + (r.reportedStatus ? bdg(r.reportedStatus) : '—') + '</div>' +
+          '<div><div class="form-label">Phase</div>' + (r.phase ? '<span class="badge badge-gray">' + r.phase + '</span>' : '—') + '</div>' +
+        '</div>' +
+        '<div class="grid-2 mb-16">' +
+          '<div><div class="form-label">Progress</div>' + (r.progressPct != null ? r.progressPct + '%' : '—') + '</div>' +
+          '<div><div class="form-label">Health</div>' + (r.health ? (hdot(r.health) + r.health.charAt(0).toUpperCase() + r.health.slice(1)) : '—') + '</div>' +
+        '</div>' : '') +
+      '<div class="form-group"><div class="form-label">Owner</div>' + (r.ownerName ? (r.ownerName + inactiveNameBadge(r.ownerName)) : '—') + '</div>' +
+      '<div class="form-group"><div class="form-label">Tags</div>' + ((r.tags && r.tags.length) ? r.tags.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags</span>') + '</div>' +
+      '<div class="form-group"><div class="form-label">Proposed team</div>' + ((r.team && r.team.length) ? r.team.join(', ') : '<span class="text-muted" style="font-size:13px">No team members proposed</span>') + '</div>'
+    : '') +
     (!canApprove && r.feedback ? '<div class="form-group"><div class="form-label">PMO feedback</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--accent);white-space:pre-wrap;word-break:break-word">' + r.feedback + '</div></div>' : '');
 
   if (linkedP) {
