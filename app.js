@@ -2195,7 +2195,7 @@ var myProjectsTableState = {
 var myCapacityPageState = { month:'current' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
 var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
-var COMMITMENT_RANK = { 'Must':0, 'Should':1, 'Want':2, "Won't":3 };
+var COMMITMENT_RANK = { 'Must':0, 'Must - In Flight':1, 'Should':2, 'Want':3, "Won't":4 };
 
 // Capacity planning: a team member's involvement in a given project is set
 // as one of these tiers (by the project owner or an admin) rather than a
@@ -2796,7 +2796,7 @@ function bdg(s) {
     'Done':'badge-teal','In Progress':'badge-purple','To Do':'badge-gray',
     'Open':'badge-red','Closed':'badge-teal','Deferred':'badge-amber','Cancelled':'badge-red',
     'Critical':'badge-red','High':'badge-coral','Medium':'badge-amber','Low':'badge-blue','Needs prioritization':'badge-gray',
-    'Must':'badge-red','Should':'badge-amber','Want':'badge-blue',"Won't":'badge-gray','Needs commitment':'badge-gray'
+    'Must':'badge-red','Must - In Flight':'badge-coral','Should':'badge-amber','Want':'badge-blue',"Won't":'badge-gray','Needs commitment':'badge-gray'
   };
   return '<span class="badge ' + (map[s] || 'badge-gray') + '">' + s + '</span>';
 }
@@ -4603,7 +4603,7 @@ function pgBacklog() {
 
   bp = bp.slice().sort(function(a,b) {
     var av, bv;
-    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 4; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 4; }
+    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 5; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 5; }
     else {
       av = a[st.sort]; bv = b[st.sort];
       av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
@@ -5079,7 +5079,7 @@ function pgPlanned() {
 
   pp = pp.slice().sort(function(a,b) {
     var av, bv;
-    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 4; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 4; }
+    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 5; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 5; }
     else {
       var sortKey = st.sort === 'start' ? 'plannedStart' : st.sort;
       av = a[sortKey]; bv = b[sortKey];
@@ -5211,7 +5211,7 @@ function pgProjects() {
 
   ps = ps.slice().sort(function(a,b) {
     var av, bv;
-    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 4; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 4; }
+    if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 5; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 5; }
     else {
       av = a[st.sort]; bv = b[st.sort];
       av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
@@ -12966,7 +12966,10 @@ async function pgCommitmentReview() {
 
 function crBase() { return D.projects.filter(function(p){ return p.stage !== 'complete'; }); }
 function crTier(p) { return p.commitment || 'Needs commitment'; }
-function crByTier(tier) { return crBase().filter(function(p){ return crTier(p) === tier; }); }
+// "Must - In Flight" is a Must commitment that's already underway -- it
+// counts as Must everywhere on this page (stats, the Must tab, completeness
+// checks) rather than being its own invisible bucket nobody reviews.
+function crByTier(tier) { return crBase().filter(function(p){ return tier === 'Must' ? (p.commitment === 'Must' || p.commitment === 'Must - In Flight') : crTier(p) === tier; }); }
 
 function crLastUpdatedMs(p) { var t = crState.lastTouched[p.id]; return t ? new Date(t).getTime() : null; }
 
@@ -13119,7 +13122,7 @@ function crSortRows(list, tableKey, defaultCol) {
   return list.slice().sort(function(a, b) {
     var av, bv;
     if (st.col === 'stage') { av = STAGE_SORT_RANK[a.stage]!=null?STAGE_SORT_RANK[a.stage]:9; bv = STAGE_SORT_RANK[b.stage]!=null?STAGE_SORT_RANK[b.stage]:9; }
-    else if (st.col === 'tier') { av = a.commitment!=null?COMMITMENT_RANK[a.commitment]:4; bv = b.commitment!=null?COMMITMENT_RANK[b.commitment]:4; }
+    else if (st.col === 'tier') { av = a.commitment!=null?COMMITMENT_RANK[a.commitment]:5; bv = b.commitment!=null?COMMITMENT_RANK[b.commitment]:5; }
     else if (st.col === 'lastUpdated') { av = crLastUpdatedMs(a); av = av==null?Infinity:av; bv = crLastUpdatedMs(b); bv = bv==null?Infinity:bv; }
     else if (st.col === 'start' || st.col === 'end') { av = a[st.col] || '9999'; bv = b[st.col] || '9999'; }
     else if (st.col === 'owner') { av = a.owner ? a.owner.toLowerCase() : '￿'; bv = b.owner ? b.owner.toLowerCase() : '￿'; }
@@ -14383,7 +14386,7 @@ function myProjectsTableHtml(tabKey, list, emptyMsg) {
   filtered.sort(function(a, b) {
     var av, bv;
     if (st.sort === 'stage') { av = EXPORT_STAGE_LABELS[a.stage] || a.stage || ''; bv = EXPORT_STAGE_LABELS[b.stage] || b.stage || ''; }
-    else if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 4; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 4; }
+    else if (st.sort === 'commitment') { av = a.commitment != null ? COMMITMENT_RANK[a.commitment] : 5; bv = b.commitment != null ? COMMITMENT_RANK[b.commitment] : 5; }
     else { av = a[st.sort]; bv = b[st.sort]; }
     av = (av == null ? '' : av); bv = (bv == null ? '' : bv);
     if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); }
