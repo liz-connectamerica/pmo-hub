@@ -3955,7 +3955,13 @@ var reviewFinalizeDrafts = {};
 function captureFinalizeDraft(id) {
   var commitmentEl = document.getElementById('rv-commitment');
   if (!commitmentEl) return; // finalize section wasn't showing - nothing to capture
-  reviewFinalizeDrafts[id] = {
+  if (!reviewFinalizeDrafts[id]) reviewFinalizeDrafts[id] = {};
+  var valueDescEl = document.getElementById('rv-valuedesc');
+  Object.assign(reviewFinalizeDrafts[id], {
+    title: document.getElementById('rv-title').value,
+    desc: document.getElementById('rv-desc').value,
+    valueDesc: valueDescEl ? valueDescEl.value : reviewFinalizeDrafts[id].valueDesc,
+    sponsor: document.getElementById('rv-sponsor').value,
     commitment: commitmentEl.value, value: document.getElementById('rv-value').value,
     businessUnit: document.getElementById('rv-bu').value,
     tshirtSize: document.getElementById('rv-tshirt').value,
@@ -3968,7 +3974,7 @@ function captureFinalizeDraft(id) {
     progress: document.getElementById('rv-progress').value, health: document.getElementById('rv-health').value,
     owner: document.getElementById('rv-owner').value,
     feedback: document.getElementById('rfb') ? document.getElementById('rfb').value : ''
-  };
+  });
 }
 
 function reviewRequest(id) {
@@ -3977,10 +3983,14 @@ function reviewRequest(id) {
   var canResubmit = (r.status === 'Rejected' || r.status === 'Revoked') && (r.submitterId === effectiveUserId() || D.role === 'admin');
   var isAdmin = D.role === 'admin';
   var isOwnPending = r.status === 'Pending' && r.submitterId === effectiveUserId();
-  var canEditRequest = isAdmin || isOwnPending;
+  // Once the merged review/finalize form is showing (canApprove), it already
+  // covers every editable field inline -- the separate "Edit" modal would
+  // just be a redundant second way to change the same data.
+  var canEditRequest = (isAdmin || isOwnPending) && !canApprove;
   var linkedP = r.linkedProject ? D.projects.find(function(p){ return p.id === r.linkedProject; }) : null;
 
   var canFinancials = canViewFinancials();
+  var isLegacyFinancial = !!(r.opportunityType && r.opportunityType !== 'Something else');
   var estimateLabel = r.estimatedType ? 'Estimated ' + r.estimatedType : null;
   var estimateDisplay = (canFinancials && r.estimatedAmount != null)
     ? '<div><div class="form-label">' + estimateLabel + '</div>' + fmtCost(r.estimatedAmount) + (r.estimatedFrequency ? ' / ' + r.estimatedFrequency.toLowerCase() : '') + (r.valueConfidence ? ' <span class="badge badge-gray" style="font-size:10px">' + r.valueConfidence + '</span>' : '') + '</div>'
@@ -3995,7 +4005,7 @@ function reviewRequest(id) {
       '<div style="font-size:16px;font-weight:600;margin-bottom:8px">' + r.title + '</div>' +
       '<div style="display:flex;gap:6px">' + bdg(r.status) + (r.priority ? ' ' + bdg(r.priority) : '') + '</div>' +
     '</div><div style="display:flex;gap:6px">' +
-      (canEditRequest ? '<button class="btn btn-sm" onclick="captureFinalizeDraft(\'' + r.id + '\');closeModal();openEditRequestModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
+      (canEditRequest ? '<button class="btn btn-sm" onclick="closeModal();openEditRequestModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
       (isAdmin ? '<button class="btn btn-sm btn-danger" onclick="deleteRequest(\'' + r.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
       '<button class="btn btn-sm" onclick="closeModal()"><i class="ti ti-x"></i></button>' +
     '</div></div>' +
@@ -4003,11 +4013,11 @@ function reviewRequest(id) {
     '<div class="grid-2 mb-16">' +
       '<div><div class="form-label">Submitted by</div>' + r.submitter + '</div>' +
       '<div><div class="form-label">Date</div>' + r.date + '</div>' +
-      '<div><div class="form-label">Business Unit</div>' + (r.businessUnit || '—') + '</div>' +
-      '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '—') + inactiveNameBadge(r.sponsor) + '</div>' +
+      (!canApprove ? '<div><div class="form-label">Business Unit</div>' + (r.businessUnit || '—') + '</div>' +
+      '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '—') + inactiveNameBadge(r.sponsor) + '</div>' : '') +
     '</div>' +
-    '<div class="form-group"><div class="form-label">Description</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (r.description||'') + '</div></div>' +
-    (r.value || r.opportunityType ?
+    (!canApprove ? '<div class="form-group"><div class="form-label">Description</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (r.description||'') + '</div></div>' : '') +
+    (!canApprove && (r.value || r.opportunityType) ?
       '<div class="grid-2 mb-16">' +
         (r.opportunityType ? '<div><div class="form-label">Value type</div><div style="white-space:pre-wrap;word-break:break-word">' + opportunityDisplay + '</div></div>' : '') +
         (r.value ? '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + r.value + '</span></div>' : '') +
@@ -4015,7 +4025,7 @@ function reviewRequest(id) {
       '</div>' : '') +
     (r.valueJustification && canFinancials ? '<div class="form-group"><div class="form-label">Value justification</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + r.valueJustification + '</div></div>' : '') +
     (costDisplay ? '<div class="mb-16">' + costDisplay + '</div>' : '') +
-    (r.ownerName || r.tshirtSize || (r.categories && r.categories.length) || r.reportedStatus || r.phase || r.progressPct != null || r.health ?
+    (!canApprove && (r.ownerName || r.tshirtSize || (r.categories && r.categories.length) || r.reportedStatus || r.phase || r.progressPct != null || r.health) ?
       '<div class="grid-2 mb-16">' +
         (r.ownerName ? '<div><div class="form-label">Owner</div>' + r.ownerName + inactiveNameBadge(r.ownerName) + '</div>' : '') +
         (r.tshirtSize ? '<div><div class="form-label">T-shirt size</div><span class="badge badge-gray">' + r.tshirtSize + '</span></div>' : '') +
@@ -4025,9 +4035,9 @@ function reviewRequest(id) {
         (r.progressPct != null ? '<div><div class="form-label">Progress</div>' + r.progressPct + '%</div>' : '') +
         (r.health ? '<div><div class="form-label">Health</div>' + hdot(r.health) + r.health.charAt(0).toUpperCase() + r.health.slice(1) + '</div>' : '') +
       '</div>' : '') +
-    (r.tags && r.tags.length ? '<div class="form-group"><div class="form-label">Tags</div>' + r.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
-    (r.team && r.team.length ? '<div class="form-group"><div class="form-label">Proposed team</div>' + r.team.join(', ') + '</div>' : '') +
-    (r.feedback ? '<div class="form-group"><div class="form-label">PMO feedback</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--accent);white-space:pre-wrap;word-break:break-word">' + r.feedback + '</div></div>' : '');
+    (!canApprove && r.tags && r.tags.length ? '<div class="form-group"><div class="form-label">Tags</div>' + r.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
+    (!canApprove && r.team && r.team.length ? '<div class="form-group"><div class="form-label">Proposed team</div>' + r.team.join(', ') + '</div>' : '') +
+    (!canApprove && r.feedback ? '<div class="form-group"><div class="form-label">PMO feedback</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--accent);white-space:pre-wrap;word-break:break-word">' + r.feedback + '</div></div>' : '');
 
   if (linkedP) {
     html += '<div class="divider"></div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div class="form-label" style="margin-bottom:0">Linked project</div>' +
@@ -4047,7 +4057,21 @@ function reviewRequest(id) {
   }
 
   if (canApprove) {
-    var draft = reviewFinalizeDrafts[r.id] || {};
+    // Tags/team aren't backed by a simple input with a .value, so they live
+    // directly on the persistent draft object (not re-derived from r.* on
+    // every render) -- toggling a team checkbox or picking tags mutates
+    // these arrays in place and the change survives this function being
+    // called again (e.g. after the tag picker sub-modal closes).
+    if (!reviewFinalizeDrafts[r.id]) reviewFinalizeDrafts[r.id] = {};
+    var draft = reviewFinalizeDrafts[r.id];
+    if (draft.tags == null) draft.tags = (r.tags || []).slice();
+    if (draft.team == null) draft.team = (r.team || []).slice();
+    var curTagsApprove = draft.tags;
+    var curTeamApprove = draft.team;
+    var curTitleApprove = draft.title != null ? draft.title : r.title;
+    var curDescApprove = draft.desc != null ? draft.desc : (r.description || '');
+    var curSponsorApprove = draft.sponsor != null ? draft.sponsor : (r.sponsor || '');
+    var curValueDescApprove = draft.valueDesc != null ? draft.valueDesc : (r.opportunityTypeOther || '');
     var buOptsApprove = BUSINESS_UNITS.map(function(v){ return '<option' + ((draft.businessUnit||r.businessUnit)===v?' selected':'') + '>' + v + '</option>'; }).join('');
     var curCommitmentApprove = draft.commitment || '';
     var commitmentOptsApprove = '<option value=""' + (!curCommitmentApprove?' selected':'') + '>Needs commitment</option>' +
@@ -4076,7 +4100,12 @@ function reviewRequest(id) {
     var qStartOpts = qOpts.map(function(o){ return '<option value="' + o.idx + '"' + (o.idx===qStartVal?' selected':'') + '>' + o.label + '</option>'; }).join('');
     var qEndOpts = qOpts.filter(function(o){ return o.idx >= qStartVal; }).map(function(o){ return '<option value="' + o.idx + '"' + (o.idx===qEndVal?' selected':'') + '>' + o.label + '</option>'; }).join('');
 
-    html += '<div class="divider"></div><div class="section-title" style="font-size:14px">Finalize before approving</div>' +
+    html += '<div class="divider"></div><div class="section-title" style="font-size:14px">Review &amp; finalize</div>' +
+      '<div class="form-group"><div class="form-label">Project title <span class="req-star">*</span></div><input type="text" id="rv-title" value="' + curTitleApprove.replace(/"/g,'&quot;') + '"></div>' +
+      '<div class="form-group"><div class="form-label">Description <span class="req-star">*</span></div><textarea id="rv-desc" rows="4">' + curDescApprove.replace(/</g,'&lt;') + '</textarea></div>' +
+      (isLegacyFinancial ? '' :
+        '<div class="form-group"><div class="form-label">What\'s the expected value? <span class="req-star">*</span></div><textarea id="rv-valuedesc" rows="3">' + curValueDescApprove.replace(/</g,'&lt;') + '</textarea></div>') +
+      '<div class="form-group"><div class="form-label">Sponsor</div><input type="text" id="rv-sponsor" list="rv-owner-pool" value="' + curSponsorApprove.replace(/"/g,'&quot;') + '" placeholder="Optional"></div>' +
       '<div class="grid-2">' +
         '<div class="form-group"><div class="form-label">Commitment</div><select id="rv-commitment">' + commitmentOptsApprove + '</select></div>' +
         '<div class="form-group"><div class="form-label">Value area *</div><select id="rv-value"><option value="">— Select —</option>' + valOptsApprove + '</select></div>' +
@@ -4107,6 +4136,8 @@ function reviewRequest(id) {
       '</div>' +
       '<div class="form-group"><div class="form-label">Owner</div><input type="text" id="rv-owner" list="rv-owner-pool" value="' + curOwnerApprove.replace(/"/g,'&quot;') + '" placeholder="Search people…"></div>' +
       '<datalist id="rv-owner-pool">' + individualResourceNames().map(function(n){ return '<option value="' + n.replace(/"/g,'&quot;') + '">'; }).join('') + '</datalist>' +
+      '<div class="form-group"><div class="form-label">Tags</div><div id="rv-tags-chips" style="margin-bottom:8px">' + (curTagsApprove.length ? curTagsApprove.map(function(t){ return tagBadge(t); }).join(' ') : '<span class="text-muted" style="font-size:13px">No tags selected</span>') + '</div><button type="button" class="btn btn-sm" onclick="openRvTagPicker(\'' + r.id + '\')"><i class="ti ti-tag"></i> Select tags</button></div>' +
+      teamPickerHtml('rv', 'toggleRvTeamMember', curTeamApprove) +
       '<div class="form-group"><div class="form-label">Feedback to submitter</div><textarea id="rfb" placeholder="Decision rationale…">' + (draft.feedback!=null?draft.feedback:(r.feedback||'')) + '</textarea></div>' +
       '<div class="modal-footer"><button class="btn btn-danger" onclick="decideReq(\'' + r.id + '\',\'Rejected\')"><i class="ti ti-x"></i> Reject</button>' +
       '<button class="btn btn-success" onclick="decideReq(\'' + r.id + '\',\'Approved\')"><i class="ti ti-check"></i> Approve</button></div>';
@@ -4117,6 +4148,19 @@ function reviewRequest(id) {
       var curEnd = parseInt(endEl.value);
       var newEnd = curEnd < newStart ? newStart : curEnd;
       endEl.innerHTML = qOpts.filter(function(o){ return o.idx >= newStart; }).map(function(o){ return '<option value="' + o.idx + '"' + (o.idx===newEnd?' selected':'') + '>' + o.label + '</option>'; }).join('');
+    };
+    window.toggleRvTeamMember = function(el) {
+      var name = el.getAttribute('data-name');
+      var i = curTeamApprove.indexOf(name);
+      if (el.checked && i < 0) curTeamApprove.push(name);
+      else if (!el.checked && i >= 0) curTeamApprove.splice(i, 1);
+    };
+    window.openRvTagPicker = function(reqId) {
+      captureFinalizeDraft(reqId);
+      openTagPicker(curTagsApprove, function(newTags) {
+        reviewFinalizeDrafts[reqId].tags = newTags;
+        reviewRequest(reqId);
+      }, false);
     };
   } else if (canResubmit) {
     html += '<div class="modal-footer"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="openEditResubmitModal(\'' + r.id + '\')"><i class="ti ti-edit"></i> Edit &amp; resubmit</button></div>';
@@ -4504,6 +4548,26 @@ async function decideReq(id, decision) {
   var fb = document.getElementById('rfb');
   var feedbackVal = fb ? fb.value : r.feedback;
 
+  // The merged review/finalize form makes the basic request info editable
+  // too (title/description/expected value/sponsor/tags/team), alongside the
+  // finalize-only fields below -- read it all here regardless of decision,
+  // since a correction made while reviewing shouldn't be lost just because
+  // the request ends up rejected instead of approved.
+  var titleEl = document.getElementById('rv-title');
+  var editedTitle = titleEl ? titleEl.value.trim() : r.title;
+  var descEl = document.getElementById('rv-desc');
+  var editedDesc = descEl ? descEl.value.trim() : r.description;
+  var sponsorEl = document.getElementById('rv-sponsor');
+  var editedSponsor = sponsorEl ? (sponsorEl.value.trim() || null) : (r.sponsor || null);
+  var valueDescEl = document.getElementById('rv-valuedesc');
+  var editedValueDesc = valueDescEl ? valueDescEl.value.trim() : r.opportunityTypeOther;
+  var editedTags = (reviewFinalizeDrafts[id] && reviewFinalizeDrafts[id].tags) || r.tags || [];
+  var editedTeam = (reviewFinalizeDrafts[id] && reviewFinalizeDrafts[id].team) || r.team || [];
+
+  if (titleEl && !editedTitle) { showToast('Please fill in Project title', 'error'); return; }
+  if (descEl && !editedDesc) { showToast('Please fill in Description', 'error'); return; }
+  if (valueDescEl && !editedValueDesc) { showToast('Please describe the expected value', 'error'); return; }
+
   if (decision === 'Approved') {
     var commitment = document.getElementById('rv-commitment').value || null;
     var valueArea = document.getElementById('rv-value').value;
@@ -4530,7 +4594,26 @@ async function decideReq(id, decision) {
     // to create a second project from the same request.
     document.querySelectorAll('.modal-footer button').forEach(function(b){ b.disabled = true; });
     var selectedCategories = Array.from(document.querySelectorAll('.rv-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
+  }
 
+  // Persist the basic-info edits for both decisions.
+  var basicUpdates = { title: editedTitle, description: editedDesc, sponsor: editedSponsor };
+  if (valueDescEl) basicUpdates.opportunity_type_other = editedValueDesc;
+  await sb.from('requests').update(basicUpdates).eq('id', id);
+  await sb.from('request_tags').delete().eq('request_id', id);
+  if (editedTags.length) {
+    var reqTagRows = editedTags.map(function(name){ var t = D.tags.find(function(x){ return x.name === name; }); return t ? { request_id: id, tag_id: t.id } : null; }).filter(Boolean);
+    if (reqTagRows.length) await sb.from('request_tags').insert(reqTagRows);
+  }
+  await sb.from('request_team').delete().eq('request_id', id);
+  if (editedTeam.length) {
+    var reqTeamRows = editedTeam.map(function(name){ var res = resolveResource(name); return res ? { request_id: id, resource_id: res.id } : null; }).filter(Boolean);
+    if (reqTeamRows.length) await sb.from('request_team').insert(reqTeamRows);
+  }
+  r.title = editedTitle; r.description = editedDesc; r.sponsor = editedSponsor; r.tags = editedTags; r.team = editedTeam;
+  if (valueDescEl) r.opportunityTypeOther = editedValueDesc;
+
+  if (decision === 'Approved') {
     var newStage = computeStageFromDates(startDate, endDate);
     var targetQuarter = null, targetYear = null, targetEndQuarter = null, targetEndYear = null;
     if (newStage === 'backlog') {
