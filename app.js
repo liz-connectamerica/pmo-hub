@@ -3875,7 +3875,7 @@ function requestCommitment(r) {
   return p ? p.commitment : null;
 }
 
-function pgRequests() {
+function pgRequests(skipRefresh) {
   tb('Requests');
   var st = requestsPageState;
   var tabs = ['All','Pending','Backlog','Planned','Active','Rejected','Revoked'];
@@ -3956,6 +3956,20 @@ function pgRequests() {
     );
   };
   window.switchRTab = function(t) { st.activeTab = t; pgRequests(); };
+
+  // This page is where admins watch for new/resubmitted requests, but
+  // D.requests is only ever loaded once at session start (or after an
+  // action this session itself took) -- another user's submission,
+  // resubmission, or decision made in their own session never reaches an
+  // already-open tab otherwise. Render immediately with what's on hand,
+  // then quietly refresh underneath so a stale Rejected/Pending doesn't
+  // linger just because nobody reloaded the page.
+  if (!skipRefresh) {
+    refreshRequests().then(function() {
+      renderNav();
+      if (currentPage === 'requests') withScrollPreserved(function(){ pgRequests(true); });
+    });
+  }
 }
 
 var reviewFinalizeDrafts = {};
@@ -13677,7 +13691,7 @@ var myWorkRequestsSubmittedState = { search: '', sort: 'submitted', dir: 'desc',
 
 window.setMyRequestsTopTab = function(t) { myRequestsPageState.tab = t; pgMyRequests(); };
 
-function pgMyRequests() {
+function pgMyRequests(skipRefresh) {
   tb('My Requests');
   var top = myRequestsPageState;
   var myId = effectiveUserId();
@@ -13691,6 +13705,15 @@ function pgMyRequests() {
 
   document.getElementById('content').innerHTML = tabsHtml + '<div id="my-requests-body"></div>';
   if (top.tab === 'project') renderMyProjectRequests(); else renderMySubmittedWorkRequests();
+
+  // Same reasoning as pgRequests(): a decision made on this request by an
+  // admin in their own session (approve/reject/feedback) never reaches an
+  // already-open My Requests tab otherwise. Refresh quietly underneath.
+  if (!skipRefresh) {
+    refreshRequests().then(function() {
+      if (currentPage === 'my-requests') withScrollPreserved(function(){ pgMyRequests(true); });
+    });
+  }
 }
 
 function renderMyProjectRequests() {
