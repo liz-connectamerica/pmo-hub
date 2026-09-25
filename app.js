@@ -13626,39 +13626,31 @@ function renderSubmitProjectRequestForm() {
     var teamFieldHtml = teamPickerHtml('f', 'toggleRequestTeamMember', selectedTeam, REQ_TEAM_HELP);
     var contractualHint = '<div class="form-sub" style="margin-top:-8px">If there are contractual date requirements, please note them in the description above.</div>';
 
-    var html;
-    if (branch === 'active') {
-      var ownerField = '<div class="form-group">' + fieldLabel('f-owner', 'Owner', true, REQ_OWNER_HELP) + '<div id="pp-field-owner">' + ownerPicker.fieldInner() + '</div></div>';
-      html = nameField + descField + valueDescField +
-        '<div class="grid-2">' + valueAreaField + tshirtField + '</div>' +
-        categoryField + buField + tagsField +
-        '<div class="grid-2">' +
-          '<div class="form-group">' + fieldLabel('f-status', 'Status', false, defsHtml(REQ_STATUS_DEFS, STATUSES)) + '<select id="f-status"><option value="">— Not set —</option>' + STATUSES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>' +
-          '<div class="form-group">' + fieldLabel('f-phase', 'Phase', false, defsHtml(REQ_PHASE_DEFS, PHASES)) + '<select id="f-phase"><option value="">— Not set —</option>' + PHASES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>' +
-        '</div>' +
-        '<div class="grid-2">' +
-          '<div class="form-group">' + fieldLabel('f-start', 'Start date', true, null) + '<input type="date" id="f-start"></div>' +
-          '<div class="form-group">' + fieldLabel('f-end', 'Target end date', true, null) + '<input type="date" id="f-end"></div>' +
-        '</div>' +
-        '<div class="form-sub" style="margin-top:-8px">Estimates/targets, not commitments — these may shift based on current portfolio priorities.</div>' +
-        contractualHint +
-        '<div class="grid-2">' +
-          '<div class="form-group">' + fieldLabel('f-progress', 'Progress %', true, null) + '<input type="number" id="f-progress" min="0" max="100" placeholder="0–100"></div>' +
-          '<div class="form-group">' + fieldLabel('f-health', 'Health', true, defsHtml(REQ_HEALTH_DEFS, ['green','amber','red'])) + '<select id="f-health"><option value="">— Select —</option><option value="green">Green</option><option value="amber">Amber</option><option value="red">Red</option></select></div>' +
-        '</div>' +
-        sponsorField + ownerField + teamFieldHtml;
-    } else {
-      var ownerFieldNew = '<div class="form-group">' + fieldLabel('f-owner', 'Owner', false, REQ_OWNER_HELP) + '<div id="pp-field-owner">' + ownerPicker.fieldInner() + '</div></div>';
-      html = nameField + descField + valueDescField +
-        '<div class="grid-2">' + valueAreaField + buField + '</div>' +
-        '<div class="grid-2">' + tshirtField + categoryField + '</div>' +
-        '<div class="grid-2">' +
-          '<div class="form-group">' + fieldLabel('f-start', 'Requested start date', false, null) + '<input type="date" id="f-start"></div>' +
-          '<div class="form-group">' + fieldLabel('f-end', 'Target end date', false, null) + '<input type="date" id="f-end"></div>' +
-        '</div>' +
-        contractualHint +
-        sponsorField + ownerFieldNew + teamFieldHtml;
-    }
+    var isActive = branch === 'active';
+    var ownerField = '<div class="form-group">' + fieldLabel('f-owner', 'Owner', isActive, REQ_OWNER_HELP) + '<div id="pp-field-owner">' + ownerPicker.fieldInner() + '</div></div>';
+    var statusPhaseHtml = '<div class="grid-2">' +
+      '<div class="form-group">' + fieldLabel('f-status', 'Status', false, defsHtml(REQ_STATUS_DEFS, STATUSES)) + '<select id="f-status"><option value="">— Not set —</option>' + STATUSES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>' +
+      '<div class="form-group">' + fieldLabel('f-phase', 'Phase', false, defsHtml(REQ_PHASE_DEFS, PHASES)) + '<select id="f-phase"><option value="">— Not set —</option>' + PHASES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>' +
+    '</div>';
+    var dateFieldsHtml = '<div class="grid-2">' +
+      '<div class="form-group">' + fieldLabel('f-start', isActive ? 'Start date' : 'Requested start date', isActive, null) + '<input type="date" id="f-start"></div>' +
+      '<div class="form-group">' + fieldLabel('f-end', 'Target end date', isActive, null) + '<input type="date" id="f-end"></div>' +
+    '</div>' +
+    (isActive ? '<div class="form-sub" style="margin-top:-8px">Estimates/targets, not commitments — these may shift based on current portfolio priorities.</div>' : '') +
+    contractualHint;
+    var progressHealthHtml = '<div class="grid-2">' +
+      '<div class="form-group">' + fieldLabel('f-progress', 'Progress %', true, null) + '<input type="number" id="f-progress" min="0" max="100" placeholder="0–100"></div>' +
+      '<div class="form-group">' + fieldLabel('f-health', 'Health', true, defsHtml(REQ_HEALTH_DEFS, ['green','amber','red'])) + '<select id="f-health"><option value="">— Select —</option><option value="green">Green</option><option value="amber">Amber</option><option value="red">Red</option></select></div>' +
+    '</div>';
+
+    var html = nameField + descField + valueDescField +
+      '<div class="grid-2">' + valueAreaField + tshirtField + '</div>' +
+      '<div class="grid-2">' + categoryField + buField + '</div>' +
+      tagsField +
+      (isActive ? statusPhaseHtml : '') +
+      dateFieldsHtml +
+      (isActive ? progressHealthHtml : '') +
+      sponsorField + ownerField + teamFieldHtml;
 
     document.getElementById('req-form-fields').innerHTML = html;
     document.querySelectorAll('.freq-category-cb').forEach(function(cb) {
