@@ -10,11 +10,17 @@ This guide covers the tools only available to the **PMO Admin** role. It assumes
 
 The **Requests** page (with a live count badge for pending items) is where new project proposals get reviewed. Tabs let you filter by **All, Pending, Backlog, Planned, Active, Rejected, Revoked**.
 
-Opening a pending request shows the full proposal — submitter, business unit, sponsor, description, value type, and (admin-only) the dollar estimate, value justification, and cost estimate with confidence ratings. A **"Finalize before approving"** section lets you set or override:
+Opening a pending request shows a single **"Review & finalize"** form — every field is inline-editable here, whether it came from the submitter or is yours to set, so there's no separate "Edit" step for the basic info anymore. That includes:
 
+- Project title, description, expected value, and sponsor — whatever the submitter entered, editable in place
+- Tags and proposed team, same pickers as the submission form
 - Commitment (Must/Should/Want/Won't — optional, admin-only, defaults to "Needs commitment"), Value Area, Business Unit, T-shirt size, Delivery Methodology (Agile/Waterfall/Hybrid — optional, since a request never collects this itself), Categories
 - Either real Start/Target-End dates, **or**, if the timeline isn't known yet, an optional target quarter range (this just keeps it visible on the Future Planning timeline while it sits in Backlog)
+- For a request submitted as "actively being worked": Status, Phase, Progress %, and Health, pre-filled from what the submitter reported instead of starting blank
+- Owner — pre-filled if the submitter named one
 - Free-text feedback to the submitter
+
+Editing title/description/sponsor/tags/team and clicking **Reject** still saves those edits, not just the rejection — a correction made while reviewing isn't lost just because the request doesn't get approved. Legacy requests submitted with a structured dollar estimate (from before financial data collection was removed from the submission form) still show that estimate, value justification, and cost estimate read-only, admin-only, with confidence ratings.
 
 Then **Approve** or **Reject**.
 
@@ -27,7 +33,7 @@ Then **Approve** or **Reject**.
 | Both, and today falls inside the range | Active |
 | Both, but the range hasn't started yet | Planned |
 
-A full project record is created immediately — not a placeholder — carrying over the description, proposed team, tags, and any financial estimates. The request itself updates to **Backlog**, **Planned**, or **Active** to match. There is no lasting "Approved" status — don't expect to see that word stick around; it's replaced right away by wherever the project landed.
+A full project record is created immediately — not a placeholder — carrying over the description, proposed team, tags, t-shirt size, categories, owner, and any financial estimates, plus status/phase/progress/health when the request was submitted as "actively being worked" (or whatever you overrode them to on the review form). The request itself updates to **Backlog**, **Planned**, or **Active** to match. There is no lasting "Approved" status — don't expect to see that word stick around; it's replaced right away by wherever the project landed.
 
 **On Reject**, the request becomes **Rejected** with your feedback attached and a rejected-date stamp.
 

@@ -14,6 +14,19 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-25">
+  <h2>Guided project request form: branch by "new" vs. "already underway"</h2>
+  <p class="changelog-date">September 25, 2026</p>
+  <ul>
+    <li>The <strong>Project Request</strong> submission form now starts by asking whether this is a <strong>new request to prioritize</strong> or a project that's <strong>already being worked</strong>, and asks for different information depending on which: an active request additionally captures status, phase, real start/target end dates, progress %, health, and a required owner, so PMO doesn't have to go back to the requestor for data the request should have had from the start.</li>
+    <li><strong>Financial data collection is removed from the submission form for now</strong>, for everyone — admin and member alike describe expected value as a plain-text answer to "what's the expected value?" instead. Existing requests with structured financial figures are unaffected and still display for admins.</li>
+    <li>Many fields — value area, category, t-shirt size, status, phase, health, sponsor, owner, and team — now have an expandable <strong>?</strong> button with a short definition, so submitters don't have to guess or ask what a value means.</li>
+    <li>Both branches now ask for Business Unit and Category, and note that contractual date requirements should be called out in the description rather than relied on from the date fields alone. The "new request" branch also gains optional requested-start/target-end dates.</li>
+    <li>Removed "Corporate Functions" from the Business Unit picklist everywhere in the app.</li>
+    <li>Reviewing a pending request as an admin is now one consistent editable form instead of a read-only top half plus an inline-editable "Finalize before approving" bottom half — title, description, expected value, sponsor, tags, and team are editable right alongside business unit, value area, dates, status, and the rest, and submitted values (owner, t-shirt size, category, status, phase, progress, health) pre-fill the finalize step instead of starting blank. Edits are saved whether the request is approved or rejected.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-09-23">
   <h2>Structured Blockers; Information tab: one Edit button; filter/timeline additions</h2>
   <p class="changelog-date">September 23, 2026</p>

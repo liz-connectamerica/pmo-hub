@@ -93,13 +93,13 @@ One thing worth knowing: only an admin can reassign a project's **Sponsor** or *
 
 **Submit a Request** covers two different kinds of ask, as two tabs on the same page — each tab explains what it's for right at the top:
 
-- **Project Request** — a full-scale project with its own timeline, milestones, team, and budget. Goes through PMO review before it's approved and scheduled. You'll fill in:
-  - Project title, business unit, and a description of the problem or opportunity (all required)
-  - An optional sponsor — search-and-pick from existing individuals, same picker pattern used elsewhere in the app, not a free-text name
-  - A description of the expected value — for most users this is a simple free-text box ("what's the expected value?"); if you have financial-view permission, you'll instead get optional structured fields for a value type, dollar estimate, frequency, and confidence rating — none of these are required to submit
-  - Tags, and a proposed team (who you think should work on it)
+- **Project Request** — a full-scale project with its own timeline, milestones, team, and budget. Goes through PMO review before it's approved and scheduled. The form starts by asking which of two situations you're in, since each needs different information:
+  - **New request to prioritize** — hasn't started yet. Asks for project title, description, expected value, value area, business unit, category (all required), plus optional t-shirt size, requested start/target end dates, sponsor, owner, tags, and proposed team.
+  - **Actively being worked** — already underway. Asks for everything above plus the project's current status, phase, real start/target end dates, progress %, health, and owner — all required, since you're describing something already in motion, not asking for one to be scheduled. If there are contractual date requirements, call them out in the description rather than relying on the date fields alone, since those are what PMO schedules against, not a hard commitment.
 
-  There's no category picker on this form — categories get set later, when a PMO admin reviews and approves the request. After you submit, it's **Pending** until reviewed. If approved, it becomes a real project — status changes to **Backlog**, **Planned**, or **Active** to match wherever the project landed (you generally won't see a literal "Approved" status). If rejected, you'll see optional feedback from the reviewer.
+  Many fields — value area, category, t-shirt size, status, phase, health, sponsor, owner, team — have a small **?** button next to the label that expands a short definition or two, so you don't have to guess what a value means or leave the page to ask.
+
+  Sponsor and owner are both search-and-pick from existing individuals, same picker pattern used elsewhere in the app, not free-text names. After you submit, it's **Pending** until reviewed. If approved, it becomes a real project — status changes to **Backlog**, **Planned**, or **Active** to match wherever the project landed (you generally won't see a literal "Approved" status). If rejected, you'll see optional feedback from the reviewer.
 
 - **Work Request** — a smaller ask for someone's time, not a full project. No PMO review needed. Fill in a title, description, an optional **requested completion date** (when you'd ideally like it done by), and who it's for (search and pick an individual resource — work requests are always assigned to a specific person, not a team). It lands directly in that person's queue as **New**, with nothing further for you to do until they respond. Whoever accepts it can keep your requested date or set a different one — see below for how that shows up on your side.
 
@@ -169,11 +169,11 @@ You'll see it wherever that item normally shows up — the project/task/mileston
 These look similar but work differently:
 
 - **Tags** are a flexible, multi-select label you can filter by on almost every list page (Portfolio, Roadmap, and the project list pages all have a tag filter). A project, a resource, or a request can carry any number of tags.
-- **Categories** act more like tabs — a project can belong to multiple categories, and it'll show up under each corresponding tab on pages like Active, Backlog, Planned, Completed, and Roadmap. You can't set a project's categories yourself unless you're its owner, sponsor, or an admin; otherwise they're set when a request is approved.
+- **Categories** act more like tabs — a project can belong to multiple categories, and it'll show up under each corresponding tab on pages like Active, Backlog, Planned, Completed, and Roadmap. You can't set a project's categories directly unless you're its owner, sponsor, or an admin; otherwise you choose them on the project request form and a PMO admin can adjust them at approval.
 
 ## Permissions at a glance
 
 - **Editing a project**: you can edit a project if you're an admin, or if you're that project's designated **Owner** or **Sponsor** — both get identical edit rights. Being on the team isn't enough on its own — ownership or sponsorship is what unlocks editing. One exception within that: neither the owner nor the sponsor can reassign **Sponsor** or **Owner** — only an admin can — though the owner can set **Requirements Owner**. The **Requirements Owner** in turn gets one specific extra permission of their own: managing that project's Requirements and Scope items, even if they're not the project owner.
-- **Financial data**: dollar estimates and confidence ratings are visible only to admins today, everywhere in the app — including on a project you own, on requests, and on the submission form (which shows you a plain-text value description instead).
+- **Financial data**: dollar estimates and confidence ratings aren't collected on the project request form at all for now — everyone, admin or not, describes expected value as plain text instead. Older requests submitted before this change may still carry structured financial figures, which remain visible only to admins.
 - **Tasks vs. RAID**: any assignee can mark their own task done and comment on it; RAID log entries can only be added by the project's owner, sponsor, or an admin, with no exception for people the issue might concern.
 - **Sidebar differences**: as a regular member, you won't see Future Planning, Prioritize Backlog, Resources, Capacity, the Requests review queue, Import/Export Projects, or Administration — those are covered in the **[Admin Guide](../admin-guide/)**.
