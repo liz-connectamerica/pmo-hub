@@ -63,6 +63,7 @@ async function loadRequests() {
     sb.from('requests').select('*').is('deleted_at', null),
     sb.from('request_tags').select('*'),
     sb.from('request_team').select('*'),
+    sb.from('request_categories').select('*'),
     sb.from('tags').select('id, name'),
     sb.from('resources').select('id, name')
   ]);
@@ -72,10 +73,12 @@ async function loadRequests() {
   var requestRows = results[0].data || [];
   var reqTagRows = results[1].data || [];
   var reqTeamRows = results[2].data || [];
-  var tagNameById = {}; (results[3].data || []).forEach(function(t){ tagNameById[t.id] = t.name; });
-  var resourceNameById = {}; (results[4].data || []).forEach(function(r){ resourceNameById[r.id] = r.name; });
+  var reqCategoryRows = results[3].data || [];
+  var tagNameById = {}; (results[4].data || []).forEach(function(t){ tagNameById[t.id] = t.name; });
+  var resourceNameById = {}; (results[5].data || []).forEach(function(r){ resourceNameById[r.id] = r.name; });
   var tagsByRequest = groupBy(reqTagRows, 'request_id');
   var teamByRequest = groupBy(reqTeamRows, 'request_id');
+  var categoriesByRequest = groupBy(reqCategoryRows, 'request_id');
 
   return requestRows.map(function(r) {
     return {
@@ -89,8 +92,11 @@ async function loadRequests() {
       valueConfidence: r.value_confidence, costEstimate: r.cost_estimate, costConfidence: r.cost_confidence,
       valueJustification: r.value_justification, startDate: r.start_date, targetEndDate: r.target_end_date,
       editedByName: r.edited_by_name, editedAt: r.edited_at,
+      tshirtSize: r.tshirt_size, reportedStatus: r.reported_status, phase: r.phase,
+      progressPct: r.progress_pct, health: r.health, ownerName: r.owner_name,
       tags: (tagsByRequest[r.id] || []).map(function(t){ return tagNameById[t.tag_id]; }).filter(Boolean),
-      team: (teamByRequest[r.id] || []).map(function(t){ return resourceNameById[t.resource_id]; }).filter(Boolean)
+      team: (teamByRequest[r.id] || []).map(function(t){ return resourceNameById[t.resource_id]; }).filter(Boolean),
+      categories: (categoriesByRequest[r.id] || []).map(function(c){ return c.category; })
     };
   });
 }
@@ -2633,7 +2639,7 @@ async function copyReportForEmail(pid) {
   }
 }
 
-function teamPickerHtml(prefix, toggleFnName, selectedNames) {
+function teamPickerHtml(prefix, toggleFnName, selectedNames, helpHtml) {
   var individuals = individualResourceNames();
   var teams = D.resources.filter(function(r){ return r.type === 'team'; }).sort(function(a,b){ return a.name.localeCompare(b.name); });
 
@@ -2650,7 +2656,7 @@ function teamPickerHtml(prefix, toggleFnName, selectedNames) {
     '</label>';
   }).join('');
 
-  return '<div class="form-group"><div class="form-label">Team</div>' +
+  return '<div class="form-group">' + fieldLabel(prefix + '-team', 'Team', false, helpHtml || null) +
     '<div class="tab-bar" style="margin-bottom:8px">' +
       '<div class="tab active" id="' + prefix + '-team-tab-individual" onclick="switchTeamPickerTab(\'' + prefix + '\',\'individual\')">Individual</div>' +
       '<div class="tab" id="' + prefix + '-team-tab-team" onclick="switchTeamPickerTab(\'' + prefix + '\',\'team\')">Team</div>' +
@@ -3958,6 +3964,9 @@ function captureFinalizeDraft(id) {
     quarterStart: document.getElementById('rv-q-start') ? document.getElementById('rv-q-start').value : '',
     quarterEnd: document.getElementById('rv-q-end') ? document.getElementById('rv-q-end').value : '',
     categories: Array.from(document.querySelectorAll('.rv-category-cb')).filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; }),
+    reportedStatus: document.getElementById('rv-status').value, phase: document.getElementById('rv-phase').value,
+    progress: document.getElementById('rv-progress').value, health: document.getElementById('rv-health').value,
+    owner: document.getElementById('rv-owner').value,
     feedback: document.getElementById('rfb') ? document.getElementById('rfb').value : ''
   };
 }
@@ -3998,13 +4007,24 @@ function reviewRequest(id) {
       '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '—') + inactiveNameBadge(r.sponsor) + '</div>' +
     '</div>' +
     '<div class="form-group"><div class="form-label">Description</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + (r.description||'') + '</div></div>' +
-    '<div class="grid-2 mb-16">' +
-      '<div><div class="form-label">Value type</div><div style="white-space:pre-wrap;word-break:break-word">' + opportunityDisplay + '</div></div>' +
-      (r.value ? '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + r.value + '</span></div>' : '') +
-      estimateDisplay +
-    '</div>' +
+    (r.value || r.opportunityType ?
+      '<div class="grid-2 mb-16">' +
+        (r.opportunityType ? '<div><div class="form-label">Value type</div><div style="white-space:pre-wrap;word-break:break-word">' + opportunityDisplay + '</div></div>' : '') +
+        (r.value ? '<div><div class="form-label">Value area</div><span class="badge badge-purple">' + r.value + '</span></div>' : '') +
+        estimateDisplay +
+      '</div>' : '') +
     (r.valueJustification && canFinancials ? '<div class="form-group"><div class="form-label">Value justification</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word">' + r.valueJustification + '</div></div>' : '') +
     (costDisplay ? '<div class="mb-16">' + costDisplay + '</div>' : '') +
+    (r.ownerName || r.tshirtSize || (r.categories && r.categories.length) || r.reportedStatus || r.phase || r.progressPct != null || r.health ?
+      '<div class="grid-2 mb-16">' +
+        (r.ownerName ? '<div><div class="form-label">Owner</div>' + r.ownerName + inactiveNameBadge(r.ownerName) + '</div>' : '') +
+        (r.tshirtSize ? '<div><div class="form-label">T-shirt size</div><span class="badge badge-gray">' + r.tshirtSize + '</span></div>' : '') +
+        ((r.categories && r.categories.length) ? '<div><div class="form-label">Category</div>' + r.categories.map(function(c){ return '<span class="badge badge-blue">' + c + '</span>'; }).join(' ') + '</div>' : '') +
+        (r.reportedStatus ? '<div><div class="form-label">Reported status</div>' + bdg(r.reportedStatus) + '</div>' : '') +
+        (r.phase ? '<div><div class="form-label">Phase</div><span class="badge badge-gray">' + r.phase + '</span></div>' : '') +
+        (r.progressPct != null ? '<div><div class="form-label">Progress</div>' + r.progressPct + '%</div>' : '') +
+        (r.health ? '<div><div class="form-label">Health</div>' + hdot(r.health) + r.health.charAt(0).toUpperCase() + r.health.slice(1) + '</div>' : '') +
+      '</div>' : '') +
     (r.tags && r.tags.length ? '<div class="form-group"><div class="form-label">Tags</div>' + r.tags.map(function(t){ return tagBadge(t); }).join(' ') + '</div>' : '') +
     (r.team && r.team.length ? '<div class="form-group"><div class="form-label">Proposed team</div>' + r.team.join(', ') + '</div>' : '') +
     (r.feedback ? '<div class="form-group"><div class="form-label">PMO feedback</div><div style="background:var(--surface-2);padding:12px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--accent);white-space:pre-wrap;word-break:break-word">' + r.feedback + '</div></div>' : '');
@@ -4039,9 +4059,16 @@ function reviewRequest(id) {
     var methodologyOptsApprove = '<option value=""' + (!curMethodologyApprove?' selected':'') + '>— Select —</option>' +
       ['Agile','Waterfall','Hybrid'].map(function(m){ return '<option' + (curMethodologyApprove===m?' selected':'') + '>' + m + '</option>'; }).join('');
     var catCheckboxes = CATEGORIES.map(function(c){
-      var checked = (draft.categories || []).indexOf(c) >= 0;
+      var checked = ('categories' in draft ? draft.categories : (r.categories || [])).indexOf(c) >= 0;
       return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="rv-category-cb" value="' + c + '"' + (checked?' checked':'') + '> ' + c + '</label>';
     }).join('');
+    var curStatusApprove = 'reportedStatus' in draft ? draft.reportedStatus : (r.reportedStatus || '');
+    var statusOptsApprove = '<option value="">— Not set —</option>' + STATUSES.map(function(s){ return '<option' + (curStatusApprove===s?' selected':'') + '>' + s + '</option>'; }).join('');
+    var curPhaseApprove = 'phase' in draft ? draft.phase : (r.phase || '');
+    var phaseOptsApprove = '<option value="">— Not set —</option>' + PHASES.map(function(s){ return '<option' + (curPhaseApprove===s?' selected':'') + '>' + s + '</option>'; }).join('');
+    var curProgressApprove = 'progress' in draft ? draft.progress : (r.progressPct != null ? r.progressPct : '');
+    var curHealthApprove = 'health' in draft ? draft.health : (r.health || '');
+    var curOwnerApprove = 'owner' in draft ? draft.owner : (r.ownerName || '');
 
     var qOpts = buildQuarterOptions();
     var qStartVal = draft.quarterStart ? parseInt(draft.quarterStart) : qOpts[0].idx;
@@ -4070,6 +4097,16 @@ function reviewRequest(id) {
       '</div>' +
       '<div class="form-group"><div class="form-label">Target quarter (optional, used only if no dates above)</div>' +
       '<div class="grid-2"><select id="rv-q-start" onchange="onRvQStartChange()">' + qStartOpts + '</select><select id="rv-q-end">' + qEndOpts + '</select></div></div>' +
+      '<div class="grid-2">' +
+        '<div class="form-group"><div class="form-label">Status</div><select id="rv-status">' + statusOptsApprove + '</select></div>' +
+        '<div class="form-group"><div class="form-label">Phase</div><select id="rv-phase">' + phaseOptsApprove + '</select></div>' +
+      '</div>' +
+      '<div class="grid-2">' +
+        '<div class="form-group"><div class="form-label">Progress %</div><input type="number" id="rv-progress" min="0" max="100" value="' + curProgressApprove + '"></div>' +
+        '<div class="form-group"><div class="form-label">Health</div><select id="rv-health"><option value=""' + (!curHealthApprove?' selected':'') + '>— Not set —</option><option value="green"' + (curHealthApprove==='green'?' selected':'') + '>Green</option><option value="amber"' + (curHealthApprove==='amber'?' selected':'') + '>Amber</option><option value="red"' + (curHealthApprove==='red'?' selected':'') + '>Red</option></select></div>' +
+      '</div>' +
+      '<div class="form-group"><div class="form-label">Owner</div><input type="text" id="rv-owner" list="rv-owner-pool" value="' + curOwnerApprove.replace(/"/g,'&quot;') + '" placeholder="Search people…"></div>' +
+      '<datalist id="rv-owner-pool">' + individualResourceNames().map(function(n){ return '<option value="' + n.replace(/"/g,'&quot;') + '">'; }).join('') + '</datalist>' +
       '<div class="form-group"><div class="form-label">Feedback to submitter</div><textarea id="rfb" placeholder="Decision rationale…">' + (draft.feedback!=null?draft.feedback:(r.feedback||'')) + '</textarea></div>' +
       '<div class="modal-footer"><button class="btn btn-danger" onclick="decideReq(\'' + r.id + '\',\'Rejected\')"><i class="ti ti-x"></i> Reject</button>' +
       '<button class="btn btn-success" onclick="decideReq(\'' + r.id + '\',\'Approved\')"><i class="ti ti-check"></i> Approve</button></div>';
@@ -4475,6 +4512,13 @@ async function decideReq(id, decision) {
     var deliveryMethodology = document.getElementById('rv-methodology').value || null;
     var startDate = document.getElementById('rv-start').value || null;
     var endDate = document.getElementById('rv-end').value || null;
+    var reportedStatus = document.getElementById('rv-status').value || null;
+    var phase = document.getElementById('rv-phase').value || null;
+    var progressRaw = document.getElementById('rv-progress').value;
+    var progressPct = progressRaw === '' ? null : Number(progressRaw);
+    var health = document.getElementById('rv-health').value || null;
+    var ownerName = document.getElementById('rv-owner').value.trim() || null;
+    var ownerResource = resolveResource(ownerName);
     if (!valueArea || !businessUnit) {
       showToast('Please fill in Value Area and Business Unit before approving');
       return;
@@ -4500,9 +4544,10 @@ async function decideReq(id, decision) {
     }
 
     var projectRecord = {
-      name: r.title, status: newStage === 'active' ? 'On Track' : 'Not Started', phase: 'Not Started', progress: 0,
+      name: r.title, status: reportedStatus || (newStage === 'active' ? 'On Track' : 'Not Started'), phase: phase || 'Not Started', progress: progressPct != null ? progressPct : 0,
       commitment: commitment, value_area: valueArea, description: r.description, sponsor: r.sponsor || null,
-      business_unit: businessUnit, tshirt_size: tshirtSize, delivery_methodology: deliveryMethodology, blockers: '', health: null, stage: newStage,
+      owner_id: ownerResource ? ownerResource.id : null, owner_name: ownerName,
+      business_unit: businessUnit, tshirt_size: tshirtSize, delivery_methodology: deliveryMethodology, blockers: '', health: health, stage: newStage,
       planned_start: startDate, start_date: startDate, end_date: endDate,
       target_quarter: targetQuarter, target_year: targetYear, target_end_quarter: targetEndQuarter, target_end_year: targetEndYear,
       estimated_amount: r.estimatedAmount, estimated_frequency: r.estimatedFrequency, estimated_type: r.estimatedType,
@@ -4512,8 +4557,9 @@ async function decideReq(id, decision) {
     var projResult = await sb.from('projects').insert(projectRecord).select().single();
     if (projResult.error) { showToast('Could not create project: ' + projResult.error.message); return; }
     await logProjectChanges(projResult.data.id, null, {
-      name: r.title, stage: newStage, status: projectRecord.status, value: valueArea, commitment: commitment,
-      businessUnit: businessUnit, sponsor: r.sponsor, start: startDate, end: endDate, description: r.description,
+      name: r.title, stage: newStage, status: projectRecord.status, phase: projectRecord.phase, progress: projectRecord.progress, health: health,
+      value: valueArea, commitment: commitment, businessUnit: businessUnit, sponsor: r.sponsor, owner: ownerName,
+      start: startDate, end: endDate, description: r.description,
       tshirtSize: tshirtSize, deliveryMethodology: deliveryMethodology
     }, 'request');
 
@@ -4549,6 +4595,8 @@ async function decideReq(id, decision) {
     // called right below, throws on the first missing array it touches
     // while counting badges across every project.
     await refreshProjects();
+    var newProject = D.projects.find(function(x){ return x.id === projResult.data.id; });
+    if (newProject) await applyOwnerAsLead(newProject);
     r.status = reqStatus; r.linkedProject = projResult.data.id; r.feedback = feedbackVal;
     r.value = valueArea; r.businessUnit = businessUnit; r.startDate = startDate; r.targetEndDate = endDate;
     delete reviewFinalizeDrafts[id];
@@ -13350,107 +13398,195 @@ function pgSubmit() {
   if (st.tab === 'project') renderSubmitProjectRequestForm(); else renderSubmitWorkRequestForm();
 }
 
-function renderSubmitProjectRequestForm() {
-  var buOpts = '<option value="">— Select —</option>' + BUSINESS_UNITS.map(function(v){ return '<option>' + v + '</option>'; }).join('');
-  var selectedTags = [];
-  var selectedTeam = [];
-  var hasFinancial = canViewFinancials();
+// Static help text for guided-intake fields whose picklists come from
+// field_options (VALUE_AREAS/CATEGORIES) -- keyed by the option's current
+// live value, so an admin-added option with no matching key here just
+// renders without a definition instead of breaking.
+var VALUE_AREA_DEFS = {
+  'Revenue Growth': 'Grows top-line revenue — new sales, upsell, retention.',
+  'Customer Experience': 'Makes things better for the partners and subscribers we serve.',
+  'Operational Efficiency': 'Reduces cost, time, or manual effort internally.',
+  'Employee Experience': 'Improves things for our own staff — tools, process, culture.',
+  'Compliance & Risk': 'Required by regulation, audit, or security — not optional.'
+};
+var CATEGORY_DEFS = {
+  'Transformation': 'A change or addition to operational process or system design/functionality.',
+  'Hardware': 'Physical devices — design, manufacturing, or fulfillment.',
+  'Services': 'Client- or member-facing service delivery work.',
+  'Infrastructure': 'Internal platforms and technical foundations.'
+};
+var TSHIRT_DEFS = {
+  XS: 'A few days of one person’s time.',
+  S: 'Under two weeks for a small group.',
+  M: 'Roughly a month, one focused team.',
+  L: 'A quarter or more, several people involved.',
+  XL: 'Multiple quarters, cross-team.'
+};
+var REQ_STATUS_DEFS = {
+  'Not Started': 'Nothing underway yet.', 'On Track': 'Progressing as expected.', 'At Risk': 'Might slip — something needs attention.',
+  'Planning': 'Scoping/staffing before real work starts.', 'Blocked': 'Stalled on something outside the team’s control.', 'Complete': 'Finished.'
+};
+var REQ_PHASE_DEFS = {
+  'Not Started': 'Hasn’t begun.', 'Discovery': 'Understanding the problem and requirements.', 'Design': 'Planning the solution before building it.',
+  'Build': 'Actively being built.', 'Testing': 'Validating it works as intended.', 'Deployment': 'Rolling out to production/users.', 'Monitor': 'Live, being watched post-launch.'
+};
+var REQ_HEALTH_DEFS = { green: 'On track — no material concerns.', amber: 'Watch closely — a real risk has emerged.', red: 'In trouble — needs escalation now.' };
+var REQ_SPONSOR_HELP = 'The senior stakeholder accountable for this project’s outcome and funding — who the owner escalates to for a decision. Optional here; can be assigned later if you don’t know yet.';
+var REQ_OWNER_HELP = 'The person driving this day-to-day — who PMO and the team go to for status, schedule, and decisions.';
+var REQ_TEAM_HELP = 'Anyone you already know will be working on this. Doesn’t need to be final or complete — more people can be added once it’s underway.';
 
-  var selectedSponsor = '';
-  var sponsorPickerOpen = false;
-  var sponsorQuery = '';
-  var sponsorPool = individualResourceNames();
+function defsHtml(defs, order) {
+  var keys = (order || Object.keys(defs)).filter(function(k){ return defs[k] != null; });
+  if (!keys.length) return '';
+  return keys.map(function(k){ return '<div class="def-row"><span class="def-key">' + k + '</span><span>' + defs[k] + '</span></div>'; }).join('');
+}
+function fieldLabel(id, label, required, helpHtml) {
+  var star = required ? ' <span class="req-star">*</span>' : '';
+  var help = helpHtml ? '<button type="button" class="help-btn" id="' + id + '-help-btn" onclick="fieldHelpToggle(\'' + id + '-help\')">?</button>' : '';
+  return '<div class="form-label-row"><span class="form-label" style="margin-bottom:0">' + label + star + '</span>' + help + '</div>' +
+    (helpHtml ? '<div class="field-help" id="' + id + '-help">' + helpHtml + '</div>' : '');
+}
+window.fieldHelpToggle = function(id) {
+  var el = document.getElementById(id); if (!el) return;
+  var btn = document.getElementById(id + '-btn');
+  var open = el.classList.toggle('open');
+  if (btn) btn.classList.toggle('on', open);
+};
 
-  function sponsorPanelHtml() {
-    var q = sponsorQuery.trim().toLowerCase();
-    var matches = sponsorPool.filter(function(n){ return n.toLowerCase().indexOf(q) >= 0; });
+// A single-person search/select control, generalized from the request form's
+// original Sponsor-only picker so Sponsor and Owner can each have independent
+// state (idPrefix keeps their DOM ids and window callbacks from colliding).
+function makePersonPicker(idPrefix, initialValue) {
+  var pool = individualResourceNames();
+  var state = { value: initialValue || '', open: false, query: '' };
+  function panelHtml() {
+    var q = state.query.trim().toLowerCase();
+    var matches = pool.filter(function(n){ return n.toLowerCase().indexOf(q) >= 0; });
     var rows = matches.map(function(n){
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">' +
         '<span style="font-size:13px">' + n + '</span>' +
-        '<button type="button" class="btn btn-sm" onclick="window.__reqSponsorPick(\'' + n.replace(/'/g,"\\'") + '\')">Select</button>' +
+        '<button type="button" class="btn btn-sm" onclick="window.__pp_' + idPrefix + '_pick(\'' + n.replace(/'/g,"\\'") + '\')">Select</button>' +
         '</div>';
     }).join('');
     return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:8px">' +
-      '<button type="button" class="btn btn-sm" style="margin-bottom:8px" onclick="window.__reqSponsorPick(\'\')"><i class="ti ti-user-off"></i> No sponsor</button>' +
-      '<input type="text" id="f-sponsor-search" placeholder="Search people…" value="' + sponsorQuery.replace(/"/g,'&quot;') + '" oninput="window.__reqSponsorSearch(this.value)">' +
+      '<button type="button" class="btn btn-sm" style="margin-bottom:8px" onclick="window.__pp_' + idPrefix + '_pick(\'\')"><i class="ti ti-user-off"></i> None</button>' +
+      '<input type="text" id="pp-' + idPrefix + '-search" placeholder="Search people…" value="' + state.query.replace(/"/g,'&quot;') + '" oninput="window.__pp_' + idPrefix + '_search(this.value)">' +
       '<div style="max-height:180px;overflow-y:auto;margin-top:8px">' + (rows || '<span class="text-muted" style="font-size:13px">No matches</span>') + '</div>' +
       '</div>';
   }
-
-  function sponsorFieldInner() {
+  function fieldInner() {
     return '<div style="display:flex;align-items:center;gap:8px">' +
-      '<span style="font-size:13px' + (selectedSponsor ? '' : ';color:var(--text-faint)') + '">' + (selectedSponsor || 'Optional') + '</span>' +
-      '<button type="button" class="btn btn-sm" onclick="window.__reqSponsorToggle()">' + (selectedSponsor ? 'Change' : 'Select') + '</button>' +
-      '</div>' +
-      (sponsorPickerOpen ? sponsorPanelHtml() : '');
+      '<span style="font-size:13px' + (state.value ? '' : ';color:var(--text-faint)') + '">' + (state.value || 'Optional') + '</span>' +
+      '<button type="button" class="btn btn-sm" onclick="window.__pp_' + idPrefix + '_toggle()">' + (state.value ? 'Change' : 'Select') + '</button>' +
+      '</div>' + (state.open ? panelHtml() : '');
   }
+  window['__pp_' + idPrefix + '_toggle'] = function() {
+    state.open = !state.open; state.query = '';
+    document.getElementById('pp-field-' + idPrefix).innerHTML = fieldInner();
+    var s = document.getElementById('pp-' + idPrefix + '-search'); if (s) s.focus();
+  };
+  window['__pp_' + idPrefix + '_search'] = function(val) {
+    state.query = val;
+    document.getElementById('pp-field-' + idPrefix).innerHTML = fieldInner();
+    var s = document.getElementById('pp-' + idPrefix + '-search'); if (s) { s.focus(); s.selectionStart = s.selectionEnd = s.value.length; }
+  };
+  window['__pp_' + idPrefix + '_pick'] = function(name) {
+    state.value = name; state.open = false;
+    document.getElementById('pp-field-' + idPrefix).innerHTML = fieldInner();
+  };
+  return { state: state, fieldInner: fieldInner };
+}
 
-  window.__reqSponsorToggle = function() {
-    sponsorPickerOpen = !sponsorPickerOpen;
-    sponsorQuery = '';
-    document.getElementById('f-sponsor-field').innerHTML = sponsorFieldInner();
-    var s = document.getElementById('f-sponsor-search');
-    if (s) s.focus();
-  };
-  window.__reqSponsorSearch = function(val) {
-    sponsorQuery = val;
-    document.getElementById('f-sponsor-field').innerHTML = sponsorFieldInner();
-    var s = document.getElementById('f-sponsor-search');
-    if (s) { s.focus(); s.selectionStart = s.selectionEnd = s.value.length; }
-  };
-  window.__reqSponsorPick = function(name) {
-    selectedSponsor = name;
-    sponsorPickerOpen = false;
-    document.getElementById('f-sponsor-field').innerHTML = sponsorFieldInner();
-  };
+function renderSubmitProjectRequestForm() {
+  var st = submitPageState;
+  if (!st.reqBranch) st.reqBranch = 'new';
 
-  var valueSectionHtml = hasFinancial
-    ? '<div class="form-group"><div class="form-label">Value type</div><select id="f-opp-type" onchange="onOppTypeChange()">' +
-        '<option value="">— Select —</option><option>Revenue opportunity</option><option>Cost savings opportunity</option>' +
-      '</select></div>' +
-      '<div class="form-group" id="f-estimate-row" style="display:none">' +
-        '<div class="form-label" id="f-estimate-label">Estimated</div>' +
-        '<div class="grid-2"><select id="f-est-freq"><option>Monthly</option><option>Annually</option></select>' +
-        '<input type="text" id="f-est-amount" placeholder="$ amount (optional)"></div>' +
-        '<div class="form-group" style="margin-top:8px"><div class="form-label">Value confidence</div><select id="f-value-confidence">' + confidenceOptsHtml() + '</select></div>' +
-        '<div id="f-est-err" style="color:var(--danger);font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
+  var selectedTags = [];
+  var selectedTeam = [];
+  var selectedCategories = [];
+  var sponsorPicker = makePersonPicker('sponsor', '');
+  var ownerPicker = makePersonPicker('owner', '');
+
+  function opts(list, sel) { return '<option value="">— Select —</option>' + list.map(function(v){ return '<option' + (v===sel?' selected':'') + '>' + v + '</option>'; }).join(''); }
+
+  function renderBranchRow() {
+    document.getElementById('req-branch-row').innerHTML =
+      '<div class="branch-card' + (st.reqBranch==='new'?' on':'') + '" onclick="setReqBranch(\'new\')">' +
+        '<div class="branch-icon new"><i class="ti ti-bulb"></i></div>' +
+        '<div class="branch-text"><div class="branch-title">New request to prioritize</div>' +
+        '<div class="branch-sub">Hasn’t started. We’ll ask for enough to evaluate and schedule it.</div></div>' +
       '</div>' +
-      '<div class="form-group"><div class="form-label">Value justification</div><div class="form-sub">How did you arrive at the estimated value?</div><textarea id="f-justification" rows="3" placeholder="e.g. Reduces manual reconciliation time by an estimated 10 hours/week…"></textarea></div>' +
-      '<div class="form-group"><div class="form-label">Cost estimate</div><div class="form-sub">What might this cost to deliver? Optional — a rough number is fine.</div>' +
-        '<div class="grid-2"><input type="text" id="f-cost-amount" placeholder="$ amount (optional)"><select id="f-cost-confidence">' + confidenceOptsHtml() + '</select></div>' +
-        '<div id="f-cost-err" style="color:var(--danger);font-size:12px;margin-top:4px;display:none">Please enter a valid number (digits only)</div>' +
-      '</div>'
-    : '<div class="form-group"><div class="form-label">What\'s the expected value? *</div><div class="form-sub">Describe the benefit in your own words.</div><textarea id="f-value-desc" rows="3" placeholder="e.g. Saves the team several hours a week on manual reconciliation"></textarea></div>';
+      '<div class="branch-card' + (st.reqBranch==='active'?' on':'') + '" onclick="setReqBranch(\'active\')">' +
+        '<div class="branch-icon active"><i class="ti ti-player-play"></i></div>' +
+        '<div class="branch-text"><div class="branch-title">Actively being worked</div>' +
+        '<div class="branch-sub">Already underway — has dates, an owner, and known progress. We’ll ask for the current state.</div></div>' +
+      '</div>';
+  }
+  window.setReqBranch = function(b) { st.reqBranch = b; renderBranchRow(); renderFields(); };
+
+  function renderFields() {
+    var branch = st.reqBranch;
+    var catRow = CATEGORIES.map(function(c){
+      return '<label style="display:inline-flex;align-items:center;gap:4px;margin-right:14px;font-size:13px"><input type="checkbox" class="freq-category-cb" value="' + c + '"' + (selectedCategories.indexOf(c)>=0?' checked':'') + '> ' + c + '</label>';
+    }).join('');
+
+    var nameField = '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="f-title" placeholder="e.g. Customer onboarding redesign"></div>';
+    var descField = '<div class="form-group"><div class="form-label">Description *</div><div class="form-sub">What is the problem or opportunity?</div><textarea id="f-desc" rows="4" placeholder="Describe the situation and why this project is needed…"></textarea></div>';
+    var valueAreaField = '<div class="form-group">' + fieldLabel('f-value', 'Value area', true, defsHtml(VALUE_AREA_DEFS, VALUE_AREAS)) + '<select id="f-value">' + opts(VALUE_AREAS, '') + '</select></div>';
+    var tshirtField = '<div class="form-group">' + fieldLabel('f-tshirt', 'T-shirt size', false, defsHtml(TSHIRT_DEFS, TSHIRT_SIZES) + '<div style="color:var(--text-muted);font-style:italic;margin-top:6px">Rough sizing for prioritization, not a formal estimate.</div>') +
+      '<select id="f-tshirt"><option value="">— Not sized —</option>' + TSHIRT_SIZES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>';
+    var categoryField = '<div class="form-group">' + fieldLabel('f-category', 'Category', true, defsHtml(CATEGORY_DEFS, CATEGORIES)) + '<div>' + catRow + '</div></div>';
+    var buField = '<div class="form-group">' + fieldLabel('f-bu', 'Business Unit', true, null) + '<select id="f-bu">' + opts(BUSINESS_UNITS, '') + '</select></div>';
+    var tagsField = '<div class="form-group"><div class="form-label">Tags</div><div id="f-tags-chips" style="margin-bottom:8px"></div><button type="button" class="btn btn-sm" onclick="openRequestTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>';
+    var sponsorField = '<div class="form-group">' + fieldLabel('f-sponsor', 'Sponsor', false, REQ_SPONSOR_HELP) + '<div id="pp-field-sponsor">' + sponsorPicker.fieldInner() + '</div></div>';
+    var teamFieldHtml = teamPickerHtml('f', 'toggleRequestTeamMember', selectedTeam, REQ_TEAM_HELP);
+
+    var html;
+    if (branch === 'active') {
+      var ownerField = '<div class="form-group">' + fieldLabel('f-owner', 'Owner', true, REQ_OWNER_HELP) + '<div id="pp-field-owner">' + ownerPicker.fieldInner() + '</div></div>';
+      html = nameField + descField +
+        '<div class="grid-2">' + valueAreaField + tshirtField + '</div>' +
+        categoryField + buField + tagsField +
+        '<div class="grid-2">' +
+          '<div class="form-group">' + fieldLabel('f-status', 'Status', false, defsHtml(REQ_STATUS_DEFS, STATUSES)) + '<select id="f-status"><option value="">— Not set —</option>' + STATUSES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>' +
+          '<div class="form-group">' + fieldLabel('f-phase', 'Phase', false, defsHtml(REQ_PHASE_DEFS, PHASES)) + '<select id="f-phase"><option value="">— Not set —</option>' + PHASES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>' +
+        '</div>' +
+        '<div class="grid-2">' +
+          '<div class="form-group">' + fieldLabel('f-start', 'Start date', true, null) + '<input type="date" id="f-start"></div>' +
+          '<div class="form-group">' + fieldLabel('f-end', 'Target end date', true, null) + '<input type="date" id="f-end"></div>' +
+        '</div>' +
+        '<div class="form-sub" style="margin-top:-8px">Estimates/targets, not commitments — these may shift based on current portfolio priorities.</div>' +
+        '<div class="grid-2">' +
+          '<div class="form-group">' + fieldLabel('f-progress', 'Progress %', true, null) + '<input type="number" id="f-progress" min="0" max="100" placeholder="0–100"></div>' +
+          '<div class="form-group">' + fieldLabel('f-health', 'Health', true, defsHtml(REQ_HEALTH_DEFS, ['green','amber','red'])) + '<select id="f-health"><option value="">— Select —</option><option value="green">Green</option><option value="amber">Amber</option><option value="red">Red</option></select></div>' +
+        '</div>' +
+        sponsorField + ownerField + teamFieldHtml;
+    } else {
+      var ownerFieldNew = '<div class="form-group">' + fieldLabel('f-owner', 'Owner', false, REQ_OWNER_HELP) + '<div id="pp-field-owner">' + ownerPicker.fieldInner() + '</div></div>';
+      html = nameField + descField +
+        '<div class="grid-2">' + valueAreaField + buField + '</div>' +
+        '<div class="grid-2">' + tshirtField + categoryField + '</div>' +
+        sponsorField + ownerFieldNew + teamFieldHtml;
+    }
+
+    document.getElementById('req-form-fields').innerHTML = html;
+    document.querySelectorAll('.freq-category-cb').forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        var i = selectedCategories.indexOf(cb.value);
+        if (cb.checked && i < 0) selectedCategories.push(cb.value);
+        else if (!cb.checked && i >= 0) selectedCategories.splice(i, 1);
+      });
+    });
+    renderRequestTagChips();
+  }
 
   document.getElementById('submit-tab-body').innerHTML =
     '<div class="card" style="max-width:660px;margin:0 auto">' +
     '<div class="section-title mb-16">New project request</div>' +
     '<p class="text-muted" style="font-size:13px;margin-bottom:16px"><strong>What\'s a project request?</strong> A full-scale project — its own timeline, milestones, team, and budget. Goes through PMO review, and once approved gets scheduled into Backlog, Planned, or Active. Use this for meaningful, multi-step initiatives, not a quick ask for someone\'s time (that\'s a Work Request, on the other tab).</p>' +
-    '<div class="form-group"><div class="form-label">Project title *</div><input type="text" id="f-title" placeholder="e.g. Customer onboarding redesign"></div>' +
-    '<div class="form-group"><div class="form-label">Business Unit *</div><select id="f-bu">' + buOpts + '</select></div>' +
-    '<div class="form-group"><div class="form-label">Sponsor</div><div id="f-sponsor-field">' + sponsorFieldInner() + '</div></div>' +
-    '<div class="form-group"><div class="form-label">Description *</div><div class="form-sub">What is the problem or opportunity?</div><textarea id="f-desc" rows="4" placeholder="Describe the situation and why this project is needed…"></textarea></div>' +
-    valueSectionHtml +
-    '<div class="form-group"><div class="form-label">Tags</div><div id="f-tags-chips" style="margin-bottom:8px"></div><button class="btn btn-sm" onclick="openRequestTagPicker()"><i class="ti ti-tag"></i> Select tags</button></div>' +
-    teamPickerHtml('f', 'toggleRequestTeamMember', []) +
-    '<div style="display:flex;justify-content:flex-end"><button class="btn btn-primary" id="f-submit"><i class="ti ti-send"></i> Submit request</button></div></div>';
-
-  window.onOppTypeChange = function() {
-    var type = document.getElementById('f-opp-type').value;
-    document.getElementById('f-estimate-row').style.display = type ? 'block' : 'none';
-    if (type) document.getElementById('f-estimate-label').textContent = 'Estimated ' + (type === 'Revenue opportunity' ? 'Revenue' : 'Savings');
-  };
-
-  if (hasFinancial) {
-    document.getElementById('f-est-amount').addEventListener('input', function() {
-      this.value = this.value.replace(/[^0-9]/g,'');
-      document.getElementById('f-est-err').style.display = 'none';
-    });
-    document.getElementById('f-cost-amount').addEventListener('input', function() {
-      this.value = this.value.replace(/[^0-9]/g,'');
-      document.getElementById('f-cost-err').style.display = 'none';
-    });
-  }
+    '<div class="branch-row" id="req-branch-row"></div>' +
+    '<div id="req-form-fields"></div>' +
+    '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn btn-primary" id="f-submit"><i class="ti ti-send"></i> Submit request</button></div></div>';
 
   window.toggleRequestTeamMember = function(el) {
     var name = el.getAttribute('data-name');
@@ -13458,7 +13594,6 @@ function renderSubmitProjectRequestForm() {
     if (el.checked && i < 0) selectedTeam.push(name);
     else if (!el.checked && i >= 0) selectedTeam.splice(i, 1);
   };
-
   window.openRequestTagPicker = function() {
     openTagPicker(selectedTags, function(newTags) {
       selectedTags = newTags;
@@ -13466,55 +13601,53 @@ function renderSubmitProjectRequestForm() {
     }, false);
   };
   function renderRequestTagChips() {
-    document.getElementById('f-tags-chips').innerHTML = selectedTags.length
+    var el = document.getElementById('f-tags-chips');
+    if (!el) return;
+    el.innerHTML = selectedTags.length
       ? selectedTags.map(function(t){ return tagBadge(t); }).join(' ')
       : '<span class="text-muted" style="font-size:13px">No tags selected</span>';
   }
-  renderRequestTagChips();
+
+  renderBranchRow();
+  renderFields();
 
   document.getElementById('f-submit').onclick = async function() {
+    var branch = st.reqBranch;
     var title = document.getElementById('f-title').value.trim();
-    var bu = document.getElementById('f-bu').value;
-    var sponsor = selectedSponsor;
     var desc = document.getElementById('f-desc').value.trim();
+    var valueArea = document.getElementById('f-value').value;
+    var bu = document.getElementById('f-bu').value;
+    var tshirt = document.getElementById('f-tshirt').value || null;
 
-    if (!title || !bu || !desc) { showToast('Please fill in all required fields', 'error'); return; }
+    var missing = [];
+    if (!title) missing.push('Project title');
+    if (!desc) missing.push('Description');
+    if (!valueArea) missing.push('Value area');
+    if (!bu) missing.push('Business Unit');
+    if (!selectedCategories.length) missing.push('Category');
 
     var record = {
       title: title, submitter_id: D.currentProfile.id, submitter_name: currentUser() || 'Current User',
-      sponsor: sponsor || null, business_unit: bu, description: desc, status: 'Pending'
+      status: 'Pending', description: desc, value_area: valueArea, business_unit: bu, tshirt_size: tshirt,
+      sponsor: sponsorPicker.state.value || null, owner_name: ownerPicker.state.value || null
     };
 
-    if (hasFinancial) {
-      var oppType = document.getElementById('f-opp-type').value;
-      var justification = document.getElementById('f-justification').value.trim();
-      var estAmountRaw = document.getElementById('f-est-amount').value.trim();
-      if (estAmountRaw && isNaN(Number(estAmountRaw))) { document.getElementById('f-est-err').style.display = 'block'; return; }
-      var costAmountRaw = document.getElementById('f-cost-amount').value.trim();
-      if (costAmountRaw && isNaN(Number(costAmountRaw))) { document.getElementById('f-cost-err').style.display = 'block'; return; }
-
-      record.opportunity_type = oppType || null;
-      record.opportunity_type_other = null;
-      record.estimated_frequency = oppType ? document.getElementById('f-est-freq').value : null;
-      record.estimated_type = oppType === 'Revenue opportunity' ? 'Revenue' : oppType === 'Cost savings opportunity' ? 'Savings' : null;
-      record.estimated_amount = estAmountRaw ? Number(estAmountRaw) : null;
-      record.value_confidence = document.getElementById('f-value-confidence').value || null;
-      record.cost_estimate = costAmountRaw ? Number(costAmountRaw) : null;
-      record.cost_confidence = document.getElementById('f-cost-confidence').value || null;
-      record.value_justification = justification || null;
-    } else {
-      var valueDesc = document.getElementById('f-value-desc').value.trim();
-      if (!valueDesc) { showToast('Please describe the expected value', 'error'); return; }
-      record.opportunity_type = 'Something else';
-      record.opportunity_type_other = valueDesc;
-      record.estimated_frequency = null;
-      record.estimated_type = null;
-      record.estimated_amount = null;
-      record.value_confidence = null;
-      record.cost_estimate = null;
-      record.cost_confidence = null;
-      record.value_justification = null;
+    if (branch === 'active') {
+      record.reported_status = document.getElementById('f-status').value || null;
+      record.phase = document.getElementById('f-phase').value || null;
+      record.start_date = document.getElementById('f-start').value || null;
+      record.target_end_date = document.getElementById('f-end').value || null;
+      var progressRaw = document.getElementById('f-progress').value;
+      record.progress_pct = progressRaw === '' ? null : Number(progressRaw);
+      record.health = document.getElementById('f-health').value || null;
+      if (!record.start_date) missing.push('Start date');
+      if (!record.target_end_date) missing.push('Target end date');
+      if (record.progress_pct == null) missing.push('Progress %');
+      if (!record.health) missing.push('Health');
+      if (!ownerPicker.state.value) missing.push('Owner');
     }
+
+    if (missing.length) { showToast('Missing: ' + missing.join(', ')); return; }
 
     var btn = document.getElementById('f-submit'); btn.disabled = true;
     var result = await sb.from('requests').insert(record).select().single();
@@ -13530,14 +13663,20 @@ function renderSubmitProjectRequestForm() {
       var teamRows = selectedTeam.map(function(name){ var r = resolveResource(name); return r ? { request_id: result.data.id, resource_id: r.id } : null; }).filter(Boolean);
       if (teamRows.length) await sb.from('request_team').insert(teamRows);
     }
+    if (selectedCategories.length) {
+      await sb.from('request_categories').insert(selectedCategories.map(function(c){ return { request_id: result.data.id, category: c }; }));
+    }
 
     D.requests.push({
       id: result.data.id, title: title, submitter: record.submitter_name, submitterId: D.currentProfile.id,
-      date: result.data.submitted_at, status: 'Pending', priority: null, value: null, sponsor: sponsor || null,
-      businessUnit: bu, description: desc, opportunityType: record.opportunity_type, opportunityTypeOther: record.opportunity_type_other,
-      estimatedFrequency: record.estimated_frequency, estimatedType: record.estimated_type, estimatedAmount: record.estimated_amount,
-      valueConfidence: record.value_confidence, costEstimate: record.cost_estimate, costConfidence: record.cost_confidence,
-      valueJustification: record.value_justification, tags: newTags, team: selectedTeam.slice(), feedback: '', editedByName: null, editedAt: null
+      date: result.data.submitted_at, status: 'Pending', priority: null, value: valueArea, sponsor: record.sponsor,
+      businessUnit: bu, description: desc, opportunityType: null, opportunityTypeOther: null,
+      estimatedFrequency: null, estimatedType: null, estimatedAmount: null,
+      valueConfidence: null, costEstimate: null, costConfidence: null, valueJustification: null,
+      tshirtSize: tshirt, categories: selectedCategories.slice(), reportedStatus: record.reported_status || null,
+      phase: record.phase || null, startDate: record.start_date || null, targetEndDate: record.target_end_date || null,
+      progressPct: record.progress_pct != null ? record.progress_pct : null, health: record.health || null,
+      ownerName: record.owner_name, tags: newTags, team: selectedTeam.slice(), feedback: '', editedByName: null, editedAt: null
     });
     showToast('Request submitted successfully');
     renderNav();
