@@ -28,6 +28,9 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
     <li>Editing a still-Pending request, or editing and resubmitting a Rejected/Revoked one, now opens the same guided, branch-aware form described above instead of the old flat form with conditional financial fields.</li>
     <li>A request's read-only <strong>Details</strong> view now shows every field with a dash for anything left blank (start/target end dates, owner, status, phase, progress, health, tags, team), instead of silently hiding whichever ones happened to be empty.</li>
     <li>Added a <strong>Must - In Flight</strong> Commitment value, for a Must project that's already underway. It shows up everywhere Commitment does (project edit, bulk edit, filters), and counts as Must on the Commitment Review page's stats and Must tab.</li>
+    <li>Replaced a few remaining leftover <strong>Priority</strong> columns/labels (in the admin Requests table, My Requests, the request review header, and Deleted Items) with <strong>Commitment</strong> — Priority was retired in favor of Commitment a while back but a few spots never got updated, so they always showed a blank dash.</li>
+    <li><strong>Fixed:</strong> a request's status could go stale in an already-open Requests or My Requests tab — e.g. an admin's screen kept showing a request as Rejected after the requestor had already resubmitted it, since data was only ever loaded once per session. Both pages now quietly refresh in the background whenever opened.</li>
+    <li><strong>Fixed a real (not just cosmetic) bug:</strong> resubmitting a Rejected or Revoked request as a non-admin silently failed to save anything to the database, even though the submitter's own screen showed it as Pending again — a database permissions rule only allowed editing a request while it was still Pending. Resubmission now actually persists.</li>
   </ul>
 </div>
 
