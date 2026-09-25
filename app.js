@@ -2194,7 +2194,6 @@ var myProjectsTableState = {
 };
 var myCapacityPageState = { month:'current' };
 var programsPageState = { search:'', sort:'id', dir:'asc' };
-var PRIORITY_RANK = { 'Critical':0, 'High':1, 'Medium':2, 'Low':3, 'Needs prioritization':4 };
 var COMMITMENT_RANK = { 'Must':0, 'Must - In Flight':1, 'Should':2, 'Want':3, "Won't":4 };
 
 // Capacity planning: a team member's involvement in a given project is set
@@ -3866,7 +3865,15 @@ function pgPortfolio() {
 // ── Requests ────────────────────────────────────────────────────────────────
 
 var requestsPageState = { activeTab: 'Pending', search: '', sort: 'date', dir: 'desc',
-  filters: { submitter:[], businessUnit:[], priority:[], status:[] }, openFilter: null };
+  filters: { submitter:[], businessUnit:[], commitment:[], status:[] }, openFilter: null };
+
+// A request has no Commitment of its own -- it's set on the project once
+// approved -- so this looks it up via the linked project, and is null
+// (shown as "—") for anything still Pending/Rejected/Revoked.
+function requestCommitment(r) {
+  var p = r.linkedProject ? D.projects.find(function(x){ return x.id === r.linkedProject; }) : null;
+  return p ? p.commitment : null;
+}
 
 function pgRequests() {
   tb('Requests');
@@ -3879,7 +3886,7 @@ function pgRequests() {
     if (r.businessUnit && businessUnitChoices.indexOf(r.businessUnit) < 0) businessUnitChoices.push(r.businessUnit);
   });
   submitterChoices.sort(); businessUnitChoices.sort();
-  var priorityChoices = PRIORITIES.slice();
+  var commitmentChoices = COMMITMENTS.concat(['Needs commitment']);
   var statusChoices = ['Pending','Backlog','Planned','Active','Rejected','Revoked'];
 
   function filtered(t) {
@@ -3887,11 +3894,11 @@ function pgRequests() {
     if (st.search) { var q = st.search.toLowerCase(); rows = rows.filter(function(r){ return r.title.toLowerCase().indexOf(q) >= 0; }); }
     if (st.filters.submitter.length) rows = rows.filter(function(r){ return st.filters.submitter.indexOf(r.submitter) >= 0; });
     if (st.filters.businessUnit.length) rows = rows.filter(function(r){ return st.filters.businessUnit.indexOf(r.businessUnit) >= 0; });
-    if (st.filters.priority.length) rows = rows.filter(function(r){ return st.filters.priority.indexOf(r.priority) >= 0; });
+    if (st.filters.commitment.length) rows = rows.filter(function(r){ return st.filters.commitment.indexOf(requestCommitment(r) || 'Needs commitment') >= 0; });
     if (st.filters.status.length) rows = rows.filter(function(r){ return st.filters.status.indexOf(r.status) >= 0; });
     rows.sort(function(a,b) {
       var av, bv;
-      if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+      if (st.sort === 'commitment') { var ac = requestCommitment(a), bc = requestCommitment(b); av = ac != null ? COMMITMENT_RANK[ac] : 5; bv = bc != null ? COMMITMENT_RANK[bc] : 5; }
       else { av = a[st.sort]; bv = b[st.sort]; av = (av == null ? '' : av); bv = (bv == null ? '' : bv); if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); } }
       var cmp = av < bv ? -1 : av > bv ? 1 : 0;
       return st.dir === 'asc' ? cmp : -cmp;
@@ -3910,12 +3917,13 @@ function pgRequests() {
       '<th class="sortable-th"><span onclick="setReqSort(\'submitter\')">Submitter ' + arrow('submitter') + '</span>' + filterIcon('submitter', st.filters.submitter.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setReqSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
       '<th class="sortable-th" onclick="setReqSort(\'date\')">Date ' + arrow('date') + '</th>' +
-      '<th class="sortable-th"><span onclick="setReqSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+      '<th class="sortable-th"><span onclick="setReqSort(\'commitment\')">Commitment ' + arrow('commitment') + '</span>' + filterIcon('commitment', st.filters.commitment.length>0) + '</th>' +
       '<th class="sortable-th"><span onclick="setReqSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
       '<th></th></tr></thead><tbody>' +
       rows.map(function(r) {
+        var reqCommitment = requestCommitment(r);
         return '<tr><td class="bold">' + r.title + '</td><td>' + r.submitter + '</td><td>' + (r.businessUnit||'—') + '</td><td class="text-muted">' + r.date + '</td>' +
-          '<td>' + (r.priority ? bdg(r.priority) : '<span class="text-muted">—</span>') + '</td><td>' + bdg(r.status) + '</td>' +
+          '<td>' + (reqCommitment ? bdg(reqCommitment) : '<span class="text-muted">—</span>') + '</td><td>' + bdg(r.status) + '</td>' +
           '<td><button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> ' + (D.role === 'admin' && r.status === 'Pending' ? 'Review' : 'View') + '</button>' +
             (D.role === 'admin' ? ' <button class="btn btn-sm btn-danger" onclick="deleteRequest(\'' + r.id + '\')"><i class="ti ti-trash"></i></button>' : '') +
           '</td></tr>';
@@ -3938,8 +3946,8 @@ function pgRequests() {
   };
   window.setReqSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } pgRequests(); };
   window.toggleReqFilter = function(col) {
-    var labelMap = { submitter:'Submitter', businessUnit:'Business Unit', priority:'Priority', status:'Status' };
-    var choicesMap = { submitter:submitterChoices, businessUnit:businessUnitChoices, priority:priorityChoices, status:statusChoices };
+    var labelMap = { submitter:'Submitter', businessUnit:'Business Unit', commitment:'Commitment', status:'Status' };
+    var choicesMap = { submitter:submitterChoices, businessUnit:businessUnitChoices, commitment:commitmentChoices, status:statusChoices };
     openFilterModal(labelMap[col], choicesMap[col],
       function() { return st.filters[col]; },
       function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
@@ -4003,7 +4011,7 @@ function reviewRequest(id) {
   var html =
     '<div class="modal-title"><div>' +
       '<div style="font-size:16px;font-weight:600;margin-bottom:8px">' + r.title + '</div>' +
-      '<div style="display:flex;gap:6px">' + bdg(r.status) + (r.priority ? ' ' + bdg(r.priority) : '') + '</div>' +
+      '<div style="display:flex;gap:6px">' + bdg(r.status) + (requestCommitment(r) ? ' ' + bdg(requestCommitment(r)) : '') + '</div>' +
     '</div><div style="display:flex;gap:6px">' +
       (canEditRequest ? '<button class="btn btn-sm" onclick="closeModal();openGuidedRequestModal(\'' + r.id + '\',\'edit\')"><i class="ti ti-edit"></i> Edit</button>' : '') +
       (isAdmin ? '<button class="btn btn-sm btn-danger" onclick="deleteRequest(\'' + r.id + '\')"><i class="ti ti-trash"></i> Delete</button>' : '') +
@@ -10484,6 +10492,7 @@ async function openDeletedRequestModal(id) {
 
   var teamNamesList = teamRows.map(function(t){ return resourceNameById[t.resource_id] || '(no longer a resource)'; });
   var tagNamesList = tagRows.map(function(t){ return tagNameById[t.tag_id]; }).filter(Boolean);
+  var linkedProjectForCommitment = r.linked_project ? D.projects.find(function(p){ return p.id === r.linked_project; }) : null;
   var financialsHtml = (r.estimated_amount != null || r.cost_estimate != null)
     ? '<div class="form-group"><div class="form-label">Financials</div><div style="font-size:13px">' +
       (r.estimated_amount != null ? 'Estimated value: ' + fmtCost(r.estimated_amount) : '') +
@@ -10499,7 +10508,7 @@ async function openDeletedRequestModal(id) {
       '</div></div>' +
     '<div class="grid-2 mb-16">' +
       '<div><div class="form-label">Status</div>' + bdg(r.status) + '</div>' +
-      '<div><div class="form-label">Priority</div>' + (r.priority ? bdg(r.priority) : '<span class="text-muted">—</span>') + '</div>' +
+      '<div><div class="form-label">Commitment</div>' + (linkedProjectForCommitment && linkedProjectForCommitment.commitment ? bdg(linkedProjectForCommitment.commitment) : '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Submitter</div>' + (r.submitter_name || '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Business Unit</div>' + (r.business_unit || '<span class="text-muted">—</span>') + '</div>' +
       '<div><div class="form-label">Sponsor</div>' + (r.sponsor || '<span class="text-muted">—</span>') + inactiveNameBadge(r.sponsor) + '</div>' +
@@ -13663,7 +13672,7 @@ function renderSubmitProjectRequestForm() {
 
 // ── Stakeholder: My Requests ────────────────────────────────────────────────────
 
-var myRequestsState = { search: '', sort: 'date', dir: 'desc', filters: { businessUnit:[], priority:[], status:[] }, openFilter: null };
+var myRequestsState = { search: '', sort: 'date', dir: 'desc', filters: { businessUnit:[], commitment:[], status:[] }, openFilter: null };
 var myWorkRequestsSubmittedState = { search: '', sort: 'submitted', dir: 'desc', filterAssignee: [] };
 
 window.setMyRequestsTopTab = function(t) { myRequestsPageState.tab = t; pgMyRequests(); };
@@ -13694,11 +13703,11 @@ function renderMyProjectRequests() {
   var mine = allMine.slice();
   if (st.search) { var q = st.search.toLowerCase(); mine = mine.filter(function(r){ return r.title.toLowerCase().indexOf(q) >= 0; }); }
   if (st.filters.businessUnit.length) mine = mine.filter(function(r){ return st.filters.businessUnit.indexOf(r.businessUnit) >= 0; });
-  if (st.filters.priority.length) mine = mine.filter(function(r){ return st.filters.priority.indexOf(r.priority) >= 0; });
+  if (st.filters.commitment.length) mine = mine.filter(function(r){ return st.filters.commitment.indexOf(requestCommitment(r) || 'Needs commitment') >= 0; });
   if (st.filters.status.length) mine = mine.filter(function(r){ return st.filters.status.indexOf(r.status) >= 0; });
   mine.sort(function(a,b) {
     var av, bv;
-    if (st.sort === 'priority') { av = PRIORITY_RANK[a.priority] != null ? PRIORITY_RANK[a.priority] : 9; bv = PRIORITY_RANK[b.priority] != null ? PRIORITY_RANK[b.priority] : 9; }
+    if (st.sort === 'commitment') { var ac = requestCommitment(a), bc = requestCommitment(b); av = ac != null ? COMMITMENT_RANK[ac] : 5; bv = bc != null ? COMMITMENT_RANK[bc] : 5; }
     else { av = a[st.sort]; bv = b[st.sort]; av = (av == null ? '' : av); bv = (bv == null ? '' : bv); if (typeof av === 'string') { av = av.toLowerCase(); bv = String(bv).toLowerCase(); } }
     var cmp = av < bv ? -1 : av > bv ? 1 : 0;
     return st.dir === 'asc' ? cmp : -cmp;
@@ -13707,7 +13716,7 @@ function renderMyProjectRequests() {
   function arrow(col) { if (st.sort !== col) return ''; return '<span class="sort-arrow">' + (st.dir==='asc'?'▲':'▼') + '</span>'; }
   function filterIcon(col, active) { return '<button class="th-filter-btn" onclick="event.stopPropagation();toggleMyReqFilter(\'' + col + '\')"><i class="ti ti-filter' + (active ? ' th-filter-active' : '') + '"></i></button>'; }
   var businessUnitChoices = []; allMine.forEach(function(r){ if (r.businessUnit && businessUnitChoices.indexOf(r.businessUnit) < 0) businessUnitChoices.push(r.businessUnit); }); businessUnitChoices.sort();
-  var priorityChoices = PRIORITIES.slice();
+  var commitmentChoices = COMMITMENTS.concat(['Needs commitment']);
   var statusChoices = ['Pending','Backlog','Planned','Active','Rejected','Revoked'];
 
   var html = '';
@@ -13723,13 +13732,14 @@ function renderMyProjectRequests() {
     '<th class="sortable-th" onclick="setMyReqSort(\'title\')">Title ' + arrow('title') + '</th>' +
     '<th class="sortable-th"><span onclick="setMyReqSort(\'businessUnit\')">Business Unit ' + arrow('businessUnit') + '</span>' + filterIcon('businessUnit', st.filters.businessUnit.length>0) + '</th>' +
     '<th class="sortable-th" onclick="setMyReqSort(\'date\')">Date ' + arrow('date') + '</th>' +
-    '<th class="sortable-th"><span onclick="setMyReqSort(\'priority\')">Priority ' + arrow('priority') + '</span>' + filterIcon('priority', st.filters.priority.length>0) + '</th>' +
+    '<th class="sortable-th"><span onclick="setMyReqSort(\'commitment\')">Commitment ' + arrow('commitment') + '</span>' + filterIcon('commitment', st.filters.commitment.length>0) + '</th>' +
     '<th class="sortable-th"><span onclick="setMyReqSort(\'status\')">Status ' + arrow('status') + '</span>' + filterIcon('status', st.filters.status.length>0) + '</th>' +
     '<th>PMO feedback</th><th></th></tr></thead><tbody>' +
     (mine.length ? mine.map(function(r) {
       var canRevoke = r.status === 'Pending';
       var linkedP = r.linkedProject ? D.projects.find(function(p){ return p.id === r.linkedProject; }) : null;
-      return '<tr><td class="bold">' + r.title + '</td><td class="text-muted">' + (r.businessUnit||'—') + '</td><td class="text-muted">' + r.date + '</td><td>' + (r.priority ? bdg(r.priority) : '<span class="text-muted">—</span>') + '</td><td>' + bdg(r.status) + '</td>' +
+      var reqCommitment = requestCommitment(r);
+      return '<tr><td class="bold">' + r.title + '</td><td class="text-muted">' + (r.businessUnit||'—') + '</td><td class="text-muted">' + r.date + '</td><td>' + (reqCommitment ? bdg(reqCommitment) : '<span class="text-muted">—</span>') + '</td><td>' + bdg(r.status) + '</td>' +
         '<td style="font-size:12px;color:var(--text-muted);max-width:180px;word-break:break-word">' + (r.feedback||'—') + '</td>' +
         '<td><div style="display:flex;gap:4px">' +
         '<button class="btn btn-sm" onclick="reviewRequest(\'' + r.id + '\')"><i class="ti ti-eye"></i> Details</button>' +
@@ -13746,8 +13756,8 @@ function renderMyProjectRequests() {
   };
   window.setMyReqSort = function(col) { if (st.sort === col) st.dir = st.dir === 'asc' ? 'desc' : 'asc'; else { st.sort = col; st.dir = 'asc'; } renderMyProjectRequests(); };
   window.toggleMyReqFilter = function(col) {
-    var labelMap = { businessUnit:'Business Unit', priority:'Priority', status:'Status' };
-    var choicesMap = { businessUnit:businessUnitChoices, priority:priorityChoices, status:statusChoices };
+    var labelMap = { businessUnit:'Business Unit', commitment:'Commitment', status:'Status' };
+    var choicesMap = { businessUnit:businessUnitChoices, commitment:commitmentChoices, status:statusChoices };
     openFilterModal(labelMap[col], choicesMap[col],
       function() { return st.filters[col]; },
       function(val) { var arr = st.filters[col]; var i = arr.indexOf(val); if (i>=0) arr.splice(i,1); else arr.push(val); },
@@ -14365,7 +14375,7 @@ function myProjectRoles(p) {
 }
 
 // Every My Projects tab uses this standard table (search/sort/filter) --
-// health, role(s), status, stage, priority, owner, due date, my task
+// health, role(s), status, stage, commitment, owner, due date, my task
 // progress, and blockers.
 function myProjectsTableHtml(tabKey, list, emptyMsg) {
   var st = myProjectsTableState[tabKey];
