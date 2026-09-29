@@ -14,6 +14,14 @@ A dated log of feature and fix changes to PMO Hub, newest first — one entry pe
 
 <div id="changelog-list">
 
+<div class="changelog-entry" id="cl-2026-09-29">
+  <h2>Milestone updates count as a data confirmation</h2>
+  <p class="changelog-date">September 29, 2026</p>
+  <ul>
+    <li>Adding, editing, completing, reopening, or deleting a milestone now refreshes a project's <strong>data confirmed</strong> status, the same way a real edit on the Information tab already does.</li>
+  </ul>
+</div>
+
 <div class="changelog-entry" id="cl-2026-09-25">
   <h2>Guided project request form: branch by "new" vs. "already underway"</h2>
   <p class="changelog-date">September 25, 2026</p>
