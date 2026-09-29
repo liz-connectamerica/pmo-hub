@@ -2288,11 +2288,20 @@ async function logProjectChanges(projectId, before, after, source) {
   // Editing a project's data is itself a form of validating it's still
   // accurate, so it counts as a confirmation too -- see confirmProjectData
   // for the explicit "Confirm still accurate" path.
+  await markProjectConfirmed(projectId);
+}
+
+// Marks a project's data as freshly confirmed without writing an Overview
+// change-log entry -- for edits outside the tracked Overview fields (e.g.
+// milestones) that still count as validating the project is still
+// accurate. logProjectChanges calls this itself after logging an Overview
+// field change; call it directly for anything else that should count.
+async function markProjectConfirmed(pid) {
   var confirmedAt = new Date().toISOString();
   await sb.from('projects').update({
     data_confirmed_at: confirmedAt, data_confirmed_by: D.currentProfile.id, data_confirmed_by_name: D.currentProfile.display_name
-  }).eq('id', projectId);
-  var p = D.projects.find(function(x){ return x.id === projectId; });
+  }).eq('id', pid);
+  var p = D.projects.find(function(x){ return x.id === pid; });
   if (p) { p.dataConfirmedAt = confirmedAt; p.dataConfirmedByName = D.currentProfile.display_name; }
 }
 
@@ -6425,6 +6434,7 @@ function pgProjectDetail(pid, tab) {
     if (result.error) { showToast('Could not save: ' + result.error.message); return; }
     m.done = false; m.completedDate = null;
     m.log = m.log || []; m.log.push(await writeLog('milestone_log', 'milestone_id', m.id, 'Reopened', ''));
+    await markProjectConfirmed(pid2);
     document.getElementById('ptab-content').innerHTML=tabC('milestones');
   };
   window.deleteMS   = async function(pid2,idx){
@@ -6433,6 +6443,7 @@ function pgProjectDetail(pid, tab) {
     var result = await sb.from('milestones').delete().eq('id', m.id);
     if (result.error) { showToast('Could not delete: ' + result.error.message); return; }
     pr.milestones.splice(idx,1);
+    await markProjectConfirmed(pid2);
     document.getElementById('ptab-content').innerHTML=tabC('milestones');
   };
   window.toggleMSLog = function(pid2, idx) {
@@ -6673,6 +6684,7 @@ function openMilestoneModal(pid, idx) {
       p.milestones.push(newM);
       showToast('Milestone added');
     }
+    await markProjectConfirmed(pid);
     closeModal(); if (window.switchPTab) window.switchPTab('milestones');
   };
 }
@@ -6707,6 +6719,7 @@ function openCompleteMilestoneModal(pid, idx) {
     m.done = true; m.completedDate = completedDate;
     m.log = m.log || [];
     m.log.push(await writeLog('milestone_log', 'milestone_id', m.id, 'Completed', 'Completed date: ' + completedDate + (completedDate !== m.date ? ' (target was ' + m.date + ')' : '')));
+    await markProjectConfirmed(pid);
     showToast('"' + m.name + '" marked complete');
     closeModal(); if (window.switchPTab) window.switchPTab('milestones');
   };
